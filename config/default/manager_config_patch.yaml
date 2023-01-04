@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        image: ghcr.io/nais/unleasherator/unleasherator:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        args:
+        - "--config=controller_manager_config.yaml"
+        volumeMounts:
+        - name: manager-config
+          mountPath: /controller_manager_config.yaml
+          subPath: controller_manager_config.yaml
+      volumes:
+      - name: manager-config
+        configMap:
+          name: manager-config

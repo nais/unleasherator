@@ -1,0 +1,17 @@
+componentConfig: true
+domain: nais.io
+layout:
+- go.kubebuilder.io/v4-alpha
+projectName: unleasherator
+repo: github.com/nais/unleasherator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: nais.io
+  group: featuretoggling
+  kind: Unleash
+  path: github.com/nais/unleasherator/api/v1
+  version: v1
+version: "3"
