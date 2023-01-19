@@ -7,6 +7,7 @@ Currently supports the following resources:
 - [x] Unleash
   - [x] Deployment
     - [ ] Custom Image
+    - [ ] CloudSQL Proxy
   - [x] Service
   - [x] NetworkPolicy
   - [ ] Ingress
@@ -14,11 +15,47 @@ Currently supports the following resources:
 - ~~[ ] Project~~*
 - ~~[ ] Environment~~*
 
-*These resources are not supported by the Unleash Open Source version.
+*These resources are not supported by the Unleash Open Source version and we don't have any plans to support them in this operator.
 
 ## Description
 
 // TODO(user): An in-depth paragraph about your project and overview of use
+
+### Creating an Unleash instance
+
+```yaml
+apiVersion: unleash.nais.io/v1alpha1
+kind: Unleash
+metadata:
+  name: unleash
+spec:
+  size: 1
+  database:
+    secretName: postgres-postgresql
+    secretPassKey: postgres-password
+    host: postgres-postgresql
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+```
+
+Sequence of events:
+
+```mermaid
+sequenceDiagram
+    participant Unleasherator
+    participant Kubernetes
+    participant Unleash
+
+    Unleasherator->>Kubernetes: Create Unleash deployment
+    Kubernetes->>Unleash: Start Unleash
+    Unleasherator->>Kubernetes: Create Unleash secret
+    Unleasherator->>Kubernetes: Create Unleash service
+    Unleasherator->>Kubernetes: Create Unleash network policy
+    Unleasherator->>Unleash: Test connection
+
+```
 
 ## Getting Started
 
