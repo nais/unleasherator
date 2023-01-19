@@ -5,9 +5,16 @@ Kubernetes operator for managing [Unleash](https://getunleash.io) - the open-sou
 Currently supports the following resources:
 
 - [x] Unleash
-- [ ] Project
-- [ ] Environment
+  - [x] Deployment
+    - [ ] Custom Image
+  - [x] Service
+  - [x] NetworkPolicy
+  - [ ] Ingress
 - [ ] ApiToken
+- ~~[ ] Project~~*
+- ~~[ ] Environment~~*
+
+*These resources are not supported by the Unleash Open Source version.
 
 ## Description
 
