@@ -9,6 +9,7 @@ import (
 	"github.com/nais/unleasherator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -225,7 +226,48 @@ func labelsForUnleash(name string) map[string]string {
 	}
 }
 
-// imageForUnleash gets the Operand image which is managed by this controller
+// NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
+// @TODO add netpol for ingress
+// @TODO add netpol for same namespace
+func NetworkPolicyForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
+	labels := labelsForUnleash(unleash.Name)
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unleash.Name,
+			Namespace: unleash.Namespace,
+			Labels:    labels,
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+			Ingress: []networkingv1.NetworkPolicyIngressRule{
+				{
+					From: []networkingv1.NetworkPolicyPeer{
+						// Allow traffic from unleasherator namespace for API calls
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"kubernetes.io/metadata.name": operatorNamespace,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Set the ownerRef for the NetworkPolicy
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
+	if err := ctrl.SetControllerReference(unleash, np, scheme); err != nil {
+		return nil, err
+	}
+	return np, nil
+}
+
+// ImageForUnleash gets the Operand image which is managed by this controller
 // from the UNLEASH_IMAGE environment variable defined in the config/manager/manager.yaml
 func ImageForUnleash() string {
 	var imageEnvVar = "UNLEASH_IMAGE"

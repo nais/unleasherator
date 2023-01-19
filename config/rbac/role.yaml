@@ -48,6 +48,7 @@ rules:
   resources:
   - secrets
   - services
+  - networkpolicies
   verbs:
   - get
   - list

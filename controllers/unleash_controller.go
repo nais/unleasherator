@@ -25,6 +25,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -207,6 +208,14 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	_, res, err = r.reconcileNetworkPolicy(unleash, ctx, log)
+	if err != nil {
+		log.Error(err, "Failed to reconcile NetworkPolicy for Unleash")
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
 	err = r.testConnection(unleash, ctx, log)
 	if err != nil {
 		log.Error(err, "Failed to test connection to Unleash")
@@ -234,6 +243,31 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv
 		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
 			cr.Name,
 			cr.Namespace))
+}
+
+// reconcileNetworkPolicy will ensure that the network policy is created for the Unleash instance.
+func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
+	// Check if network policy already exists, if not create a new one
+	found := &networkingv1.NetworkPolicy{}
+	err := r.Get(ctx, unleash.NamespacedName(), found)
+	if err != nil && errors.IsNotFound(err) {
+		np, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
+		if err != nil {
+			return found, ctrl.Result{}, err
+		}
+		log.Info("Creating a new NetworkPolicy", "NetworkPolicy.Namespace", np.Namespace, "NetworkPolicy.Name", np.Name)
+		err = r.Create(ctx, np)
+		if err != nil {
+			return found, ctrl.Result{}, err
+		}
+		return np, ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		return found, ctrl.Result{}, err
+	}
+
+	// NetworkPolicy already exists - don't requeue
+	log.Info("Skip reconcile: NetworkPolicy already exists", "NetworkPolicy.Namespace", found.Namespace, "NetworkPolicy.Name", found.Name)
+	return found, ctrl.Result{}, nil
 }
 
 // reconcileSecrets will ensure that the required secrets are created
