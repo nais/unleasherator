@@ -47,7 +47,7 @@ func UnleashURL(unleash *featuretogglingv1.Unleash) string {
 	return fmt.Sprintf("http://%s.%s", unleash.Name, unleash.Namespace)
 }
 
-func SecretForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string) (*corev1.Secret, error) {
+func SecretForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -58,8 +58,10 @@ func SecretForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme
 		},
 	}
 
-	if err := ctrl.SetControllerReference(unleash, secret, scheme); err != nil {
-		return nil, err
+	if setControllerReference {
+		if err := ctrl.SetControllerReference(unleash, secret, scheme); err != nil {
+			return nil, err
+		}
 	}
 
 	return secret, nil
@@ -349,6 +351,10 @@ func envVarsForUnleash(unleash *featuretogglingv1.Unleash) ([]corev1.EnvVar, err
 		EnvDatabasePort,
 		EnvDatabaseName,
 	)))
+
+	if unleash.Spec.ExtraEnvVars != nil {
+		envVars = append(envVars, unleash.Spec.ExtraEnvVars...)
+	}
 
 	return envVars, nil
 }

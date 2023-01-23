@@ -19,6 +19,7 @@ package v1
 import (
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -36,6 +37,12 @@ type UnleashSpec struct {
 
 	// Database is the database configuration
 	Database UnleashDatabase `json:"database,omitempty"`
+
+	// ExtraEnv is a list of extra environment variables to add to the deployment
+	// +kubebuilder:validation:Optional
+	ExtraEnvVars      []corev1.EnvVar      `json:"extraEnvVars,omitempty"`
+	ExtraVolumes      []corev1.Volume      `json:"extraVolumes,omitempty"`
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 }
 
 // UnleashDatabase defines the database configuration
@@ -95,6 +102,15 @@ type UnleashStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+func (u *UnleashStatus) IsReady() bool {
+	for _, condition := range u.Conditions {
+		if condition.Type == "Available" && condition.Status == "True" {
+			return true
+		}
+	}
+	return false
+}
+
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 
@@ -134,6 +150,10 @@ func (u *Unleash) GetInstanceSecretName() string {
 
 func (u *Unleash) GetOperatorSecretName() string {
 	return fmt.Sprintf("%s-%s-admin-key", u.Namespace, u.Name)
+}
+
+func (u *Unleash) GetURL() string {
+	return fmt.Sprintf("http://%s.%s.svc:4242", u.Name, u.Namespace)
 }
 
 //+kubebuilder:object:root=true

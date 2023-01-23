@@ -61,6 +61,22 @@ type UnleashReconciler struct {
 	OperatorNamespace string
 }
 
+//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=services/finalizers,verbs=update
+//+kubebuilder:rbac:groups=core,resources=secrets/finalizers,verbs=update
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies/finalizers,verbs=update
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies/status,verbs=get;update;patch
+
 // It is essential for the controller's reconciliation loop to be idempotent. By following the Operator
 // pattern you will create Controllers which provide a reconcile function
 // responsible for synchronizing resources until the desired state is reached on the cluster.
@@ -144,7 +160,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			// Perform all operations required before remove the finalizer and allow
 			// the Kubernetes API to remove the custom resource.
-			r.doFinalizerOperationsForUnleash(unleash)
+			r.doFinalizerOperationsForUnleash(unleash, ctx, log)
 
 			// TODO(user): If you add operations to the doFinalizerOperationsForUnleash method
 			// then you need to ensure that all worked fine before deleting and updating the Downgrade status
@@ -226,11 +242,30 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
-func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv1.Unleash) {
+func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) {
 	// TODO(user): Add the cleanup steps that the operator
 	// needs to do before the CR can be deleted. Examples
 	// of finalizers include performing backups and deleting
 	// resources that are not owned by this CR, like a PVC.
+
+	operatorSecret := cr.NamespacedOperatorSecretName(r.OperatorNamespace)
+
+	err := r.Delete(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      operatorSecret.Name,
+			Namespace: operatorSecret.Namespace,
+		},
+	})
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to delete the secret %s from the namespace %s",
+			operatorSecret.Name,
+			operatorSecret.Namespace))
+
+		r.Recorder.Event(cr, "Warning", "Deleting",
+			fmt.Sprintf("Failed to delete the secret %s from the namespace %s",
+				operatorSecret.Name,
+				operatorSecret.Namespace))
+	}
 
 	// Note: It is not recommended to use finalizers with the purpose of delete resources which are
 	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
@@ -245,7 +280,7 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv
 			cr.Namespace))
 }
 
-// reconcileNetworkPolicy will ensure that the network policy is created for the Unleash instance.
+// reconcileSecrets will ensure that the secrets required for the Unleash deployment are created.
 func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
 	// Check if network policy already exists, if not create a new one
 	found := &networkingv1.NetworkPolicy{}
@@ -277,7 +312,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *featuretogglingv1.Unleash,
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), found)
 	if err != nil && errors.IsNotFound(err) {
 		adminKey := resources.GenerateAdminKey()
-		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
+		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
 		if err != nil {
 			return found, ctrl.Result{}, err
 		}
@@ -306,7 +341,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *featuretogglingv1.Unleash,
 	found = &corev1.Secret{}
 	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), found)
 	if err != nil && errors.IsNotFound(err) {
-		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey)
+		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
 		if err != nil {
 			return found, ctrl.Result{}, err
 		}
