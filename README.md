@@ -4,14 +4,16 @@ Kubernetes operator for managing [Unleash](https://getunleash.io) - the open-sou
 
 Currently supports the following resources:
 
-- [x] Unleash
+- [x] [Unleash](./docs/unleash.md)
   - [x] Deployment
     - [ ] Custom Image
     - [ ] CloudSQL Proxy
   - [x] Service
   - [x] NetworkPolicy
   - [ ] Ingress
-- [ ] ApiToken
+- [ ] [RemoteUneash](./docs/remoteunleash.md)
+- [ ] [ApiToken](./docs/apitoken.md)
+- [ ] [Federation](./docs/federation.md)
 - ~~[ ] Project~~*
 - ~~[ ] Environment~~*
 
@@ -48,10 +50,11 @@ sequenceDiagram
     participant Kubernetes
     participant Unleash
 
+    Unleasherator->>Kubernetes: Create Unleash secret
     Unleasherator->>Kubernetes: Create Unleash deployment
     Kubernetes->>Unleash: Start Unleash
-    Unleasherator->>Kubernetes: Create Unleash secret
     Unleasherator->>Kubernetes: Create Unleash service
+    Unleasherator->>Kubernetes: Create Unleash ingress
     Unleasherator->>Kubernetes: Create Unleash network policy
     Unleasherator->>Unleash: Test connection
 

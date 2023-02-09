@@ -12,7 +12,7 @@ metadata:
   name: unleash-editor-role
 rules:
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - unleashes
   verbs:
@@ -24,7 +24,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - unleashes/status
   verbs:

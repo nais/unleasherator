@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	featuretogglingv1 "github.com/nais/unleasherator/api/v1"
+	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
 	"github.com/nais/unleasherator/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -44,7 +44,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(featuretogglingv1.AddToScheme(scheme))
+	utilruntime.Must(unleashv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -87,9 +87,19 @@ func main() {
 	if err = (&controllers.UnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
+		os.Exit(1)
+	}
+	if err = (&controllers.ApiTokenReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("api-token-controller"),
+		OperatorNamespace: operatorNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

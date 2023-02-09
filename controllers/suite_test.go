@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	featuretogglingv1 "github.com/nais/unleasherator/api/v1"
+	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -62,7 +62,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = featuretogglingv1.AddToScheme(scheme.Scheme)
+	err = unleashv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

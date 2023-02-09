@@ -3,7 +3,7 @@ package resources
 import (
 	"testing"
 
-	featuretogglingv1 "github.com/nais/unleasherator/api/v1"
+	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -11,19 +11,19 @@ import (
 
 func TestDeploymentForUnleash(t *testing.T) {
 	var err error
-	var u *featuretogglingv1.Unleash
+	var u *unleashv1.Unleash
 
-	err = featuretogglingv1.AddToScheme(scheme.Scheme)
+	err = unleashv1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		t.Error("failed to add Unleash to scheme", err)
 	}
 
-	u = &featuretogglingv1.Unleash{
+	u = &unleashv1.Unleash{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "unleash",
 			Namespace: "unleash",
 		},
-		Spec: featuretogglingv1.UnleashSpec{
+		Spec: unleashv1.UnleashSpec{
 			Size: 1,
 		},
 	}
@@ -32,14 +32,14 @@ func TestDeploymentForUnleash(t *testing.T) {
 		t.Error("expected error when no database is configured")
 	}
 
-	u = &featuretogglingv1.Unleash{
+	u = &unleashv1.Unleash{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "unleash",
 			Namespace: "unleash",
 		},
-		Spec: featuretogglingv1.UnleashSpec{
+		Spec: unleashv1.UnleashSpec{
 			Size: 1,
-			Database: featuretogglingv1.UnleashDatabase{
+			Database: unleashv1.DatabaseConfig{
 				SecretName:   "unleash-db",
 				SecretURLKey: "url",
 			},
@@ -55,19 +55,19 @@ func TestDeploymentForUnleash(t *testing.T) {
 func TestNetworkPolicyForUnleash(t *testing.T) {
 	var err error
 	var np *networkingv1.NetworkPolicy
-	var u *featuretogglingv1.Unleash
+	var u *unleashv1.Unleash
 
-	err = featuretogglingv1.AddToScheme(scheme.Scheme)
+	err = unleashv1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		t.Error("failed to add Unleash to scheme", err)
 	}
 
-	u = &featuretogglingv1.Unleash{
+	u = &unleashv1.Unleash{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "unleash",
 			Namespace: "unleash",
 		},
-		Spec: featuretogglingv1.UnleashSpec{
+		Spec: unleashv1.UnleashSpec{
 			Size: 1,
 		},
 	}

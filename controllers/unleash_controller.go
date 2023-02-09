@@ -39,11 +39,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/go-logr/logr"
-	featuretogglingv1 "github.com/nais/unleasherator/api/v1"
+	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
 	"github.com/nais/unleasherator/pkg/resources"
 )
 
-const unleashFinalizer = "featuretoggling.nais.io/finalizer"
+const unleashFinalizer = "unleash.nais.io/finalizer"
 
 const (
 	// typeAvailableUnleash represents the status of the Deployment reconciliation
@@ -61,9 +61,9 @@ type UnleashReconciler struct {
 	OperatorNamespace string
 }
 
-//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=featuretoggling.nais.io,resources=unleashes/finalizers,verbs=update
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -92,7 +92,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Fetch the Unleash instance
 	// The purpose is check if the Custom Resource for the Kind Unleash
 	// is applied on the cluster if not we return nil to stop the reconciliation
-	unleash := &featuretogglingv1.Unleash{}
+	unleash := &unleashv1.Unleash{}
 	err := r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -242,7 +242,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
-func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) {
+func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) {
 	// TODO(user): Add the cleanup steps that the operator
 	// needs to do before the CR can be deleted. Examples
 	// of finalizers include performing backups and deleting
@@ -281,7 +281,7 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *featuretogglingv
 }
 
 // reconcileSecrets will ensure that the secrets required for the Unleash deployment are created.
-func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
 	// Check if network policy already exists, if not create a new one
 	found := &networkingv1.NetworkPolicy{}
 	err := r.Get(ctx, unleash.NamespacedName(), found)
@@ -306,7 +306,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *featuretogglingv1.Un
 }
 
 // reconcileSecrets will ensure that the required secrets are created
-func (r *UnleashReconciler) reconcileSecrets(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Secret, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Secret, ctrl.Result, error) {
 	// Check if operator secret already exists, if not create a new one
 	found := &corev1.Secret{}
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), found)
@@ -364,7 +364,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *featuretogglingv1.Unleash,
 }
 
 // reconcileDeployment will ensure that the required deployment is created
-func (r *UnleashReconciler) reconcileDeployment(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*appsv1.Deployment, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileDeployment(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*appsv1.Deployment, ctrl.Result, error) {
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
@@ -503,7 +503,7 @@ func (r *UnleashReconciler) reconcileDeployment(unleash *featuretogglingv1.Unlea
 	return found, ctrl.Result{}, nil
 }
 
-func (r *UnleashReconciler) reconcileService(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Service, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Service, ctrl.Result, error) {
 	// Check if this Service already exists
 	found := &corev1.Service{}
 	err := r.Get(ctx, unleash.NamespacedName(), found)
@@ -532,7 +532,7 @@ func (r *UnleashReconciler) reconcileService(unleash *featuretogglingv1.Unleash,
 	return found, ctrl.Result{}, nil
 }
 
-func (r *UnleashReconciler) testConnection(unleash *featuretogglingv1.Unleash, ctx context.Context, log logr.Logger) error {
+func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
 	// Get admin token from the secret
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), secret)
@@ -578,8 +578,18 @@ func (r *UnleashReconciler) testConnection(unleash *featuretogglingv1.Unleash, c
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&featuretogglingv1.Unleash{}).
+		For(&unleashv1.Unleash{}).
 		Owns(&appsv1.Deployment{}).
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)
+}
+
+func GetApiToken(ctx context.Context, r client.Client, unleashName, operatorNamespace string) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{Name: unleashName, Namespace: operatorNamespace}, secret)
+	if err != nil {
+		return "", err
+	}
+
+	return string(secret.Data[resources.EnvInitAdminAPIToken]), nil
 }

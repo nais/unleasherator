@@ -61,7 +61,7 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - apitokens
   verbs:
@@ -73,13 +73,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - apitokens/finalizers
   verbs:
   - update
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - apitokens/status
   verbs:
@@ -87,7 +87,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - unleashes
   verbs:
@@ -99,13 +99,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - unleashes/finalizers
   verbs:
   - update
 - apiGroups:
-  - featuretoggling.nais.io
+  - unleash.nais.io
   resources:
   - unleashes/status
   verbs:

@@ -1,4 +1,4 @@
-apiVersion: featuretoggling.nais.io/v1
+apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
   labels:

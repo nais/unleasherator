@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	featuretogglingv1 "github.com/nais/unleasherator/api/v1"
+	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
 	"github.com/nais/unleasherator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,11 +43,11 @@ func GenerateAdminKey() string {
 	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
 }
 
-func UnleashURL(unleash *featuretogglingv1.Unleash) string {
+func UnleashURL(unleash *unleashv1.Unleash) string {
 	return fmt.Sprintf("http://%s.%s", unleash.Name, unleash.Namespace)
 }
 
-func SecretForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
+func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -67,7 +67,7 @@ func SecretForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme
 	return secret, nil
 }
 
-func ServiceAccountForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme) (*corev1.ServiceAccount, error) {
+func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.ServiceAccount, error) {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.Name,
@@ -82,7 +82,7 @@ func ServiceAccountForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtim
 	return sa, nil
 }
 
-func ServiceForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme) (*corev1.Service, error) {
+func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.Service, error) {
 	ls := labelsForUnleash(unleash.Name)
 
 	svc := &corev1.Service{
@@ -108,7 +108,7 @@ func ServiceForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Schem
 	return svc, nil
 }
 
-func DeploymentForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
+func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
 	ls := labelsForUnleash(unleash.Name)
 	replicas := unleash.Spec.Size
 
@@ -231,7 +231,7 @@ func labelsForUnleash(name string) map[string]string {
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
 // @TODO add netpol for ingress
 // @TODO add netpol for same namespace
-func NetworkPolicyForUnleash(unleash *featuretogglingv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
+func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
 	labels := labelsForUnleash(unleash.Name)
 
 	np := &networkingv1.NetworkPolicy{
@@ -281,7 +281,7 @@ func ImageForUnleash() string {
 }
 
 // envVarsForUnleash returns the environment variables for the Unleash Deployment
-func envVarsForUnleash(unleash *featuretogglingv1.Unleash) ([]corev1.EnvVar, error) {
+func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	secretName := unleash.Spec.Database.SecretName
 	secretURLKey := unleash.Spec.Database.SecretURLKey
 	databaseURL := unleash.Spec.Database.URL
