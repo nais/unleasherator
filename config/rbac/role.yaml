@@ -61,58 +61,6 @@ rules:
   verbs:
   - update
 - apiGroups:
-  - unleash.nais.io
-  resources:
-  - apitokens
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - apitokens/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - apitokens/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - unleashes
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - unleashes/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - unleashes/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
   - networking.k8s.io
   resources:
   - ingresses
@@ -160,6 +108,58 @@ rules:
   - networking.k8s.io
   resources:
   - networkpolicies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - apitokens
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - apitokens/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - apitokens/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - unleashes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - unleashes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - unleashes/status
   verbs:
   - get
   - patch
