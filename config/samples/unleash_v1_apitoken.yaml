@@ -9,4 +9,5 @@ metadata:
     app.kubernetes.io/created-by: unleasherator
   name: apitoken-sample
 spec:
-  # TODO(user): Add fields here
+  unleashName: unleash-sample
+  secretName: apitoken-sample
