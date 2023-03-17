@@ -39,7 +39,7 @@ jobs:
             echo "Code generated successfully."
           else
             echo "Code has generation issues."
-            git diff
+            echo $(git diff HEAD --)
             echo "Please run 'make generate' and commit the changes."
             exit 1
           fi
