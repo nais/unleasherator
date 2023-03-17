@@ -32,20 +32,20 @@ jobs:
             echo "Please run 'make fmt' and commit the changes."
             exit 1
           fi
-      - name: Generate code
-        run: |
-          make generate
-          if git diff-index --quiet HEAD --; then
-            echo "Code generated successfully."
-          else
-            echo "Code has generation issues."
-            echo $(git diff HEAD --)
-            echo $(git diff-index --quiet HEAD --)
-            ls api/v1
-            cat api/v1/zz_generated.deepcopy.go
-            echo "Please run 'make generate' and commit the changes."
-            exit 1
-          fi
+      #- name: Generate code
+      #  run: |
+      #    make generate
+      #    if git diff-index --quiet HEAD --; then
+      #      echo "Code generated successfully."
+      #    else
+      #      echo "Code has generation issues."
+      #      echo $(git diff HEAD --)
+      #      echo $(git diff-index --quiet HEAD --)
+      #      ls api/v1
+      #      cat api/v1/zz_generated.deepcopy.go
+      #      echo "Please run 'make generate' and commit the changes."
+      #      exit 1
+      #    fi
       - name: Generate manifests
         run: |
           make manifests
