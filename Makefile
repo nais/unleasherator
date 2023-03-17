@@ -68,6 +68,11 @@ build: generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
+.PHONY: helm
+helm: manifests kustomize helmify ## Generate Helm chart.
+	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/unleasherator
+	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
+
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
@@ -95,10 +100,6 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
-
-helm: manifests kustomize helmify
-	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/unleasherator
-	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
 
 ##@ Deployment
 
