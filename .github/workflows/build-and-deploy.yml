@@ -9,7 +9,8 @@ on:
       - main
 
 env:
-  docker_image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+  GHCR_REGISTRY: ghcr.io
+  GAR_REGISTRY: europe-north1-docker.pkg.dev/nais-io/nais/images
 
 jobs:
   build:
@@ -84,20 +85,41 @@ jobs:
         with:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
-  push-to-ghcr:
+  push-image:
     name: Push to GitHub Container Registry (ghcr.io)
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build]
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v3
       - uses: docker/login-action@v2
         with:
-          registry: ghcr.io
+          registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: version
+        run: echo "version=$(date +'%Y%m%d-%H%M%S')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
+      - uses: docker/metadata-action@v3
+        id: metadata
+        with:
+          images: |
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=semver,pattern=v{{major}}
+            type=sha
+            type=raw,value=${{ needs.version.outputs.version }}
       - uses: docker/build-push-action@v3
         with:
           context: .
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          tags: ${{ env.docker_image }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           #platforms: linux/amd64,linux/arm64
