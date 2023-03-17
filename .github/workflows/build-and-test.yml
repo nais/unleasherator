@@ -40,6 +40,7 @@ jobs:
           else
             echo "Code has generation issues."
             echo $(git diff HEAD --)
+            echo $(git diff-index --quiet HEAD --)
             echo "Please run 'make generate' and commit the changes."
             exit 1
           fi
