@@ -4,9 +4,16 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
+
+env:
+  docker_image: ghcr.io/${{ github.repository }}:${{ github.sha }}
 
 jobs:
   build:
+    name: Build and Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -77,3 +84,19 @@ jobs:
         with:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
+  push-to-ghcr:
+    name: Push to GitHub Container Registry (ghcr.io)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v3
+      - uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ env.docker_image }}
