@@ -32,3 +32,12 @@ COPY --from=builder /workspace/manager .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]
+
+LABEL org.opencontainers.image.source=https://github.com/nais/unleasherator
+LABEL org.opencontainers.image.title="Unleasherator"
+LABEL org.opencontainers.image.description="Kubernetes Operator for Unleash"
+LABEL org.opencontainers.image.licenses=MIT
+LABEL org.opencontainers.image.authors="NAIS team <nais@nav.no>"
+LABEL org.opencontainers.image.vendor="NAIS team <nais@nav.no>"
+LABEL org.opencontainers.image.url="https://nais.io"
+LABEL org.opencontainers.image.documentation="https://doc.nais.io"
