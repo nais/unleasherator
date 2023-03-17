@@ -113,7 +113,7 @@ jobs:
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
             type=sha
-            type=raw,value=${{ needs.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }}
       - uses: docker/build-push-action@v3
         with:
           context: .
