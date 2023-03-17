@@ -11,6 +11,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - name: Restore cached binaries
+        uses: actions/cache/restore@v3
+        with:
+          path: ${{ github.workspace }}/bin
+          key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
       - name: Set up Go environment
         uses: actions/setup-go@v4
         with:
@@ -24,6 +29,37 @@ jobs:
             echo "Code formatted successfully."
           else
             echo "Code has formatting issues."
+            echo "Please run 'make fmt' and commit the changes."
+            exit 1
+          fi
+      - name: Generate code
+        run: |
+          make generate
+          if git diff-index --quiet HEAD --; then
+            echo "Code generated successfully."
+          else
+            echo "Code has generation issues."
+            echo "Please run 'make generate' and commit the changes."
+            exit 1
+          fi
+      - name: Generate manifests
+        run: |
+          make manifests
+          if git diff-index --quiet HEAD --; then
+            echo "Manifests generated successfully."
+          else
+            echo "Manifests have generation issues."
+            echo "Please run 'make manifests' and commit the changes."
+            exit 1
+          fi
+      - name: Generate helm chart
+        run: |
+          make helm
+          if git diff-index --quiet HEAD --; then
+            echo "Helm chart generated successfully."
+          else
+            echo "Helm chart has generation issues."
+            echo "Please run 'make helm' and commit the changes."
             exit 1
           fi
       - name: Vet code
@@ -32,3 +68,8 @@ jobs:
         run: make test
       - name: Build binary
         run: make build
+      - name: Cache installed binaries
+        uses: actions/cache@v3
+        with:
+          path: ${{ github.workspace }}/bin
+          key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
