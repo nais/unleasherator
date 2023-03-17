@@ -134,7 +134,7 @@ make run
 If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
 
 ```sh
-make manifests
+make generate manifests
 ```
 
 **NOTE:** Run `make --help` for more information on all potential `make` targets

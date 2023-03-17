@@ -96,6 +96,10 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
 
+helm: manifests kustomize helmify
+	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/unleasherator
+	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -138,6 +142,7 @@ $(LOCALBIN):
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
+HELMIFY ?= $(LOCALBIN)/helmify
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.5
@@ -158,3 +163,8 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
+.PHONY: helmify
+helmify: $(HELMIFY) ## Download helmify locally if necessary.
+$(HELMIFY): $(LOCALBIN)
+  test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@latest

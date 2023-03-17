@@ -1,24 +1,23 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  name: apitokens.unleash.nais.io
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.2
-  creationTimestamp: null
-  name: remoteunleashes.unleash.nais.io
+  labels:
+  {{- include "unleasherator.labels" . | nindent 4 }}
 spec:
   group: unleash.nais.io
   names:
-    kind: RemoteUnleash
-    listKind: RemoteUnleashList
-    plural: remoteunleashes
-    singular: remoteunleash
+    kind: ApiToken
+    listKind: ApiTokenList
+    plural: apitokens
+    singular: apitoken
   scope: Namespaced
   versions:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: RemoteUnleash defines an RemoteUnleash instance
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -33,34 +32,57 @@ spec:
           metadata:
             type: object
           spec:
-            description: RemoteUnleashSpec defines the desired state of RemoteUnleash
+            description: ApiTokenSpec defines the desired state of ApiToken
             properties:
-              secretName:
+              environment:
+                default: default
+                description: Environment is the environment to create the token for.
                 type: string
-              url:
+              projects:
+                default:
+                - '*'
+                description: Projects is the list of projects to create the token for.
+                items:
+                  type: string
+                type: array
+              secretName:
+                description: SecretName is the name of the secret where the token will
+                  be stored.
+                type: string
+              type:
+                default: CLIENT
+                description: Type is the type of token to create. Valid values are "CLIENT"
+                  and "FRONTEND".
+                enum:
+                - CLIENT
+                - FRONTEND
+                type: string
+              unleashName:
+                description: UnleashName is the name of the Unleash instance this token
+                  is for.
                 type: string
             required:
             - secretName
-            - url
+            - unleashName
             type: object
           status:
-            description: RemoteUnleashStatus defines the observed state of RemoteUnleash
+            description: ApiTokenStatus defines the observed state of ApiToken
             properties:
               conditions:
-                description: 'Represents the observations of a RemoteUnleash''s current
-                  state. RemoteUnleash.status.conditions.type are: "Available", "Progressing",
-                  and "Degraded" RemoteUnleash.status.conditions.status are one of
-                  True, False, Unknown. RemoteUnleash.status.conditions.reason the
-                  value should be a CamelCase string and producers of specific condition
-                  types may define expected values and meanings for this field, and
-                  whether the values are considered a guaranteed API. RemoteUnleash.status.conditions.Message
-                  is a human readable message indicating details about the transition.'
+                description: 'Represents the observations of a ApiToken''s current state.
+                  Unleash.status.conditions.type are: "Created", "Creating", and "Failed"
+                  Unleash.status.conditions.status are one of True, False, Unknown.
+                  Unleash.status.conditions.reason the value should be a CamelCase string
+                  and producers of specific condition types may define expected values
+                  and meanings for this field, and whether the values are considered
+                  a guaranteed API. Unleash.status.conditions.Message is a human readable
+                  message indicating details about the transition.'
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    \n type FooStatus struct{ // Represents the observations of a
-                    foo's current state. // Known .status.conditions.type are: \"Available\",
+                    \n type FooStatus struct{ // Represents the observations of a foo's
+                    current state. // Known .status.conditions.type are: \"Available\",
                     \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
                     // +listType=map // +listMapKey=type Conditions []metav1.Condition
                     `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
@@ -74,8 +96,8 @@ spec:
                       format: date-time
                       type: string
                     message:
-                      description: message is a human readable message indicating
-                        details about the transition. This may be an empty string.
+                      description: message is a human readable message indicating details
+                        about the transition. This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
@@ -89,11 +111,11 @@ spec:
                       type: integer
                     reason:
                       description: reason contains a programmatic identifier indicating
-                        the reason for the condition's last transition. Producers
-                        of specific condition types may define expected values and
-                        meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string.
-                        This field may not be empty.
+                        the reason for the condition's last transition. Producers of
+                        specific condition types may define expected values and meanings
+                        for this field, and whether the values are considered a guaranteed
+                        API. The value should be a CamelCase string. This field may
+                        not be empty.
                       maxLength: 1024
                       minLength: 1
                       pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -128,3 +150,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []

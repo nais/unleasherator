@@ -30,7 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 	//+kubebuilder:scaffold:imports
 )
 
