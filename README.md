@@ -21,7 +21,7 @@ Currently supports the following resources:
 
 ## Description
 
-// TODO(user): An in-depth paragraph about your project and overview of use
+Unleasherator is a Kubernetes operator for managing Unleash instances and API tokens across multiple clusters or environments.
 
 ### Creating an Unleash instance
 
@@ -131,10 +131,10 @@ make run
 
 ### Modifying the API definitions
 
-If you are editing the API definitions, generate the manifests such as CRs or CRDs using:
+If you are editing the API definitions, generate the manifests such as CRs or CRDs, and corresponding Helm charts using:
 
 ```sh
-make generate manifests
+make generate manifests helm
 ```
 
 **NOTE:** Run `make --help` for more information on all potential `make` targets
