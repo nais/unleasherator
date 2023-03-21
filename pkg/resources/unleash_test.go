@@ -3,7 +3,7 @@ package resources
 import (
 	"testing"
 
-	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"

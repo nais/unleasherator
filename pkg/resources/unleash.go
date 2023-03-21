@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

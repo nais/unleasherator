@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	unleashv1 "github.com/nais/liberator/pkg/apis/unleash.nais.io/v1"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/resources"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 )
