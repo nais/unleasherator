@@ -220,9 +220,6 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 	if unleash.Spec.ExtraVolumeMounts != nil {
 		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, unleash.Spec.ExtraVolumeMounts...)
 	}
-	if unleash.Spec.ExtraEnvVars != nil {
-		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env, unleash.Spec.ExtraEnvVars...)
-	}
 	// Set the ownerRef for the Deployment
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
 	if err := ctrl.SetControllerReference(unleash, dep, scheme); err != nil {
