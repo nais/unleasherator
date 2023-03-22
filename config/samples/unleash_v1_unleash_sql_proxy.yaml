@@ -12,13 +12,14 @@ metadata:
 spec:
   size: 1
   database:
-    secretName: postgres-postgresql
-    secretPassKey: postgres-password
-    host: postgres-postgresql
-    databaseName: postgres
+    secretName: "unleash-sql-proxy-sample"
+    secretPassKey: "POSTGRES_PASSWORD"
+    host: "localhost"
+    secretDatabaseNameKey: "POSTGRES_DB"
     port: "5432"
-    user: postgres
+    secretUserKey: "POSTGRES_USER"
     ssl: "false"
+  existingServiceAccountName: "bifrost-unleash-sql-user"
   extraContainers:
     - name: sql-proxy
     # It is recommended to use the latest version of the Cloud SQL Auth Proxy
