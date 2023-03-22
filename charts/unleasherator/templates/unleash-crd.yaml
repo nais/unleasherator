@@ -35,6 +35,10 @@ spec:
           spec:
             description: UnleashSpec defines the desired state of Unleash
             properties:
+              ExistingServiceAccountName:
+                description: ExistingServiceAccountName is the name of an already existing
+                  Kubernetes service account
+                type: string
               database:
                 description: Database is the database configuration
                 properties:

@@ -59,6 +59,10 @@ type UnleashSpec struct {
 	// ExtraContainers is a list of extra containers to add to the deployment
 	// +kubebuilder:validation:Optional
 	ExtraContainers []corev1.Container `json:"extraContainers,omitempty"`
+
+	// ExistingServiceAccountName is the name of an already existing Kubernetes service account
+	// +kubebuilder:validation:Optional
+	ExistingServiceAccountName string `json:"ExistingServiceAccountName,omitempty"`
 }
 
 // IngressConfig defines the ingress configuration
