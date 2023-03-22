@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -282,27 +283,35 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 
 // reconcileSecrets will ensure that the secrets required for the Unleash deployment are created.
 func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
-	// Check if network policy already exists, if not create a new one
-	found := &networkingv1.NetworkPolicy{}
-	err := r.Get(ctx, unleash.NamespacedName(), found)
-	if err != nil && errors.IsNotFound(err) {
-		np, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
-		if err != nil {
-			return found, ctrl.Result{}, err
-		}
-		log.Info("Creating a new NetworkPolicy", "NetworkPolicy.Namespace", np.Namespace, "NetworkPolicy.Name", np.Name)
-		err = r.Create(ctx, np)
-		if err != nil {
-			return found, ctrl.Result{}, err
-		}
-		return np, ctrl.Result{Requeue: true}, nil
-	} else if err != nil {
-		return found, ctrl.Result{}, err
+	newNetPol, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
+	if err != nil {
+		return nil, ctrl.Result{}, err
 	}
 
-	// NetworkPolicy already exists - don't requeue
-	log.Info("Skip reconcile: NetworkPolicy already exists", "NetworkPolicy.Namespace", found.Namespace, "NetworkPolicy.Name", found.Name)
-	return found, ctrl.Result{}, nil
+	existingNetPol := &networkingv1.NetworkPolicy{}
+	err = r.Get(ctx, unleash.NamespacedName(), existingNetPol)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating NetworkPolicy", "NetworkPolicy.Namespace", newNetPol.Namespace, "NetworkPolicy.Name", newNetPol.Name)
+		err = r.Create(ctx, newNetPol)
+		if err != nil {
+			return existingNetPol, ctrl.Result{}, err
+		}
+		return newNetPol, ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get NetworkPolicy for Unleash", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+		return existingNetPol, ctrl.Result{}, err
+	} else if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) {
+		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+		existingNetPol.Spec = newNetPol.Spec
+		err = r.Update(ctx, existingNetPol)
+		if err != nil {
+			return existingNetPol, ctrl.Result{}, err
+		}
+		return existingNetPol, ctrl.Result{Requeue: true}, nil
+	}
+
+	log.Info("Skip reconcile: NetworkPolicy up to date", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+	return existingNetPol, ctrl.Result{}, nil
 }
 
 // reconcileSecrets will ensure that the required secrets are created
