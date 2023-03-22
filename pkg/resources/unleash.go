@@ -216,7 +216,6 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 	if unleash.Spec.ExtraVolumes != nil {
 		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes, unleash.Spec.ExtraVolumes...)
 	}
-
 	if unleash.Spec.ExtraVolumeMounts != nil {
 		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, unleash.Spec.ExtraVolumeMounts...)
 	}

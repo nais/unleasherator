@@ -35,10 +35,6 @@ spec:
           spec:
             description: UnleashSpec defines the desired state of Unleash
             properties:
-              ExistingServiceAccountName:
-                description: ExistingServiceAccountName is the name of an already existing
-                  Kubernetes service account
-                type: string
               database:
                 description: Database is the database configuration
                 properties:
@@ -95,6 +91,10 @@ spec:
                       used
                     type: string
                 type: object
+              existingServiceAccountName:
+                description: ExistingServiceAccountName is the name of an already existing
+                  Kubernetes service account
+                type: string
               extraContainers:
                 description: ExtraContainers is a list of extra containers to add to
                   the deployment

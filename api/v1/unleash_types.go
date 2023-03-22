@@ -62,7 +62,7 @@ type UnleashSpec struct {
 
 	// ExistingServiceAccountName is the name of an already existing Kubernetes service account
 	// +kubebuilder:validation:Optional
-	ExistingServiceAccountName string `json:"ExistingServiceAccountName,omitempty"`
+	ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
 }
 
 // IngressConfig defines the ingress configuration
