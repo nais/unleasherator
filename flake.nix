@@ -4,10 +4,14 @@
   # Flake inputs
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable"; # also valid: "nixpkgs"
+    gitignore = {
+      url = "github:hercules-ci/gitignore.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   # Flake outputs
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, gitignore }:
     let
       # Systems supported
       allSystems = [
@@ -22,9 +26,16 @@
         pkgs = import nixpkgs { inherit system; };
       });
     in
-    {
-      # Development environment output
-      devShells = forAllSystems ({ pkgs }: {
+      {
+        packages = forAllSystems ({pkgs}: {
+          default = pkgs.buildGoModule {
+          name = "zero-to-nix-go";
+          src = gitignore.lib.gitignoreSource ./.;
+          vendorSha256 = "sha256-lbC6kqCeJFqq5HKvT9VY+pGNqwkAPfJB9LtkHqIeFnA=";
+        };
+        });
+
+        devShells = forAllSystems ({ pkgs }: {
         default = pkgs.mkShell {
           # The Nix packages provided in the environment
           packages = with pkgs; [
