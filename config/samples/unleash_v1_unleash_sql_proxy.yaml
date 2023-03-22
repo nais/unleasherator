@@ -10,6 +10,7 @@ metadata:
   name: unleash-sql-proxy-sample
   namespace: bifrost-unleash
 spec:
+  existingServiceAccountName: "bifrost-unleash-sql-user"
   size: 1
   database:
     secretName: "unleash-sql-proxy-sample"
@@ -19,7 +20,8 @@ spec:
     port: "5432"
     secretUserKey: "POSTGRES_USER"
     ssl: "false"
-  existingServiceAccountName: "bifrost-unleash-sql-user"
+#  ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
+
   extraContainers:
     - name: sql-proxy
     # It is recommended to use the latest version of the Cloud SQL Auth Proxy
