@@ -20,8 +20,6 @@ spec:
     port: "5432"
     secretUserKey: "POSTGRES_USER"
     ssl: "false"
-#  ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
-
   extraContainers:
     - name: sql-proxy
     # It is recommended to use the latest version of the Cloud SQL Auth Proxy
