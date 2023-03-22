@@ -331,16 +331,13 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 			return found, ctrl.Result{}, err
 		}
 
-		// Secret created successfully - return and requeue
 		return found, ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
 		return found, ctrl.Result{}, err
 	}
 
-	// Secret already exists - don't requeue
 	log.Info("Skip reconcile: Operator Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
 
-	// Get the admin key from the operator secret
 	adminKey := string(found.Data[resources.EnvInitAdminAPIToken])
 	if adminKey == "" {
 		return found, ctrl.Result{}, fmt.Errorf("operator secret AdminKey is empty")
@@ -360,15 +357,12 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 			return found, ctrl.Result{}, err
 		}
 
-		// Secret created successfully - return and requeue
 		return found, ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
 		return found, ctrl.Result{}, err
 	}
 
-	// Secret already exists - don't requeue
 	log.Info("Skip reconcile: Instance Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
-
 	return found, ctrl.Result{}, nil
 }
 
