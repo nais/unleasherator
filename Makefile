@@ -72,6 +72,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 helm: manifests kustomize helmify ## Generate Helm chart.
 	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/unleasherator
 	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
+	rm charts/unleasherator/templates/*-crd.yaml # delete superflous crds from the file tree
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
