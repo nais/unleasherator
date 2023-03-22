@@ -513,32 +513,37 @@ func (r *UnleashReconciler) reconcileDeployment(unleash *unleashv1.Unleash, ctx 
 }
 
 func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Service, ctrl.Result, error) {
-	// Check if this Service already exists
-	found := &corev1.Service{}
-	err := r.Get(ctx, unleash.NamespacedName(), found)
-	if err != nil && errors.IsNotFound(err) {
-		// Define a new Service
-		svc, err := resources.ServiceForUnleash(unleash, r.Scheme)
-		if err != nil {
-			log.Error(err, "Failed to create service for Unleash")
-			return found, ctrl.Result{}, err
-		}
-
-		log.Info("Creating a new Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
-		err = r.Create(ctx, svc)
-		if err != nil {
-			log.Error(err, "Failed to create new Service", "Service.Namespace", svc.Namespace, "Service.Name", svc.Name)
-			return found, ctrl.Result{}, err
-		}
-
-		// Service created successfully - don't requeue
-		return svc, ctrl.Result{}, nil
+	newSvc, err := resources.ServiceForUnleash(unleash, r.Scheme)
+	if err != nil {
+		return nil, ctrl.Result{}, err
 	}
 
-	// Service already exists - don't requeue
-	log.Info("Skip reconcile: Service already exists", "Service.Namespace", found.Namespace, "Service.Name", found.Name)
+	existingSvc := &corev1.Service{}
+	err = r.Get(ctx, unleash.NamespacedName(), existingSvc)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating Service", "Service.Namespace", newSvc.Namespace, "Service.Name", newSvc.Name)
+		err = r.Create(ctx, newSvc)
+		if err != nil {
+			log.Error(err, "Failed to create new Service", "Service.Namespace", newSvc.Namespace, "Service.Name", newSvc.Name)
+			return existingSvc, ctrl.Result{}, err
+		}
 
-	return found, ctrl.Result{}, nil
+		return newSvc, ctrl.Result{}, nil
+	} else if err != nil {
+		return existingSvc, ctrl.Result{}, err
+	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) {
+		existingSvc.Spec = newSvc.Spec
+		log.Info("Updating Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
+		err = r.Update(ctx, existingSvc)
+		if err != nil {
+			log.Error(err, "Failed to update Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
+			return existingSvc, ctrl.Result{}, err
+		}
+	}
+
+	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
+
+	return existingSvc, ctrl.Result{}, nil
 }
 
 func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
