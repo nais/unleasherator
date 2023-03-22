@@ -24,7 +24,7 @@ controllerManager:
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main
-    imagePullPolicy: IfNotPresent
+    imagePullPolicy: Always
     resources:
       limits:
         cpu: 500m
