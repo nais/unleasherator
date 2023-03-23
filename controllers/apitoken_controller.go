@@ -216,14 +216,14 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: unleash.GetOperatorSecretName(), Namespace: r.OperatorNamespace}, secret); err != nil {
+	adminSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: unleash.GetOperatorSecretName(), Namespace: r.OperatorNamespace}, adminSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,
 				Status:  metav1.ConditionFalse,
 				Reason:  "UnleashSecretNotFound",
-				Message: "Unleash secret not found",
+				Message: "Unleash admin secret not found",
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
@@ -233,18 +233,18 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{Requeue: true}, nil
 		}
 
-		log.Error(err, "Failed to get Unleash secret")
+		log.Error(err, "Failed to get Unleash admin secret")
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	adminToken := string(secret.Data[resources.EnvInitAdminAPIToken])
+	adminToken := string(adminSecret.Data[resources.EnvInitAdminAPIToken])
 	if adminToken == "" {
 		log.Error(err, "Unleash secret missing api key")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
 			Reason:  "UnleashSecretMissingApiKey",
-			Message: "Unleash secret missing api key",
+			Message: "Unleash admin secret missing api key",
 		})
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
@@ -314,6 +314,21 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				"token": []byte(apiToken.Secret),
 			},
 		}
+
+		if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Failed to delete secret")
+			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
+				Type:    typeCreatedToken,
+				Status:  metav1.ConditionFalse,
+				Reason:  "FailedToDeleteExistingSecret",
+				Message: "Failed to delete existing secret",
+			})
+			if err = r.Status().Update(ctx, token); err != nil {
+				log.Error(err, "Failed to update ApiToken status")
+				return ctrl.Result{Requeue: true}, err
+			}
+		}
+
 		if err := r.Create(ctx, secret); err != nil {
 			log.Error(err, "Failed to create secret")
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
