@@ -239,6 +239,21 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	err = r.Get(ctx, req.NamespacedName, unleash)
+	if err != nil {
+		log.Error(err, "Failed to re-fetch unleash")
+		return ctrl.Result{}, err
+	}
+
+	meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash,
+		Status: metav1.ConditionTrue, Reason: "Reconciling",
+		Message: fmt.Sprintf("Unleash %s is available", unleash.Name)})
+
+	if err := r.Status().Update(ctx, unleash); err != nil {
+		log.Error(err, "Failed to update Unleash status")
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
