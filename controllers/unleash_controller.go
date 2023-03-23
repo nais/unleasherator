@@ -232,7 +232,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	} else if res.Requeue {
 		return res, nil
 	}
-
+	// ...
 	err = r.testConnection(unleash, ctx, log)
 	if err != nil {
 		log.Error(err, "Failed to test connection to Unleash")
