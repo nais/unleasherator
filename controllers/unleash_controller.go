@@ -492,12 +492,18 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode != http.StatusOK {
+		log.Error(err, "Failed to get a 200 OK response from the Unleash instance")
+		return err
+	}
+
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Error(err, "Failed to read the response from the Unleash instance")
 		return err
 	}
-	fmt.Println(string(body))
+
+	log.Info("Response from Unleash instance", "body", string(body))
 
 	return nil
 }
