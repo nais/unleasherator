@@ -124,7 +124,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 .PHONY: restart
 restart: manifests kustomize ## Restart controller in the K8s cluster specified in ~/.kube/config.
 	kubectl rollout restart deployment/unleasherator-controller-manager -n unleasherator-system
-	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=30s
+	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
 
 .PHONY: logs
 logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
