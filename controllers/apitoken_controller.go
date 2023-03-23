@@ -144,9 +144,10 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:   typeDeletedToken,
-				Reason: "Finalizing",
-				Status: "Finalizer operations completed",
+				Type:    typeDeletedToken,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Finalizing",
+				Message: "Finalizer operations completed",
 			})
 
 			if err := r.Status().Update(ctx, token); err != nil {
