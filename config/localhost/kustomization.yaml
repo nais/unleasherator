@@ -1,0 +1,7 @@
+namespace: unleasherator-system
+namePrefix: unleasherator-
+resources:
+- ../default
+
+patchesStrategicMerge:
+- manager_config_patch.yaml

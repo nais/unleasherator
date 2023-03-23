@@ -6,13 +6,11 @@ Currently supports the following resources:
 
 - [x] [Unleash](./docs/unleash.md)
   - [x] Deployment
-    - [ ] Custom Image
-    - [ ] CloudSQL Proxy
   - [x] Service
   - [x] NetworkPolicy
   - [ ] Ingress
 - [ ] [RemoteUneash](./docs/remoteunleash.md)
-- [ ] [ApiToken](./docs/apitoken.md)
+- [x] [ApiToken](./docs/apitoken.md)
 - [ ] [Federation](./docs/federation.md)
 - ~~[ ] Project~~*
 - ~~[ ] Environment~~*
@@ -121,13 +119,13 @@ which provides a reconcile function responsible for synchronizing resources unti
 make install
 ```
 
-2. Run your controller (this will run in the foreground, so switch to a new terminal if you want to leave it running):
+2. Run the controller in your cluster:
+
+Since the controller needs to reach the Unleash instance it can not run locally, but must be deployed to the cluster.
 
 ```sh
-make run
+make docker-build deploy logs
 ```
-
-**NOTE:** You can also run this in one step by running: `make install run`
 
 ### Modifying the API definitions
 
