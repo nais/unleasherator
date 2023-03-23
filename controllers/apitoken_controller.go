@@ -239,7 +239,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	adminToken := string(adminSecret.Data[resources.EnvInitAdminAPIToken])
 	if adminToken == "" {
-		log.Error(err, "Unleash secret missing api key")
+		log.Error(err, "Unleash admin secret does not contain an api key")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
@@ -282,6 +282,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Failed to update ApiToken status")
 			return ctrl.Result{Requeue: true}, err
 		}
+
+		return ctrl.Result{Requeue: true}, err
 	}
 
 	if !exists {
