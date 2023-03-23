@@ -20,7 +20,7 @@ type ApiTokenSpec struct {
 
 	// Environment is the environment to create the token for.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default=default
+	// +kubebuilder:default=development
 	Environment string `json:"environment,omitempty"`
 
 	// Projects is the list of projects to create the token for.

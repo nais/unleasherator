@@ -31,8 +31,16 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 	}, nil
 }
 
+func (c *Client) requestURL(requestPath string) *url.URL {
+	req := new(url.URL)
+	*req = c.URL
+	req.Path = path.Join(c.URL.Path, requestPath)
+
+	return req
+}
+
 func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
-	requestURL := path.Join(c.URL.String(), requestPath)
+	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
 
 	client := &http.Client{}
@@ -69,7 +77,7 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 }
 
 func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) {
-	requestURL := path.Join(c.URL.String(), requestPath)
+	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "POST"
 	requestBody, err := json.Marshal(p)
 	if err != nil {
@@ -99,7 +107,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 	}
 
 	if res.StatusCode != 201 {
-		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)
+		return res, fmt.Errorf("unexpected http status code %d with body %s", res.StatusCode, string(body))
 	}
 
 	err = json.Unmarshal(body, v)

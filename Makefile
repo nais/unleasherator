@@ -17,7 +17,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: generate manifests helm build 
+all: generate manifests helm build
 
 ##@ General
 
@@ -119,11 +119,12 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | kubectl apply -f -
+	$(KUSTOMIZE) build config/localhost | kubectl apply -f -
 
 .PHONY: restart
 restart: manifests kustomize ## Restart controller in the K8s cluster specified in ~/.kube/config.
 	kubectl rollout restart deployment/unleasherator-controller-manager -n unleasherator-system
+	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
 
 .PHONY: logs
 logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
