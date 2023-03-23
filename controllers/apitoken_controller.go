@@ -197,6 +197,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if !unleash.Status.IsReady() {
+		if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+			log.Error(err, "Failed to get ApiToken")
+			return ctrl.Result{}, err
+		}
+
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
