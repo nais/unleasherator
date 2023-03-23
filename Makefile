@@ -17,7 +17,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: generate manifests helm build 
+all: generate manifests helm build
 
 ##@ General
 
@@ -124,6 +124,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 .PHONY: restart
 restart: manifests kustomize ## Restart controller in the K8s cluster specified in ~/.kube/config.
 	kubectl rollout restart deployment/unleasherator-controller-manager -n unleasherator-system
+	kubectl wait --for=condition=Available deployment/unleasherator-controller-manager -n unleasherator-system
 
 .PHONY: logs
 logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
