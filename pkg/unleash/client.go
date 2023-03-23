@@ -107,7 +107,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 	}
 
 	if res.StatusCode != 201 {
-		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)
+		return res, fmt.Errorf("unexpected http status code %d with body %s", res.StatusCode, string(body))
 	}
 
 	err = json.Unmarshal(body, v)
