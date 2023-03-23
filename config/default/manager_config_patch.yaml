@@ -9,7 +9,7 @@ spec:
       containers:
       - name: manager
         image: ghcr.io/nais/unleasherator:main
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         env:
         - name: OPERATOR_NAMESPACE
           valueFrom:
