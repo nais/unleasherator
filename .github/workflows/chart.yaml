@@ -1,4 +1,4 @@
-name: Build and push charts
+name: Helm Charts
 on:
   pull_request:
     branches:
@@ -13,8 +13,16 @@ on:
     - 'charts/**'
     - '.github/workflows/chart.yaml'
 
+env:
+  PYTHON_VERSION: '3.9'
+  HELM_VERSION: v3.11.2
+  ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
+  ARTIFACT_REPO: nais-io/nais
+  SERVICE_ACCOUNT: gh-unleasherator@nais-io.iam.gserviceaccount.com
+
 jobs:
   lint-test:
+    name: Lint and test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,11 +33,11 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v3
         with:
-          version: v3.11.2
+          version: ${{ env.HELM_VERSION }}
 
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: ${{ env.PYTHON_VERSION }}
           check-latest: true
 
       - name: Set up chart-testing
@@ -56,3 +64,43 @@ jobs:
         run: |
           helm install unleasherator-crds ./charts/unleasherator-crds --wait
           ct install --charts ./charts/unleasherator --target-branch ${{ github.event.repository.default_branch }}
+  push:
+    permissions:
+      contents: read
+      id-token: write
+    name: Build and push
+    runs-on: ubuntu-latest
+    needs: lint-test
+    steps:
+      - uses: actions/checkout@v3
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1.0.0
+        with:
+          workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+
+      - name: Log in to Google Artifact Registry
+        run: |
+          echo '${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin https://${{ env.ARTIFACT_REGISTRY }}
+
+      - uses: azure/setup-helm@v3
+        name: Setup Helm
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Build Charts
+        run: |
+          helm package ./charts/unleasherator-crds -d ./charts/unleasherator-crds
+          helm package ./charts/unleasherator -d ./charts/unleasherator
+
+      - name: Push Chart
+        if: github.event_name == 'push' and github.ref == 'refs/heads/main'
+        run: |
+          helm push ./charts/unleasherator-crds/*.tgz oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}
+          helm push ./charts/unleasherator/*.tgz oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}
