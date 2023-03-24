@@ -7,7 +7,7 @@ concurrency:
 on:
   push:
     branches: [ "main" ]
-    paths: &paths
+    paths:
       - "Makefile"
       - "Dockerfile"
       - "config/**"
@@ -17,7 +17,14 @@ on:
       - .github/workflows/build-and-deploy.yml
   pull_request:
     branches: [ "main" ]
-    paths: *paths
+    paths:
+      - "Makefile"
+      - "Dockerfile"
+      - "config/**"
+      - "go.mod"
+      - "go.sum"
+      - "**.go"
+      - .github/workflows/build-and-deploy.yml
 
 env:
   GHCR_REGISTRY: ghcr.io
