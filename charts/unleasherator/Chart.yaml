@@ -4,3 +4,6 @@ description: A Helm chart for Unleasherator
 type: application
 version: 1.0.0
 appVersion: "development"
+maintainers:
+  - name: "nais"
+    email: "nais@nav.no"
