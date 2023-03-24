@@ -18,13 +18,14 @@ concurrency:
 on:
   push:
     branches: [ "main" ]
-    paths:
+    paths: &paths
       - "go.mod"
       - "go.sum"
       - "**.go"
       - .github/workflows/codeql.yml
   pull_request:
     branches: [ "main" ]
+    paths: *paths
   schedule:
     - cron: '32 4 * * 1'
 
