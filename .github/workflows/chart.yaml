@@ -1,46 +1,53 @@
 name: Build and push charts
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
-      - master
+      - main
     paths:
     - 'charts/**'
     - '.github/workflows/chart.yaml'
 
 jobs:
-  build:
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-    name: Build and push
+  lint-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-
-      - id: 'auth'
-        name: 'Authenticate to Google Cloud'
-        uses: 'google-github-actions/auth@v0.6.0'
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-          workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: 'gh-naiserator@nais-io.iam.gserviceaccount.com'
-          token_format: 'access_token'
+          fetch-depth: 0
 
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v0'
-
-      - name: 'Log in to Google Artifact Registry'
-        run: |-
-          echo '${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin https://europe-north1-docker.pkg.dev
-
-      - uses: azure/setup-helm@v1
-        name: 'Setup Helm'
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
         with:
-          version: '3.8.0'
+          version: v3.11.2
 
-      - name: Build Chart
-        run: |-
-          helm package charts
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          check-latest: true
 
-      - name: Push Chart
-        run: |-
-          helm push naiserator*.tgz oci://europe-north1-docker.pkg.dev/nais-io/nais
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.4.0
+
+      - name: Run chart-testing (list-changed)
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --target-branch ${{ github.event.repository.default_branch }})
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run chart-testing (lint)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct lint --target-branch ${{ github.event.repository.default_branch }}
+
+      - name: Create kind cluster
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: helm/kind-action@v1.4.0
+
+      - name: Run chart-testing (install)
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct install --target-branch ${{ github.event.repository.default_branch }}
