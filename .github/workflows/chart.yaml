@@ -100,7 +100,7 @@ jobs:
           helm package ./charts/unleasherator -d ./charts/unleasherator
 
       - name: Push Chart
-        if: github.event_name == 'push' and github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           helm push ./charts/unleasherator-crds/*.tgz oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}
           helm push ./charts/unleasherator/*.tgz oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}
