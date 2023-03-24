@@ -1,12 +1,22 @@
 name: Build and Deploy
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
-  pull_request:
-    branches:
-      - main
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+    paths:
+      - "Makefile"
+      - "Dockerfile"
+      - "config/**"
+      - "go.mod"
+      - "go.sum"
+      - "**.go"
+      - .github/workflows/build-and-deploy.yml
+  pull_request:
+    branches: [ "main" ]
 
 env:
   GHCR_REGISTRY: ghcr.io
