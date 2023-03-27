@@ -351,16 +351,25 @@ func (r *UnleashReconciler) reconcileIngress(
 
 	existingIngress := &networkingv1.Ingress{}
 	err = r.Get(ctx, unleash.NamespacedName(), existingIngress)
-	if err != nil && errors.IsNotFound(err) {
+
+	if err != nil && !errors.IsNotFound(err) {
+		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
+	} else if ingress.Enable == false {
+		if err == nil {
+			err = r.Delete(ctx, existingIngress)
+			if err != nil {
+				log.Error(err, "Failed to delete Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	} else if err != nil && errors.IsNotFound(err) {
 		log.Info("Creating Ingress", "Ingress.Namespace", newIngress.Namespace, "Ingress.Name", newIngress.Name)
 		err = r.Create(ctx, newIngress)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
-		return ctrl.Result{}, err
 	} else if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) {
 		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 		existingIngress.Spec = newIngress.Spec
@@ -374,19 +383,15 @@ func (r *UnleashReconciler) reconcileIngress(
 }
 
 func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
-	if unleash.Spec.WebIngress.Enable {
-		res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, "web", ctx, log)
-		if err != nil || res.Requeue {
-			return res, err
+	res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, "web", ctx, log)
+	if err != nil || res.Requeue {
+		return res, err
 
-		}
 	}
 
-	if unleash.Spec.ApiIngress.Enable {
-		res, err := r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, "api", ctx, log)
-		if err != nil || res.Requeue {
-			return res, err
-		}
+	res, err = r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, "api", ctx, log)
+	if err != nil || res.Requeue {
+		return res, err
 	}
 	return ctrl.Result{}, nil
 }
