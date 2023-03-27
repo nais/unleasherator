@@ -337,7 +337,11 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 	return existingNetPol, ctrl.Result{}, nil
 }
 
-func (r *UnleashReconciler) reconcileIngress(unleash *unleashv1.Unleash, ingress *unleashv1.IngressConfig, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileIngress(
+	unleash *unleashv1.Unleash,
+	ingress *unleashv1.IngressConfig,
+	ctx context.Context,
+	log logr.Logger) (ctrl.Result, error) {
 	newIngress, err := resources.IngressForUnleash(unleash, ingress, r.Scheme)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -364,19 +368,21 @@ func (r *UnleashReconciler) reconcileIngress(unleash *unleashv1.Unleash, ingress
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{}, nil
 }
 
 func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
 	if unleash.Spec.WebIngress.Enable {
 		res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, ctx, log)
-		if err != nil {
+		if err != nil || res.Requeue {
 			return res, err
+
 		}
 	}
+
 	if unleash.Spec.ApiIngress.Enable {
 		res, err := r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, ctx, log)
-		if err != nil {
+		if err != nil || res.Requeue {
 			return res, err
 		}
 	}
