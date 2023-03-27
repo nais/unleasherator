@@ -42,11 +42,11 @@ type UnleashSpec struct {
 
 	// WebIngress defines the ingress configuration for the web interface
 	// +kubebuilder:validation:Optional
-	WebIngress []IngressConfig `json:"webIngress,omitempty"`
+	WebIngress IngressConfig `json:"webIngress,omitempty"`
 
 	// ApiIngress defines the ingress for the endpoints of Unleash
 	// +kubebuilder:validation:Optional
-	ApiIngress []IngressConfig `json:"apiIngress,omitempty"`
+	ApiIngress IngressConfig `json:"apiIngress,omitempty"`
 
 	// ExtraEnv is a list of extra environment variables to add to the deployment
 	// +kubebuilder:validation:Optional
@@ -87,7 +87,7 @@ type IngressConfig struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// Class is the ingress class to use for the ingress
-	Class string `json:"class,omitempty`
+	Class string `json:"class,omitempty"`
 }
 
 // IngressTLSConfig defines the TLS configuration for the ingress

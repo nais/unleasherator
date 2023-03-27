@@ -232,7 +232,15 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	} else if res.Requeue {
 		return res, nil
 	}
-	// ...
+
+	res, err = r.reconcileIngresses(unleash, ctx, log)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Ingresses for Unleash")
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
 	err = r.testConnection(unleash, ctx, log)
 	if err != nil {
 		log.Error(err, "Failed to test connection to Unleash")
@@ -327,6 +335,52 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 
 	log.Info("Skip reconcile: NetworkPolicy up to date", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 	return existingNetPol, ctrl.Result{}, nil
+}
+
+func (r *UnleashReconciler) reconcileIngress(unleash *unleashv1.Unleash, ingress *unleashv1.IngressConfig, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
+	newIngress, err := resources.IngressForUnleash(unleash, ingress, r.Scheme)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	existingIngress := &networkingv1.Ingress{}
+	err = r.Get(ctx, unleash.NamespacedName(), existingIngress)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating Ingress", "Ingress.Namespace", newIngress.Namespace, "Ingress.Name", newIngress.Name)
+		err = r.Create(ctx, newIngress)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	} else if err != nil {
+		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
+		return ctrl.Result{}, err
+	} else if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) {
+		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
+		existingIngress.Spec = newIngress.Spec
+		err = r.Update(ctx, existingIngress)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
+	if unleash.Spec.WebIngress.Enable {
+		res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, ctx, log)
+		if err != nil {
+			return res, err
+		}
+	}
+	if unleash.Spec.ApiIngress.Enable {
+		res, err := r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, ctx, log)
+		if err != nil {
+			return res, err
+		}
+	}
+	return ctrl.Result{}, nil
 }
 
 // reconcileSecrets will ensure that the required secrets are created
