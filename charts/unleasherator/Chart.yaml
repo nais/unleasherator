@@ -1,9 +1,9 @@
 apiVersion: v2
-name: unleasherator
-description: A Helm chart for Unleasherator
-type: application
-version: 1.0.0
 appVersion: "development"
+description: A Helm chart for Unleasherator
 maintainers:
-  - name: "nais"
-    email: "nais@nav.no"
+  - email: "nais@nav.no"
+    name: "nais"
+name: unleasherator
+type: application
+version: 1.1.0

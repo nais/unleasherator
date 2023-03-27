@@ -1,9 +1,9 @@
 apiVersion: v2
-name: unleasherator-crds
-description: A Helm chart for Unleasherator CRDs
-type: application
-version: 1.0.0
 appVersion: "development"
+description: A Helm chart for Unleasherator CRDs
 maintainers:
-  - name: "nais"
-    email: "nais@nav.no"
+  - email: "nais@nav.no"
+    name: "nais"
+name: unleasherator-crds
+type: application
+version: 1.1.0

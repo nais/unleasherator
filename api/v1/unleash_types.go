@@ -40,9 +40,13 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Required
 	Database DatabaseConfig `json:"database,omitempty"`
 
-	// Ingress defines the ingress configuration
+	// WebIngress defines the ingress configuration for the web interface
 	// +kubebuilder:validation:Optional
-	Ingress []IngressConfig `json:"ingress,omitempty"`
+	WebIngress IngressConfig `json:"webIngress,omitempty"`
+
+	// ApiIngress defines the ingress for the endpoints of Unleash
+	// +kubebuilder:validation:Optional
+	ApiIngress IngressConfig `json:"apiIngress,omitempty"`
 
 	// ExtraEnv is a list of extra environment variables to add to the deployment
 	// +kubebuilder:validation:Optional
@@ -67,6 +71,9 @@ type UnleashSpec struct {
 
 // IngressConfig defines the ingress configuration
 type IngressConfig struct {
+	// Enable enables the ingress
+	// +kubebuilder:default=false
+	Enable bool `json:"enable,omitempty"`
 	// Host is the hostname to use for the ingress
 	Host string `json:"host,omitempty"`
 

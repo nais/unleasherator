@@ -239,6 +239,34 @@ func labelsForUnleash(name string) map[string]string {
 	}
 }
 
+// IngressForUnleash returns the Ingress for Unleash Deployment
+func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, name string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
+
+	labels := labelsForUnleash(unleash.Name)
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", unleash.Name, name),
+			Namespace: unleash.Namespace,
+			Labels:    labels,
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: &config.Class,
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: config.Host,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{},
+					},
+				},
+			},
+		},
+	}
+	if err := ctrl.SetControllerReference(unleash, ingress, scheme); err != nil {
+		return nil, err
+	}
+	return ingress, nil
+}
+
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
 // @TODO add netpol for ingress
 // @TODO add netpol for same namespace

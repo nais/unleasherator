@@ -35,7 +35,7 @@ spec:
             description: ApiTokenSpec defines the desired state of ApiToken
             properties:
               environment:
-                default: default
+                default: development
                 description: Environment is the environment to create the token for.
                 type: string
               projects:

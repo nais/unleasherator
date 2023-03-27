@@ -344,13 +344,8 @@ func (in *UnleashList) DeepCopyObject() runtime.Object {
 func (in *UnleashSpec) DeepCopyInto(out *UnleashSpec) {
 	*out = *in
 	out.Database = in.Database
-	if in.Ingress != nil {
-		in, out := &in.Ingress, &out.Ingress
-		*out = make([]IngressConfig, len(*in))
-		for i := range *in {
-			(*in)[i].DeepCopyInto(&(*out)[i])
-		}
-	}
+	in.WebIngress.DeepCopyInto(&out.WebIngress)
+	in.ApiIngress.DeepCopyInto(&out.ApiIngress)
 	if in.ExtraEnvVars != nil {
 		in, out := &in.ExtraEnvVars, &out.ExtraEnvVars
 		*out = make([]corev1.EnvVar, len(*in))
