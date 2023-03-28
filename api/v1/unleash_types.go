@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -48,6 +49,10 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Optional
 	ApiIngress IngressConfig `json:"apiIngress,omitempty"`
 
+	// NetworkPolicy defines the network policy configuration
+	// +kubebuilder:validation:Optional
+	NetworkPolicy NetworkPolicyConfig `json:"networkPolicy,omitempty"`
+
 	// ExtraEnv is a list of extra environment variables to add to the deployment
 	// +kubebuilder:validation:Optional
 	ExtraEnvVars []corev1.EnvVar `json:"extraEnvVars,omitempty"`
@@ -69,36 +74,73 @@ type UnleashSpec struct {
 	ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
 }
 
+// NetworkPolicyConfig defines the network policy configuration
+type NetworkPolicyConfig struct {
+	// Enable enables the network policy
+	// +kubebuilder:default=true
+	Enabled bool `json:"enable,omitempty"`
+
+	// AllowAllFromCluster enables all ingress traffic from the same cluster
+	// +kubebuilder:default=false
+	AllowAllFromCluster bool `json:"allowAll,omitempty"`
+
+	// AllowAllFromSameNamespace enables all ingress traffic from the same namespace
+	// +kubebuilder:default=false
+	AllowAllFromSameNamespace bool `json:"allowAllSameNamespace,omitempty"`
+
+	// AllowAllFromNamespaces is a list of namespaces to allow ingress traffic from
+	// +kubebuilder:validation:Optional
+	AllowAllFromNamespaces []string `json:"allowFromNamespaces,omitempty"`
+
+	// ExtraIngressRules is a list of extra ingress rules to add to the network policy
+	// +kubebuilder:validation:Optional
+	ExtraIngressRules []networkingv1.NetworkPolicyIngressRule `json:"extraIngressRules,omitempty"`
+
+	// ExtraEgressRules is a list of extra egress rules to add to the network policy
+	// +kubebuilder:validation:Optional
+	ExtraEgressRules []networkingv1.NetworkPolicyEgressRule `json:"extraEgressRules,omitempty"`
+}
+
 // IngressConfig defines the ingress configuration
 type IngressConfig struct {
 	// Enable enables the ingress
 	// +kubebuilder:default=false
-	Enable bool `json:"enable,omitempty"`
+	Enabled bool `json:"enable,omitempty"`
+
 	// Host is the hostname to use for the ingress
+	// +kubebuilder:validation:Optional
 	Host string `json:"host,omitempty"`
 
 	// Path is the path to use for the ingress
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default="/"
 	Path string `json:"path,omitempty"`
 
 	// TLS is the TLS configuration to use for the ingress
+	// +kubebuilder:validation:Optional
 	TLS *IngressTLSConfig `json:"tls,omitempty"`
 
 	// Annotations is a map of annotations to add to the ingress
+	// +kubebuilder:validation:Optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// Class is the ingress class to use for the ingress
+	// +kubebuilder:validation:Optional
 	Class string `json:"class,omitempty"`
 }
 
 // IngressTLSConfig defines the TLS configuration for the ingress
 type IngressTLSConfig struct {
 	// SecretName is the name of the secret containing the TLS certificate
+	// +kubebuilder:validation:Required
 	SecretName string `json:"secretName,omitempty"`
 
 	// SecretCertKey is the key in the secret containing the TLS certificate
+	// +kubebuilder:validation:Required
 	SecretCertKey string `json:"secretCertKey,omitempty"`
 
 	// SecretKeyKey is the key in the secret containing the TLS key
+	// +kubebuilder:validation:Required
 	SecretKeyKey string `json:"secretKeyKey,omitempty"`
 }
 

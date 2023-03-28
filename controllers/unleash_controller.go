@@ -225,7 +225,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
-	_, res, err = r.reconcileNetworkPolicy(unleash, ctx, log)
+	res, err = r.reconcileNetworkPolicy(unleash, ctx, log)
 	if err != nil {
 		log.Error(err, "Failed to reconcile NetworkPolicy for Unleash")
 		return ctrl.Result{}, err
@@ -305,46 +305,67 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 }
 
 // reconcileSecrets will ensure that the secrets required for the Unleash deployment are created.
-func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*networkingv1.NetworkPolicy, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
 	newNetPol, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
 	if err != nil {
-		return nil, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
 	existingNetPol := &networkingv1.NetworkPolicy{}
 	err = r.Get(ctx, unleash.NamespacedName(), existingNetPol)
+
+	if err != nil && !errors.IsNotFound(err) {
+		log.Error(err, "Failed to get NetworkPolicy for Unleash", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+		return ctrl.Result{}, err
+	}
+
+	// If the netpol is not enabled, we delete it if it exists.
+	if !unleash.Spec.NetworkPolicy.Enabled {
+		if err == nil {
+			log.Info("Deleting NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+			err = r.Delete(ctx, existingNetPol)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// If the netpol is enabled and does not exist, we create it.
 	if err != nil && errors.IsNotFound(err) {
 		log.Info("Creating NetworkPolicy", "NetworkPolicy.Namespace", newNetPol.Namespace, "NetworkPolicy.Name", newNetPol.Name)
 		err = r.Create(ctx, newNetPol)
 		if err != nil {
-			return existingNetPol, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
-		return newNetPol, ctrl.Result{Requeue: true}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get NetworkPolicy for Unleash", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
-		return existingNetPol, ctrl.Result{}, err
-	} else if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) {
-		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
-		existingNetPol.Spec = newNetPol.Spec
-		err = r.Update(ctx, existingNetPol)
-		if err != nil {
-			return existingNetPol, ctrl.Result{}, err
-		}
-		return existingNetPol, ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{Requeue: true}, nil
 	}
 
-	log.Info("Skip reconcile: NetworkPolicy up to date", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
-	return existingNetPol, ctrl.Result{}, nil
+	// If the netpol is enabled and exists, we update it if it is not up to date.
+	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.Labels, existingNetPol.Labels) {
+		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+		existingNetPol.Spec = newNetPol.Spec
+		existingNetPol.Labels = newNetPol.Labels
+		err = r.Update(ctx, existingNetPol)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	return ctrl.Result{}, nil
 }
 
+// reconcileSecrets will ensure that the secrets required for the Unleash deployment are created.
 func (r *UnleashReconciler) reconcileIngress(
 	unleash *unleashv1.Unleash,
 	ingress *unleashv1.IngressConfig,
-	name string,
+	nameSuffix string,
 	ctx context.Context,
 	log logr.Logger) (ctrl.Result, error) {
 
-	newIngress, err := resources.IngressForUnleash(unleash, ingress, name, r.Scheme)
+	newIngress, err := resources.IngressForUnleash(unleash, ingress, nameSuffix, r.Scheme)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -354,34 +375,49 @@ func (r *UnleashReconciler) reconcileIngress(
 
 	if err != nil && !errors.IsNotFound(err) {
 		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
-	} else if ingress.Enable == false {
+		return ctrl.Result{}, err
+	}
+
+	// If the ingress is not enabled, we delete the existing one if it exists.
+	if !ingress.Enabled {
 		if err == nil {
+			log.Info("Deleting Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 			err = r.Delete(ctx, existingIngress)
 			if err != nil {
 				log.Error(err, "Failed to delete Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 				return ctrl.Result{}, err
 			}
+			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, nil
-	} else if err != nil && errors.IsNotFound(err) {
+	}
+
+	// If the ingress is enabled and does not exist, we create it.
+	if err != nil && errors.IsNotFound(err) {
 		log.Info("Creating Ingress", "Ingress.Namespace", newIngress.Namespace, "Ingress.Name", newIngress.Name)
 		err = r.Create(ctx, newIngress)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
-	} else if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) {
+	}
+
+	// If the ingress is enabled and exists, we update it if it has changed.
+	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepDerivative(newIngress.Labels, existingIngress.Labels) {
 		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 		existingIngress.Spec = newIngress.Spec
+		existingIngress.Labels = newIngress.Labels
 		err = r.Update(ctx, existingIngress)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
+
 	return ctrl.Result{}, nil
 }
 
+// reconcileIngresses will ensure that the required ingresses are created
 func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
 	res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, "web", ctx, log)
 	if err != nil || res.Requeue {
@@ -393,6 +429,7 @@ func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx c
 	if err != nil || res.Requeue {
 		return res, err
 	}
+
 	return ctrl.Result{}, nil
 }
 
