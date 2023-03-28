@@ -563,6 +563,7 @@ func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx con
 }
 
 // testConnection will test the connection to the Unleash instance
+// @TODO use unleash client sdk
 func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
 	// Get admin token from the secret
 	secret := &corev1.Secret{}
@@ -597,7 +598,7 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Failed to get a 200 OK response from the Unleash instance")
+		log.Error(err, "Expected 200 OK, got", "status", res.StatusCode, "statusText", res.Status, "url", url, "body", res.Body)
 		return err
 	}
 
