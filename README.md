@@ -23,6 +23,10 @@ Unleasherator is a Kubernetes operator for managing Unleash instances and API to
 
 ### Creating an Unleash instance
 
+The following example can be used with [bitnami/postgresql][bitnami-postgresql] helm chart to create an Unleash instance with a local postgresql database.
+
+[bitnami-postgresql]: https://artifacthub.io/packages/helm/bitnami/postgresql
+
 ```yaml
 apiVersion: unleash.nais.io/v1alpha1
 kind: Unleash
@@ -38,6 +42,17 @@ spec:
     port: "5432"
     user: postgres
     ssl: "false"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
 ```
 
 Sequence of events:

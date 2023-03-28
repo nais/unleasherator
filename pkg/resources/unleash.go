@@ -26,6 +26,8 @@ const (
 	DefaultUnleashVersion = "4.19.1"
 	// DefaultUnleashPort is the default port used for the Unleash deployment
 	DefaultUnleashPort = 4242
+	// DefaultUnleashPortName is the default port name used for the Unleash deployment
+	DefaultUnleashPortName = "http"
 )
 
 const (
@@ -93,6 +95,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
+					Name:       DefaultUnleashPortName,
 					Port:       80,
 					TargetPort: intstr.FromInt(DefaultUnleashPort),
 				},
@@ -197,7 +200,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: DefaultUnleashPort,
-							Name:          "unleash",
+							Name:          DefaultUnleashPortName,
 						}},
 						// Command: []string{"unleash", "-m=64", "-o", "modern", "-v"},
 						// Secret environment variables
@@ -241,8 +244,8 @@ func labelsForUnleash(name string) map[string]string {
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, name string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
-
 	labels := labelsForUnleash(unleash.Name)
+	pathType := networkingv1.PathTypeImplementationSpecific
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", unleash.Name, name),
@@ -255,7 +258,22 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConf
 				{
 					Host: config.Host,
 					IngressRuleValue: networkingv1.IngressRuleValue{
-						HTTP: &networkingv1.HTTPIngressRuleValue{},
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     config.Path,
+									PathType: &pathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: unleash.Name,
+											Port: networkingv1.ServiceBackendPort{
+												Name: DefaultUnleashPortName,
+											},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -268,8 +286,6 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConf
 }
 
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
-// @TODO add netpol for ingress
-// @TODO add netpol for same namespace
 func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
 	labels := labelsForUnleash(unleash.Name)
 
@@ -282,6 +298,10 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: labels,
+			},
+			PolicyTypes: []networkingv1.PolicyType{
+				networkingv1.PolicyTypeIngress,
+				networkingv1.PolicyTypeEgress,
 			},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
@@ -299,6 +319,80 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 			},
 		},
 	}
+
+	if unleash.Spec.NetworkPolicy.AllowDNS {
+		np.Spec.Egress = append(np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						//MatchLabels: map[string]string{
+						//	"kubernetes.io/metadata.name": "kube-system",
+						//},
+					},
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"k8s-app": "kube-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Protocol: &[]corev1.Protocol{corev1.ProtocolUDP}[0],
+					Port: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 53,
+					},
+				},
+				{
+					Protocol: &[]corev1.Protocol{corev1.ProtocolTCP}[0],
+					Port: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 53,
+					},
+				},
+			},
+		})
+	}
+
+	if unleash.Spec.NetworkPolicy.AllowAllFromSameNamespace {
+		np.Spec.Ingress = append(np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{},
+				},
+			},
+		})
+	}
+
+	if unleash.Spec.NetworkPolicy.AllowAllFromCluster {
+		np.Spec.Ingress = append(np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+			From: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{},
+				},
+			},
+		})
+	}
+
+	if len(unleash.Spec.NetworkPolicy.AllowAllFromNamespaces) > 0 {
+		for _, ns := range unleash.Spec.NetworkPolicy.AllowAllFromNamespaces {
+			np.Spec.Ingress = append(np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+				From: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": ns,
+							},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	np.Spec.Egress = append(np.Spec.Egress, unleash.Spec.NetworkPolicy.ExtraEgressRules...)
+	np.Spec.Ingress = append(np.Spec.Ingress, unleash.Spec.NetworkPolicy.ExtraIngressRules...)
 
 	// Set the ownerRef for the NetworkPolicy
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
