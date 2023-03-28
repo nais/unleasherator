@@ -13,46 +13,88 @@ spec:
   existingServiceAccountName: "bifrost-unleash-sql-user"
   size: 1
   database:
+    host: "localhost"
+    port: "5432"
+    secretDatabaseNameKey: "POSTGRES_DB"
     secretName: "unleash-sql-proxy-sample"
     secretPassKey: "POSTGRES_PASSWORD"
-    host: "localhost"
-    secretDatabaseNameKey: "POSTGRES_DB"
-    port: "5432"
     secretUserKey: "POSTGRES_USER"
     ssl: "false"
   networkPolicy:
-    enabled: true
     allowDNS: true
+    enabled: true
     extraEgressRules:
-      - to:
+      - ports:
+          - port: 5432
+            protocol: TCP
+        to:
           - ipBlock:
               cidr: 34.88.153.80/32
-        ports:
-          - protocol: TCP
-            port: 5432
       #v For clusters running GKE version 1.21.0-gke.1000 and later,
-      - to:
+      - ports:
+          - port: 988
+            protocol: TCP
+        to:
           - ipBlock:
               cidr: 169.254.169.252/32
-        ports:
-          - protocol: TCP
-            port: 988
       #v For clusters running GKE versions earlier than 1.21.0-gke.1000
-      - to:
+      - ports:
+          - port: 988
+            protocol: TCP
+        to:
           - ipBlock:
               cidr: 127.0.0.1/32
-        ports:
-          - protocol: TCP
-            port: 988
       #v For clusters running GKE Dataplane V2
-      - to:
+      - ports:
+          - port: 80
+            protocol: TCP
+        to:
           - ipBlock:
               cidr: 169.254.169.254/32
-        ports:
-          - protocol: TCP
-            port: 80
 
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 142.250.74.170/32
 
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 142.250.74.138/32
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 216.58.207.202/32
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 172.217.21.170/32
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 142.250.74.74/32
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 142.250.74.42/32
+      - ports:
+          - port: 443
+            protocol: TCP
+        to:
+          - ipBlock:
+              cidr: 216.58.207.234/32
   webIngress:
     enabled: true
     host: "unleash-sql-proxy-sample.dev-nais.cloud.nais.io"
