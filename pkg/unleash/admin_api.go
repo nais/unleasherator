@@ -1,5 +1,7 @@
 package unleash
 
+import "net/http"
+
 type InstanceAdminStatsResult struct {
 	InstanceID        string  `json:"instanceId"`
 	Timestamp         string  `json:"timestamp"`
@@ -20,15 +22,15 @@ type InstanceAdminStatsResult struct {
 }
 
 // GetInstanceAdminStats returns instance admin stats (admin only endpoint - requires admin token).
-func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, error) {
+func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Response, error) {
 	adminStats := &InstanceAdminStatsResult{}
 
-	_, err := c.HTTPGet("/api/admin/instance-admin/statistics", adminStats)
+	res, err := c.HTTPGet("/api/admin/instance-admin/statistics", adminStats)
 	if err != nil {
-		return adminStats, err
+		return adminStats, res, err
 	}
 
-	return adminStats, nil
+	return adminStats, res, nil
 }
 
 type APIToken struct {

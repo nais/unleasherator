@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -42,6 +41,7 @@ import (
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/resources"
+	unleashapi "github.com/nais/unleasherator/pkg/unleash"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
@@ -562,54 +562,46 @@ func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx con
 	return existingSvc, ctrl.Result{}, nil
 }
 
-// testConnection will test the connection to the Unleash instance
-// @TODO use unleash client sdk
-func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
-	// Get admin token from the secret
+func (r *UnleashReconciler) adminToken(unleash *unleashv1.Unleash, ctx context.Context) (string, error) {
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), secret)
 	if err != nil {
-		log.Error(err, "Failed to get the secret")
-		return err
+		return "", err
 	}
 
-	// Get the admin token
-	adminToken := string(secret.Data[resources.EnvInitAdminAPIToken])
+	return string(secret.Data[resources.EnvInitAdminAPIToken]), nil
+}
 
-	// Check if the Unleash server is up and running
-	url := fmt.Sprintf("%s/api/admin/instance-admin/statistics", resources.UnleashURL(unleash))
-	method := "GET"
-
-	client := &http.Client{}
-	req, err := http.NewRequest(method, url, nil)
+func (r *UnleashReconciler) unleashClient(unleash *unleashv1.Unleash, ctx context.Context) (*unleashapi.Client, error) {
+	adminToken, err := r.adminToken(unleash, ctx)
 	if err != nil {
-		log.Error(err, "Failed to create a new request to the Unleash instance")
-		return err
+		return nil, err
 	}
 
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", adminToken)
+	return unleashapi.NewClient(unleash.GetURL(), adminToken)
+}
 
-	res, err := client.Do(req)
+// testConnection will test the connection to the Unleash instance
+func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
+	client, err := r.unleashClient(unleash, ctx)
 	if err != nil {
-		log.Error(err, "Failed to send the request to the Unleash instance")
+		log.Error(err, "Failed to set up client for Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
 		return err
 	}
-	defer res.Body.Close()
+
+	stats, res, err := client.GetInstanceAdminStats()
+
+	if err != nil {
+		log.Error(err, "Failed to get instance stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+		return err
+	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Expected 200 OK, got", "status", res.StatusCode, "statusText", res.Status, "url", url, "body", res.Body)
+		log.Error(err, "Failed to get instance stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
 		return err
 	}
 
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Error(err, "Failed to read the response from the Unleash instance")
-		return err
-	}
-
-	log.Info("Response from Unleash instance", "body", string(body))
-
+	log.Info("Successfully connected to Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "stats", stats)
 	return nil
 }
 
