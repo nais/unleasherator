@@ -243,12 +243,12 @@ func labelsForUnleash(name string) map[string]string {
 }
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
-func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, name string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
+func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
 	labels := labelsForUnleash(unleash.Name)
 	pathType := networkingv1.PathTypeImplementationSpecific
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", unleash.Name, name),
+			Name:      unleash.NamespacedNameWithSuffix(nameSuffix).Name,
 			Namespace: unleash.Namespace,
 			Labels:    labels,
 		},

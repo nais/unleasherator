@@ -221,6 +221,13 @@ func (u *Unleash) NamespacedName() types.NamespacedName {
 	}
 }
 
+func (u *Unleash) NamespacedNameWithSuffix(suffix string) types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: u.Namespace,
+		Name:      fmt.Sprintf("%s-%s", u.Name, suffix),
+	}
+}
+
 func (u *Unleash) NamespacedOperatorSecretName(operatorNamespace string) types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: operatorNamespace,
