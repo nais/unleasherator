@@ -12,10 +12,13 @@ The operator will create a deployment with the Unleash server and a service to e
 
 - [x] Deployment
   - [ ] Custom Image
-  - [ ] CloudSQL Proxy
+  - [x] Extra containers
+  - [x] Extra volumes
+  - [x] Extra environment variables
 - [x] Secret
 - [x] Service
-- [ ] Ingress
+- [x] Ingress
+- [x] Network Policy
 
 ## Spec
 
