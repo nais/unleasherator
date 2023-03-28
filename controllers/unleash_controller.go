@@ -371,7 +371,7 @@ func (r *UnleashReconciler) reconcileIngress(
 	}
 
 	existingIngress := &networkingv1.Ingress{}
-	err = r.Get(ctx, unleash.NamespacedName(), existingIngress)
+	err = r.Get(ctx, unleash.NamespacedNameWithSuffix(nameSuffix), existingIngress)
 
 	if err != nil && !errors.IsNotFound(err) {
 		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
