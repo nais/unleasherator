@@ -25,23 +25,47 @@ spec:
     allowDNS: true
     extraEgressRules:
       - to:
-          - IPBlock:
+          - ipBlock:
               cidr: 34.88.153.80/32
         ports:
           - protocol: TCP
             port: 5432
+      #v For clusters running GKE version 1.21.0-gke.1000 and later,
+      - to:
+          - ipBlock:
+              cidr: 169.254.169.252/32
+        ports:
+          - protocol: TCP
+            port: 988
+      #v For clusters running GKE versions earlier than 1.21.0-gke.1000
+      - to:
+          - ipBlock:
+              cidr: 127.0.0.1/32
+        ports:
+          - protocol: TCP
+            port:988
+      #v For clusters running GKE Dataplane V2
+      - to:
+          - ipBlock:
+              cidr: 169.254.169.254/32
+        ports:
+          - protocol: TCP
+            port: 80
+
+
   webIngress:
-    enabled: "true"
+    enabled: true
     host: "unleash-sql-proxy-sample.dev-nais.cloud.nais.io"
     path: "/"
     class: "nais-ingress-iap"
   apiIngress:
-    enabled: "true"
+    enabled: true
     host: "unleash-sql-proxy-sample-api.dev-nais.cloud.nais.io"
     path: "/api/"
     class: "nais-ingress"
 
-  extraContainers: - name: sql-proxy
+  extraContainers:
+    - name: sql-proxy
     # It is recommended to use the latest version of the Cloud SQL Auth Proxy
     # Make sure to update on a regular schedule!
       image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
