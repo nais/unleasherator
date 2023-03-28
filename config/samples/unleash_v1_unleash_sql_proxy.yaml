@@ -2,149 +2,77 @@ apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
   labels:
-    app.kubernetes.io/name: unleash
-    app.kubernetes.io/instance: unleash-sample
-    app.kubernetes.io/part-of: unleasherator
     app.kuberentes.io/managed-by: kustomize
     app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/instance: unleash-sample
+    app.kubernetes.io/name: unleash
+    app.kubernetes.io/part-of: unleasherator
   name: unleash-sql-proxy-sample
-  namespace: bifrost-unleash
 spec:
-  existingServiceAccountName: "bifrost-unleash-sql-user"
-  size: 1
-  database:
-    host: "localhost"
-    port: "5432"
-    secretDatabaseNameKey: "POSTGRES_DB"
-    secretName: "unleash-sql-proxy-sample"
-    secretPassKey: "POSTGRES_PASSWORD"
-    secretUserKey: "POSTGRES_USER"
-    ssl: "false"
-  networkPolicy:
-    allowDNS: true
-    enabled: true
-    extraEgressRules:
-      - ports:
-          - port: 5432
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 34.88.153.80/32
-      #v For clusters running GKE version 1.21.0-gke.1000 and later,
-      - ports:
-          - port: 988
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 169.254.169.252/32
-      #v For clusters running GKE versions earlier than 1.21.0-gke.1000
-      - ports:
-          - port: 988
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 127.0.0.1/32
-      #v For clusters running GKE Dataplane V2
-      - ports:
-          - port: 80
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 169.254.169.254/32
-
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 142.250.74.170/32
-
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 142.250.74.138/32
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 216.58.207.202/32
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 172.217.21.170/32
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 142.250.74.74/32
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 142.250.74.42/32
-      - ports:
-          - port: 443
-            protocol: TCP
-        to:
-          - ipBlock:
-              cidr: 216.58.207.234/32
-  webIngress:
-    enabled: true
-    host: "unleash-sql-proxy-sample.dev-nais.cloud.nais.io"
-    path: "/"
-    class: "nais-ingress-iap"
+  existingServiceAccountName: unleash-sql-proxy-sample
   apiIngress:
+    class: nais-ingress
     enabled: true
-    host: "unleash-sql-proxy-sample-api.dev-nais.cloud.nais.io"
-    path: "/api/"
-    class: "nais-ingress"
-
+    host: unleash-sql-proxy-sample-api.example.com
+    path: /api/
+  webIngress:
+    class: nais-ingress-iap
+    enabled: true
+    host: unleash-sql-proxy-sample.example.com
+    path: /
+  database:
+    host: localhost
+    port: "5432"
+    secretDatabaseNameKey: POSTGRES_DB
+    secretName: unleash-sql-proxy-sample
+    secretPassKey: POSTGRES_PASSWORD
+    secretUserKey: POSTGRES_USER
+    ssl: "false"
   extraContainers:
-    - name: sql-proxy
-    # It is recommended to use the latest version of the Cloud SQL Auth Proxy
-    # Make sure to update on a regular schedule!
-      image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
-      args:
-      # If connecting from a VPC-native GKE cluster, you can use the
-      # following flag to have the proxy connect over private IP
-      # - "--private-ip"
-
-      # Enable structured logging with LogEntry format:
-        - "--structured-logs"
-
-      # Replace DB_PORT with the port the proxy should listen on
-        - "--port=5432"
-        - "nais-management-7178:europe-north1:bifrost-79ca6928"
-
-      securityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-            - ALL
-        runAsUser: 65532
-        # The default Cloud SQL Auth Proxy image runs as the
-        # "nonroot" user and group (uid: 65532) by default.
-        runAsNonRoot: true
-          # You should use resource requests/limits as a best practice to prevent
-          # pods from consuming too many resources and affecting the execution of
-          # other pods. You should adjust the following values based on what your
-          # application needs. For details, see
-          # https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-
-      resources:
-            requests:
-              # The proxy's memory use scales linearly with the number of active
-              # connections. Fewer open connections will use less memory. Adjust
-              # this value based on your application's requirements.
-              memory: "128Mi"
-              # The proxy's CPU use scales linearly with the amount of IO between
-              # the database and the application. Adjust this value based on your
-              # application's requirements.
-              cpu:    "100m"
+  - args:
+    - --structured-logs
+    - --port=5432
+    - nais-management-7178:europe-north1:bifrost-79ca6928
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
+    name: sql-proxy
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      runAsNonRoot: true
+      runAsUser: 65532
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+    # Allow SQL proxy to connect to Cloud SQL instance
+    - ports:
+      - port: 3307
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 1.2.3.4/32
+    # Allow SQL proxy to connect to Google Cloud Metadata server
+    - ports:
+      - port: 988
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 169.254.169.252/32
+    - ports:
+      - port: 988
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 127.0.0.1/32
+    - ports:
+      - port: 80
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 169.254.169.254/32
