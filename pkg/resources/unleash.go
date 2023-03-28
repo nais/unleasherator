@@ -335,6 +335,14 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 						},
 					},
 				},
+				{
+					NamespaceSelector: &metav1.LabelSelector{},
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"k8s-app": "node-local-dns",
+						},
+					},
+				},
 			},
 			Ports: []networkingv1.NetworkPolicyPort{
 				{
