@@ -20,8 +20,28 @@ spec:
     port: "5432"
     secretUserKey: "POSTGRES_USER"
     ssl: "false"
-  extraContainers:
-    - name: sql-proxy
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - IPBlock:
+              cidr: 34.88.153.80/32
+        ports:
+          - protocol: TCP
+            port: 5432
+  webIngress:
+    enabled: "true"
+    host: "unleash-sql-proxy-sample.dev-nais.cloud.nais.io"
+    path: "/"
+    class: "nais-ingress-iap"
+  apiIngress:
+    enabled: "true"
+    host: "unleash-sql-proxy-sample-api.dev-nais.cloud.nais.io"
+    path: "/api/"
+    class: "nais-ingress"
+
+  extraContainers: - name: sql-proxy
     # It is recommended to use the latest version of the Cloud SQL Auth Proxy
     # Make sure to update on a regular schedule!
       image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.1.0
