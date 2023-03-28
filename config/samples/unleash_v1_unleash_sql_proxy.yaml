@@ -43,7 +43,7 @@ spec:
               cidr: 127.0.0.1/32
         ports:
           - protocol: TCP
-            port:988
+            port: 988
       #v For clusters running GKE Dataplane V2
       - to:
           - ipBlock:
