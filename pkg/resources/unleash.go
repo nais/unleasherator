@@ -325,9 +325,9 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 			To: []networkingv1.NetworkPolicyPeer{
 				{
 					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"kubernetes.io/metadata.name": "kube-system",
-						},
+						//MatchLabels: map[string]string{
+						//	"kubernetes.io/metadata.name": "kube-system",
+						//},
 					},
 					PodSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
@@ -338,6 +338,14 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 			},
 			Ports: []networkingv1.NetworkPolicyPort{
 				{
+					Protocol: &[]corev1.Protocol{corev1.ProtocolUDP}[0],
+					Port: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 53,
+					},
+				},
+				{
+					Protocol: &[]corev1.Protocol{corev1.ProtocolTCP}[0],
 					Port: &intstr.IntOrString{
 						Type:   intstr.Int,
 						IntVal: 53,
