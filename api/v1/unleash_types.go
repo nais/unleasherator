@@ -78,7 +78,11 @@ type UnleashSpec struct {
 type NetworkPolicyConfig struct {
 	// Enable enables the network policy
 	// +kubebuilder:default=true
-	Enabled bool `json:"enable,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
+
+	// AllowDNS enables DNS traffic
+	// +kubebuilder:default=true
+	AllowDNS bool `json:"allowDNS,omitempty"`
 
 	// AllowAllFromCluster enables all ingress traffic from the same cluster
 	// +kubebuilder:default=false
@@ -105,7 +109,7 @@ type NetworkPolicyConfig struct {
 type IngressConfig struct {
 	// Enable enables the ingress
 	// +kubebuilder:default=false
-	Enabled bool `json:"enable,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 
 	// Host is the hostname to use for the ingress
 	// +kubebuilder:validation:Optional

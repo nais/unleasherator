@@ -320,6 +320,33 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 		},
 	}
 
+	if unleash.Spec.NetworkPolicy.AllowDNS {
+		np.Spec.Egress = append(np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "kube-system",
+						},
+					},
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"k8s-app": "kube-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port: &intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: 53,
+					},
+				},
+			},
+		})
+	}
+
 	if unleash.Spec.NetworkPolicy.AllowAllFromSameNamespace {
 		np.Spec.Ingress = append(np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
 			From: []networkingv1.NetworkPolicyPeer{

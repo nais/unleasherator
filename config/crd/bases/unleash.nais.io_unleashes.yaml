@@ -47,7 +47,7 @@ spec:
                   class:
                     description: Class is the ingress class to use for the ingress
                     type: string
-                  enable:
+                  enabled:
                     default: false
                     description: Enable enables the ingress
                     type: boolean
@@ -3105,13 +3105,17 @@ spec:
                     description: AllowAllFromSameNamespace enables all ingress traffic
                       from the same namespace
                     type: boolean
+                  allowDNS:
+                    default: true
+                    description: AllowDNS enables DNS traffic
+                    type: boolean
                   allowFromNamespaces:
                     description: AllowAllFromNamespaces is a list of namespaces to
                       allow ingress traffic from
                     items:
                       type: string
                     type: array
-                  enable:
+                  enabled:
                     default: true
                     description: Enable enables the network policy
                     type: boolean
@@ -3526,7 +3530,7 @@ spec:
                   class:
                     description: Class is the ingress class to use for the ingress
                     type: string
-                  enable:
+                  enabled:
                     default: false
                     description: Enable enables the ingress
                     type: boolean

@@ -1,5 +1,4 @@
 namespace: unleasherator-system
-namePrefix: unleasherator-
 resources:
 - ../default
 
