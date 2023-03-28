@@ -597,7 +597,7 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Failed to get instance stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
+		log.Error(err, "Instance stats returned unexpected status code", "statusCode", res.StatusCode, "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
 		return err
 	}
 
