@@ -17,13 +17,15 @@ import (
 )
 
 // Defaults for the Unleash custom resource
+//     /nais-io/nais/images/unleash-v4:20230330-013338-fa1689d
+
 const (
 	// DefaultUnleashImageRegistry is the default registry for the Unleash image
-	DefaultUnleashImageRegistry = "docker.io"
+	DefaultUnleashImageRegistry = "europe-north1-docker.pkg.dev/nais-io/nais/images"
 	// DefaultUnleashImageName is the default image name used for the Unleash deployment
-	DefaultUnleashImageName = "unleashorg/unleash-server"
+	DefaultUnleashImageName = "unleash-v4"
 	// DefaultUnleashVersion is the default version used for the Unleash deployment
-	DefaultUnleashVersion = "4.19.1"
+	DefaultUnleashVersion = "v4.19.1"
 	// DefaultUnleashPort is the default port used for the Unleash deployment
 	DefaultUnleashPort = 4242
 	// DefaultUnleashPortName is the default port name used for the Unleash deployment
