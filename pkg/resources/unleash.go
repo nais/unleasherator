@@ -85,7 +85,7 @@ func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 }
 
 func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.Service, error) {
-	ls := labelsForUnleash(unleash.Name)
+	ls := labelsForUnleash(unleash)
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,7 +112,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 }
 
 func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
-	ls := labelsForUnleash(unleash.Name)
+	ls := labelsForUnleash(unleash)
 	replicas := unleash.Spec.Size
 
 	envVars, err := envVarsForUnleash(unleash)
@@ -173,7 +173,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						},
 					},
 					Containers: []corev1.Container{{
-						Image:           ImageForUnleash(),
+						Image:           ImageForUnleash(unleash),
 						Name:            "unleash",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						// Ensure restrictive context for the container
@@ -232,10 +232,10 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 
 // labelsForUnleash returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForUnleash(name string) map[string]string {
-	imageTag := strings.Split(ImageForUnleash(), ":")[1]
+func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
+	imageTag := strings.Split(ImageForUnleash(unleash), ":")[1]
 	return map[string]string{"app.kubernetes.io/name": "Unleash",
-		"app.kubernetes.io/instance":   name,
+		"app.kubernetes.io/instance":   unleash.Name,
 		"app.kubernetes.io/version":    imageTag,
 		"app.kubernetes.io/part-of":    "unleasherator",
 		"app.kubernetes.io/created-by": "controller-manager",
@@ -244,7 +244,7 @@ func labelsForUnleash(name string) map[string]string {
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
-	labels := labelsForUnleash(unleash.Name)
+	labels := labelsForUnleash(unleash)
 	pathType := networkingv1.PathTypeImplementationSpecific
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -287,7 +287,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConf
 
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
 func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
-	labels := labelsForUnleash(unleash.Name)
+	labels := labelsForUnleash(unleash)
 
 	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -412,7 +412,10 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 
 // ImageForUnleash gets the Operand image which is managed by this controller
 // from the UNLEASH_IMAGE environment variable defined in the config/manager/manager.yaml
-func ImageForUnleash() string {
+func ImageForUnleash(unleash *unleashv1.Unleash) string {
+	if unleash.Spec.CustomImage != "" {
+		return unleash.Spec.CustomImage
+	}
 	var imageEnvVar = "UNLEASH_IMAGE"
 	image, found := os.LookupEnv(imageEnvVar)
 	if !found {

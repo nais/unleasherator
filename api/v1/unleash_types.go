@@ -37,6 +37,11 @@ type UnleashSpec struct {
 	// Size is the size of the unleash deployment
 	Size int32 `json:"size,omitempty"`
 
+	// CustomImage points to a customImage, this overrides all other version settings
+	// Use at your own risk
+	// +kubebuilder:validation:Required
+	CustomImage string `json:"customImage,omitempty"`
+
 	// Database is the database configuration
 	// +kubebuilder:validation:Required
 	Database DatabaseConfig `json:"database,omitempty"`

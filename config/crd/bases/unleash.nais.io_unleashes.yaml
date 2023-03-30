@@ -75,6 +75,10 @@ spec:
                         type: string
                     type: object
                 type: object
+              customImage:
+                description: CustomImage points to a customImage, this overrides all
+                  other version settings Use at your own risk
+                type: string
               database:
                 description: Database is the database configuration
                 properties:
