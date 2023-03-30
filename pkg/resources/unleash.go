@@ -17,8 +17,6 @@ import (
 )
 
 // Defaults for the Unleash custom resource
-//     /nais-io/nais/images/unleash-v4:20230330-013338-fa1689d
-
 const (
 	// DefaultUnleashImageRegistry is the default registry for the Unleash image
 	DefaultUnleashImageRegistry = "europe-north1-docker.pkg.dev/nais-io/nais/images"
