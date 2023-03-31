@@ -3,7 +3,6 @@ package resources
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/utils"
@@ -233,16 +232,15 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 // labelsForUnleash returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
-	imageTag := strings.Split(ImageForUnleash(unleash), ":")[1]
 	return map[string]string{"app.kubernetes.io/name": "Unleash",
 		"app.kubernetes.io/instance":   unleash.Name,
-		"app.kubernetes.io/version":    imageTag,
 		"app.kubernetes.io/part-of":    "unleasherator",
 		"app.kubernetes.io/created-by": "controller-manager",
 	}
 }
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
+// @TODO add unleash.ObjectMeta.Labels?
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.IngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
 	labels := labelsForUnleash(unleash)
 	pathType := networkingv1.PathTypeImplementationSpecific
