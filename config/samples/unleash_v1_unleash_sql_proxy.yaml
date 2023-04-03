@@ -9,16 +9,18 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   name: unleash-sql-proxy-sample
 spec:
-  existingServiceAccountName: unleash-sql-proxy-sample
+  size: 1
+  customImage: europe-north1-docker.pkg.dev/nais-io/nais/images/unleash-v4:20230331-045000-1f2db9f
+  existingServiceAccountName: bifrost-unleash-sql-user
   apiIngress:
     class: nais-ingress
     enabled: true
-    host: unleash-sql-proxy-sample-api.example.com
+    host: unleash-sql-proxy-sample-api.dev-nais.cloud.nais.io
     path: /api/
   webIngress:
     class: nais-ingress-iap
     enabled: true
-    host: unleash-sql-proxy-sample.example.com
+    host: unleash-sql-proxy-sample.dev-nais.cloud.nais.io
     path: /
   database:
     host: localhost
@@ -28,6 +30,9 @@ spec:
     secretPassKey: POSTGRES_PASSWORD
     secretUserKey: POSTGRES_USER
     ssl: "false"
+  extraEnvVars:
+    - name: GOOGLE_IAP_AUDIENCE
+      value: /projects/718161667033/global/backendServices/2287975999985226128
   extraContainers:
   - args:
     - --structured-logs
@@ -56,7 +61,7 @@ spec:
         protocol: TCP
       to:
       - ipBlock:
-          cidr: 1.2.3.4/32
+          cidr: 34.88.153.80/32
     # Allow SQL proxy to connect to Google Cloud Metadata server
     - ports:
       - port: 988
@@ -76,3 +81,28 @@ spec:
       to:
       - ipBlock:
           cidr: 169.254.169.254/32
+    # Gstatic
+    - ports:
+      - port: 443
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 142.250.74.131/32
+    - ports:
+      - port: 443
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 142.250.74.35/32
+    - ports:
+      - port: 443
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 216.58.211.3/32
+    - ports:
+      - port: 443
+        protocol: TCP
+      to:
+      - ipBlock:
+          cidr: 0.0.0.0/0
