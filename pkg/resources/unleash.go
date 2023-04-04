@@ -172,6 +172,17 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						},
 					},
 					Containers: []corev1.Container{{
+						LivenessProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								HTTPGet: &corev1.HTTPGetAction{
+									Path: "/health",
+									Port: intstr.FromInt(DefaultUnleashPort),
+								},
+							},
+							InitialDelaySeconds: 5,
+							TimeoutSeconds:      10,
+							PeriodSeconds:       10,
+						},
 						Image:           ImageForUnleash(unleash),
 						Name:            "unleash",
 						ImagePullPolicy: corev1.PullIfNotPresent,
