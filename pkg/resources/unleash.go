@@ -215,16 +215,8 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						}},
 						// Command: []string{"unleash", "-m=64", "-o", "modern", "-v"},
 						// Secret environment variables
-						Env: envVars,
-						Resources: corev1.ResourceRequirements{
-							Limits: corev1.ResourceList{
-								"memory": resource.MustParse("512Mi"),
-							},
-							Requests: corev1.ResourceList{
-								"cpu":    resource.MustParse("300m"),
-								"memory": resource.MustParse("512Mi"),
-							},
-						},
+						Env:       envVars,
+						Resources: unleash.Spec.Resources,
 					}},
 				},
 			},

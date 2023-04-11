@@ -36,7 +36,6 @@ type Unleash struct {
 type UnleashSpec struct {
 	// Size is the size of the unleash deployment
 	Size int32 `json:"size,omitempty"`
-
 	// CustomImage points to a customImage, this overrides all other version settings
 	// Use at your own risk
 	// +kubebuilder:validation:Required
@@ -77,6 +76,10 @@ type UnleashSpec struct {
 	// ExistingServiceAccountName is the name of an already existing Kubernetes service account
 	// +kubebuilder:validation:Optional
 	ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
+	// Resources are the resource requests and limits for the unleash deployment
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // NetworkPolicyConfig defines the network policy configuration
