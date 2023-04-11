@@ -16,8 +16,8 @@ type InstanceAdminStatsResult struct {
 	Environments      float64 `json:"environments"`
 	Segments          float64 `json:"segments"`
 	Strategies        float64 `json:"strategies"`
-	SAMLenabled       float64 `json:"SAMLenabled"`
-	OIDCenabled       float64 `json:"OIDCenabled"`
+	SAMLenabled       bool    `json:"SAMLenabled"`
+	OIDCenabled       bool    `json:"OIDCenabled"`
 	Sum               string  `json:"sum"`
 }
 
