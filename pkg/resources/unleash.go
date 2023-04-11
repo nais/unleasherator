@@ -9,6 +9,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -215,6 +216,15 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						// Command: []string{"unleash", "-m=64", "-o", "modern", "-v"},
 						// Secret environment variables
 						Env: envVars,
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								"memory": resource.MustParse("512Mi"),
+							},
+							Requests: corev1.ResourceList{
+								"cpu":    resource.MustParse("300m"),
+								"memory": resource.MustParse("512Mi"),
+							},
+						},
 					}},
 				},
 			},
@@ -232,6 +242,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 	if unleash.Spec.ExtraVolumeMounts != nil {
 		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts, unleash.Spec.ExtraVolumeMounts...)
 	}
+
 	// Set the ownerRef for the Deployment
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
 	if err := ctrl.SetControllerReference(unleash, dep, scheme); err != nil {
