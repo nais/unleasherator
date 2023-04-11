@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
     app.kubernetes.io/managed-by: kustomize
 health:
-  healthProbeBindAddress: :8081
+  healthProbeBindAddress: 127.0.0.1:8081
 metrics:
   bindAddress: 127.0.0.1:8080
 webhook:
