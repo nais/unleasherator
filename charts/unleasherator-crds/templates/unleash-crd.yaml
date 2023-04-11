@@ -3515,6 +3515,7 @@ spec:
                     type: object
                 type: object
               size:
+                default: 1
                 description: Size is the size of the unleash deployment
                 format: int32
                 type: integer

@@ -35,6 +35,7 @@ type Unleash struct {
 // UnleashSpec defines the desired state of Unleash
 type UnleashSpec struct {
 	// Size is the size of the unleash deployment
+	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
 	// CustomImage points to a customImage, this overrides all other version settings
 	// Use at your own risk
