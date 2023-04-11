@@ -5,12 +5,8 @@ Kubernetes operator for managing [Unleash](https://getunleash.io) - the open-sou
 Currently supports the following resources:
 
 - [x] [Unleash](./docs/unleash.md)
-  - [x] Deployment
-  - [x] Service
-  - [x] NetworkPolicy
-  - [ ] Ingress
-- [ ] [RemoteUneash](./docs/remoteunleash.md)
 - [x] [ApiToken](./docs/apitoken.md)
+- [ ] [RemoteUnleash](./docs/remoteunleash.md)
 - [ ] [Federation](./docs/federation.md)
 - ~~[ ] Project~~*
 - ~~[ ] Environment~~*
