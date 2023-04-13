@@ -37,7 +37,7 @@ kubernetesClusterDomain: cluster.local
 managerConfig:
   controllerManagerConfigYaml:
     health:
-      healthProbeBindAddress: :8081
+      healthProbeBindAddress: 127.0.0.1:8081
     leaderElection:
       leaderElect: true
       resourceName: 509984d3.nais.io
