@@ -7,9 +7,9 @@ require (
 	github.com/nais/liberator v0.0.0-20230331130952-da33a75022d5
 	github.com/onsi/ginkgo/v2 v2.9.2
 	github.com/onsi/gomega v1.27.6
-	k8s.io/api v0.26.3
-	k8s.io/apimachinery v0.26.3
-	k8s.io/client-go v0.26.3
+	k8s.io/api v0.27.0
+	k8s.io/apimachinery v0.27.0
+	k8s.io/client-go v0.27.0
 	sigs.k8s.io/controller-runtime v0.14.6
 )
 
@@ -43,7 +43,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.14.0 // indirect
+	github.com/prometheus/client_golang v1.15.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.42.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
@@ -64,8 +64,8 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.26.3 // indirect
-	k8s.io/component-base v0.26.3 // indirect
+	k8s.io/apiextensions-apiserver v0.27.0 // indirect
+	k8s.io/component-base v0.27.0 // indirect
 	k8s.io/klog/v2 v2.90.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20230327201221-f5883ff37f0c // indirect
 	k8s.io/utils v0.0.0-20230406110748-d93618cff8a2 // indirect
