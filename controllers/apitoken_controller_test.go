@@ -67,7 +67,7 @@ var _ = Describe("Api token controller", func() {
 				return k8sClient.Get(context.Background(), key, f)
 			}, timeout, interval).ShouldNot(Succeed())
 
-			By("Eventually the status gets set to Unknown") //Todo: Surely this one should not fail, controller L90
+			By("Eventually the status gets set") //TODO: Surely this one should not fail, controller L90
 			f := &unleashv1.ApiToken{}
 
 			Eventually(func() []metav1.Condition {
