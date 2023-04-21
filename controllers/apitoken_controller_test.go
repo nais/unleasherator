@@ -74,6 +74,18 @@ var _ = Describe("Api token controller", func() {
 				k8sClient.Get(context.Background(), key, f)
 				return f.Status.Conditions
 			}, timeout, interval).ShouldNot(BeEmpty())
+
+			By("Eventually gets deleted")
+			deletionTime := &metav1.Time{Time: time.Now().UTC()}
+
+			// set the deletion timestamp in the object
+			apiToken.SetDeletionTimestamp(deletionTime)
+
+			k8sClient.Update(context.Background(), apiToken)
+			Eventually(func() error {
+				return k8sClient.Get(context.Background(), key, f)
+			}, timeout, interval).ShouldNot(Succeed())
+
 		})
 
 	})
