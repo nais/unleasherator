@@ -41,7 +41,7 @@ var _ = Describe("Api token controller", func() {
 			},
 		}
 
-		unleashLookupKey := types.NamespacedName{Name: name, Namespace: namespace}
+		key := types.NamespacedName{Name: name, Namespace: namespace}
 
 		It("Should set the secret name when new tokens are created", func() {
 			By("By creating a new api-token")
@@ -49,18 +49,31 @@ var _ = Describe("Api token controller", func() {
 
 			createToken := &unleashv1.ApiToken{}
 			Eventually(func() error {
-				err := k8sClient.Get(ctx, unleashLookupKey, createToken)
+				err := k8sClient.Get(ctx, key, createToken)
 				return err
 			}, timeout, interval).Should(Succeed())
 			Expect(createToken.Spec.SecretName).Should(Equal(secretName))
 
 			By("Expecting to delete successfully")
 			Eventually(func() error {
-				f := &unleashv1.ApiToken{}
-				k8sClient.Get(context.Background(), unleashLookupKey, f)
-				return k8sClient.Delete(context.Background(), f)
+				k := &unleashv1.ApiToken{}
+				k8sClient.Get(context.Background(), key, k)
+				return k8sClient.Delete(context.Background(), k)
 			}, timeout, interval).Should(Succeed())
 
+			By("Expecting to delete finish")
+			Eventually(func() error {
+				f := &unleashv1.ApiToken{}
+				return k8sClient.Get(context.Background(), key, f)
+			}, timeout, interval).ShouldNot(Succeed())
+
+			By("Eventually the status gets set to Unknown") //Todo: Surely this one should not fail, controller L90
+			f := &unleashv1.ApiToken{}
+
+			Eventually(func() []metav1.Condition {
+				k8sClient.Get(context.Background(), key, f)
+				return f.Status.Conditions
+			}, timeout, interval).ShouldNot(BeEmpty())
 		})
 
 	})
