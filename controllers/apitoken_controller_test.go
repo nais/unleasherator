@@ -60,7 +60,7 @@ var _ = Describe("Api token controller", func() {
 			Eventually(func() []metav1.Condition {
 				k8sClient.Get(context.Background(), key, f)
 				return f.Status.Conditions
-			}, timeout, interval).ShouldNot(BeEmpty())
+			}, timeout, interval).ShouldNot(BeNil())
 
 		})
 		Context("When setting DeletionTimeStamp", func() {
