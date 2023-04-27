@@ -1,0 +1,37 @@
+{{ if and .Values.networkPolicy .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  egress:
+  - to:
+    - cidrSelector: {{ .Values.networkPolicy.apiServerCIDR | required "networkPolicy.apiServerCIDR is required" }}
+  {{- if .Values.networkPolicy.allowDNS }}
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+      - port: 53
+        protocol: UDP
+  {{- end }}
+  {{- if .Values.networkPolicy.allowAllNamespaces }}
+  - to:
+    - namespaceSelector: {}
+  {{- else }}
+  {{- range .Values.networkPolicy.allowedNamespaces }}
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ . }}
+  {{- end }}
+  {{- end }}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ .Release.Name }}
+  policyTypes:
+  - Egress
+{{- end }}
