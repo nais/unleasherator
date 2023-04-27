@@ -6,7 +6,8 @@ metadata:
 spec:
   egress:
   - to:
-    - cidrSelector: {{ .Values.networkPolicy.apiServerCIDR | required "networkPolicy.apiServerCIDR is required" }}
+    - ipBlock:
+        cidr: {{ .Values.networkPolicy.apiServerCIDR | required "networkPolicy.apiServerCIDR is required" }}
   {{- if .Values.networkPolicy.allowDNS }}
   - to:
     - namespaceSelector: {}
