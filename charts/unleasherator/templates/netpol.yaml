@@ -1,4 +1,4 @@
-{{ if and .Values.netPols .Values.netPols.enabled }}
+{{ if and .Values.networkPolicy .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -6,8 +6,8 @@ metadata:
 spec:
   egress:
   - to:
-    - cidrSelector: {{ .Values.netPols.kubeAPIserverCIDR | required "netPols.kubeAPIserverCIDR is required" }}
-  {{- if .Values.netPols.allowDNS }}
+    - cidrSelector: {{ .Values.networkPolicy.apiServerCIDR | required "networkPolicy.apiServerCIDR is required" }}
+  {{- if .Values.networkPolicy.allowDNS }}
   - to:
     - namespaceSelector: {}
       podSelector:
@@ -17,11 +17,11 @@ spec:
       - port: 53
         protocol: UDP
   {{- end }}
-  {{- if .Values.netPols.allowAllNamespaces }}
+  {{- if .Values.networkPolicy.allowAllNamespaces }}
   - to:
     - namespaceSelector: {}
   {{- else }}
-  {{- range .Values.netPols.allowedNamespaces }}
+  {{- range .Values.networkPolicy.allowedNamespaces }}
   - to:
     - namespaceSelector:
         matchLabels:
