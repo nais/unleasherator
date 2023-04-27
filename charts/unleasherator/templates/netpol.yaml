@@ -1,3 +1,4 @@
+{{ if and .Values.netPols .Values.netPols.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -5,13 +6,32 @@ metadata:
 spec:
   egress:
   - to:
+    - cidrSelector: {{ .Values.netPols.kubeAPIserverCIDR | required "netPols.kubeAPIserverCIDR is required" }}
+  {{- if .Values.netPols.allowDNS }}
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+      - port: 53
+        protocol: UDP
+  {{- end }}
+  {{- if .Values.netPols.allowAllNamespaces }}
+  - to:
+    - namespaceSelector: {}
+  {{- else }}
+  {{- range .Values.netPols.allowedNamespaces }}
+  - to:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: bifrost-unleash
-      podSelector: {}
+          kubernetes.io/metadata.name: {{ . }}
+  {{- end }}
+  {{- end }}
   podSelector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/name: {{ .Release.Name }}
   policyTypes:
   - Egress
+{{- end }}
