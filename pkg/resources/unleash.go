@@ -22,7 +22,7 @@ const (
 	// DefaultUnleashImageName is the default image name used for the Unleash deployment
 	DefaultUnleashImageName = "unleash-v4"
 	// DefaultUnleashVersion is the default version used for the Unleash deployment
-	DefaultUnleashVersion = "v4.19.1"
+	DefaultUnleashVersion = "v4.23.1"
 	// DefaultUnleashPort is the default port used for the Unleash deployment
 	DefaultUnleashPort = 4242
 	// DefaultUnleashPortName is the default port name used for the Unleash deployment
