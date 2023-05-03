@@ -592,12 +592,32 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	stats, res, err := client.GetInstanceAdminStats()
 
 	if err != nil {
-		log.Error(err, "Failed to get instance stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+		log.Error(err, "Failed to get instance admin stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash,
+			Status: metav1.ConditionFalse, Reason: "TestingConnection",
+			Message: fmt.Sprintf("Failed to connect to instance: %s", err.Error())})
+
+		if err := r.Status().Update(ctx, unleash); err != nil {
+			log.Error(err, "Failed to update Unleash status")
+			return err
+		}
+
 		return err
 	}
 
 	if res.StatusCode != http.StatusOK {
 		log.Error(err, "Instance stats returned unexpected status code", "statusCode", res.StatusCode, "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
+
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash,
+			Status: metav1.ConditionFalse, Reason: "TestingConnection",
+			Message: fmt.Sprintf("Failed to connect to instance: unexpected status code: %d", res.StatusCode)})
+
+		if err := r.Status().Update(ctx, unleash); err != nil {
+			log.Error(err, "Failed to update Unleash status")
+			return err
+		}
+
 		return err
 	}
 
