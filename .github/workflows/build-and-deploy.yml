@@ -136,9 +136,20 @@ jobs:
       - uses: docker/build-push-action@v4
         with:
           context: .
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+  rollout:
+    permissions:
+      id-token: write
+    needs: ["docker"]
+    runs-on: fasit-deploy
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: nais/fasit-deploy@main
+        with:
+          json: '{"controllerManager": {"manager": {"image": {"tag": "${{ needs.docker.outputs.version }}"}}}}'
+          feature_name: ${{ github.repository }}
