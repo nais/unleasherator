@@ -1,4 +1,24 @@
-controllerManager:
+kubernetesClusterDomain: cluster.local
+managerConfig:
+  controllerManagerConfigYaml:
+    health:
+      healthProbeBindAddress: :8081
+    leaderElection:
+      leaderElect: true
+      resourceName: 509984d3.nais.io
+    metadata:
+      labels:
+        appKubernetesIocomponent: manager
+        appKubernetesIocreatedBy: unleasherator
+        appKubernetesIoinstance: unleasherator-configuration
+        appKubernetesIomanagedBy: kustomize
+        appKubernetesIoname: controllermanagerconfig
+        appKubernetesIopartOf: unleasherator
+    metrics:
+      bindAddress: 127.0.0.1:8080
+    webhook:
+      port: 9443
+unleasherator:
   kubeRbacProxy:
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -33,27 +53,7 @@ controllerManager:
         cpu: 10m
         memory: 64Mi
   replicas: 1
-kubernetesClusterDomain: cluster.local
-managerConfig:
-  controllerManagerConfigYaml:
-    health:
-      healthProbeBindAddress: :8081
-    leaderElection:
-      leaderElect: true
-      resourceName: 509984d3.nais.io
-    metadata:
-      labels:
-        appKubernetesIocomponent: manager
-        appKubernetesIocreatedBy: unleasherator
-        appKubernetesIoinstance: controller-manager-configuration
-        appKubernetesIomanagedBy: kustomize
-        appKubernetesIoname: controllermanagerconfig
-        appKubernetesIopartOf: unleasherator
-    metrics:
-      bindAddress: 127.0.0.1:8080
-    webhook:
-      port: 9443
-metricsService:
+unleasheratorMetricsService:
   ports:
   - name: https
     port: 8443

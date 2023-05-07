@@ -36,5 +36,5 @@ roleRef:
   name: '{{ include "unleasherator.fullname" . }}-proxy-role'
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "unleasherator.fullname" . }}-controller-manager'
+  name: '{{ include "unleasherator.fullname" . }}-unleasherator'
   namespace: '{{ .Release.Namespace }}'
