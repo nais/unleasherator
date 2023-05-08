@@ -14,7 +14,7 @@ type ApiTokenUnleashInstance struct {
 	// Kind is the API kind of the Unleash instance.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=Unleash;RemoteUnleash
-	Kind string `json:"apiKind"`
+	Kind string `json:"kind"`
 
 	// Name is the name of the Unleash instance.
 	// +kubebuilder:validation:Required

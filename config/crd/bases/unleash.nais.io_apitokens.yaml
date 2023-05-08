@@ -62,22 +62,22 @@ spec:
                 description: UnleashInstance is the Unleash instance this token is
                   for.
                 properties:
-                  apiKind:
+                  apiVersion:
+                    default: unleash.nais.io/v1
+                    description: ApiVersion is the API version of the Unleash instance.
+                    type: string
+                  kind:
                     description: Kind is the API kind of the Unleash instance.
                     enum:
                     - Unleash
                     - RemoteUnleash
                     type: string
-                  apiVersion:
-                    default: unleash.nais.io/v1
-                    description: ApiVersion is the API version of the Unleash instance.
-                    type: string
                   name:
                     description: Name is the name of the Unleash instance.
                     type: string
                 required:
-                - apiKind
                 - apiVersion
+                - kind
                 - name
                 type: object
             required:

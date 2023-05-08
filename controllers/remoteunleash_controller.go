@@ -79,6 +79,12 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(err, "Failed to update RemoteUnleash to add finalizer")
 			return ctrl.Result{}, err
 		}
+
+		// Refetch after update
+		if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+			log.Error(err, "Failed to get RemoteUnleash")
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Check if marked for deletion
@@ -106,7 +112,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 
 			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-				Type:    typeDeletedToken,
+				Type:    typeDegradedUnleash,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Finalizing",
 				Message: "Finalizer operations completed",
@@ -136,7 +142,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to get Secret for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-			Type:    typeDegradedUnleash,
+			Type:    typeAvailableUnleash,
 			Status:  metav1.ConditionFalse,
 			Reason:  "Reconciling",
 			Message: "Failed to get admin secret",
@@ -150,10 +156,10 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Check admin token
-	if adminToken == nil || len(adminToken) == 0 {
+	if len(adminToken) == 0 {
 		log.Error(err, fmt.Sprintf("Failed to get token for Secret for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-			Type:    typeDegradedUnleash,
+			Type:    typeAvailableUnleash,
 			Status:  metav1.ConditionFalse,
 			Reason:  "Reconciling",
 			Message: "Failed to get admin token",
