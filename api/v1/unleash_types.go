@@ -1,18 +1,28 @@
 package unleash_nais_io_v1
 
 import (
+	"context"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	// secretPrefix is the prefix used for Unleasherator owned secret
-	secretPrefix = "unleasherator"
-)
+type UnleashServer interface {
+	GetURL() string
+	GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error)
+	IsReady() bool
+	DeepCopyObject() runtime.Object
+	GetAnnotations() map[string]string
+	GetCreationTimestamp() metav1.Time
+	GetDeletionGracePeriodSeconds() *int64
+	GetDeletionTimestamp() *metav1.Time
+	GetFinalizers() []string
+}
 
 func init() {
 	SchemeBuilder.Register(&Unleash{}, &UnleashList{})
@@ -220,12 +230,13 @@ type UnleashStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-func (u *UnleashStatus) IsReady() bool {
-	for _, condition := range u.Conditions {
-		if condition.Type == "Available" && condition.Status == "True" {
+func (s *UnleashStatus) IsReady() bool {
+	for _, c := range s.Conditions {
+		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -258,13 +269,28 @@ func (u *Unleash) NamespacedInstanceSecretName() types.NamespacedName {
 }
 
 func (u *Unleash) GetInstanceSecretName() string {
-	return fmt.Sprintf("%s-%s-admin-key", secretPrefix, u.Name)
+	return fmt.Sprintf("%s-%s-admin-key", UnleashSecretNamePrefix, u.Name)
 }
 
 func (u *Unleash) GetOperatorSecretName() string {
-	return fmt.Sprintf("%s-%s-%s-admin-key", secretPrefix, u.Namespace, u.Name)
+	return fmt.Sprintf("%s-%s-%s-admin-key", UnleashSecretNamePrefix, u.Namespace, u.Name)
 }
 
 func (u *Unleash) GetURL() string {
 	return fmt.Sprintf("http://%s.%s", u.Name, u.Namespace)
+}
+
+func (u *Unleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
+	secret := &corev1.Secret{}
+
+	err := client.Get(ctx, u.NamespacedOperatorSecretName(operatorNamespace), secret)
+	if err != nil {
+		return nil, err
+	}
+
+	return secret.Data[UnleashSecretTokenKey], nil
+}
+
+func (u *Unleash) IsReady() bool {
+	return u.Status.IsReady()
 }

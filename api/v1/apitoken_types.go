@@ -11,10 +11,10 @@ type UnleashInstance struct {
 	// +kubebuilder:default=unleash.nais.io/v1
 	ApiVersion string `json:"apiVersion"`
 
-	// ApiKind is the API kind of the Unleash instance.
+	// Kind is the API kind of the Unleash instance.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=Unleash;RemoteUnleash
-	ApiKind string `json:"apiKind"`
+	Kind string `json:"apiKind"`
 
 	// Name is the name of the Unleash instance.
 	// +kubebuilder:validation:Required

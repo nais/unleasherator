@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/resources"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 )
 
@@ -154,13 +153,23 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// @TODO implement support for other Unleash instance types
-	if token.Spec.UnleashInstance.ApiKind != "Unleash" {
-		return ctrl.Result{}, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.ApiKind)
+	// Get Unleash instance
+	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
+		return ctrl.Result{}, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
 	}
 
-	unleash := &unleashv1.Unleash{}
-	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
+	if token.Spec.UnleashInstance.Kind == "Unleash" {
+		adminToken, unleashUrl, err := r.getAdminTokenForUnleash(token)
+	} else if token.Spec.UnleashInstance.Kind == "RemoteUnleash" {
+		adminToken, unleashUrl, err := r.getAdminTokenForRemoteUnleash(token)
+	} else {
+		return ctrl.Result{}, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
+	}
+
+	u := unleashv1.Unleash{}
+	u.GetAnnotations()
+
+	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, &unleashv1.Unleash{}); err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,
@@ -186,7 +195,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	if !unleash.Status.IsReady() {
+	if !unleash.IsReady() {
 		if err := r.Get(ctx, req.NamespacedName, token); err != nil {
 			log.Error(err, "Failed to get ApiToken")
 			return ctrl.Result{}, err
@@ -206,8 +215,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	adminSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: unleash.GetOperatorSecretName(), Namespace: r.OperatorNamespace}, adminSecret); err != nil {
+	// Get Unleash admin API token
+	adminToken, err := unleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,
@@ -227,14 +237,13 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	adminToken := string(adminSecret.Data[resources.EnvInitAdminAPIToken])
-	if adminToken == "" {
+	if adminToken == nil || len(adminToken) == 0 {
 		log.Error(err, "Unleash admin secret does not contain an api key")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
 			Reason:  "UnleashSecretMissingApiKey",
-			Message: "Unleash admin secret missing api key",
+			Message: "Unleash admin secret is empty",
 		})
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
@@ -244,7 +253,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	client, err := unleashclient.NewClient(unleash.GetURL(), adminToken)
+	client, err := unleashclient.NewClient(unleash.GetURL(), string(adminToken))
 	if err != nil {
 		log.Error(err, "Failed to create Unleash client")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -348,6 +357,29 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ApiTokenReconciler) getAdminTokenForUnleash(token unleashv1.ApiToken) ([]byte, string, error) {
+	secret := &corev1.Secret{}
+	if err := r.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, secret); err != nil {
+		return nil, err
+	}
+
+	return secret.Data["token"], nil
+}
+
+func (r *ApiTokenReconciler) getAdminTokenForRemoteUnleash(ctx context.Context, token unleashv1.ApiToken) (adminToken []byte, url string, err error) {
+	unleash := &unleashv1.RemoteUnleash{}
+	if err = r.Get(context.Background(), types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.ObjectMeta.Namespace}, unleash); err != nil {
+		return
+	}
+
+	adminToken, err = unleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		return
+	}
+
+	return adminToken, unleash.GetURL(), nil
 }
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken) {

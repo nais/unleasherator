@@ -1,7 +1,12 @@
 package unleash_nais_io_v1
 
 import (
+	"context"
+
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func init() {
@@ -55,6 +60,13 @@ type RemoteUnleashSecret struct {
 	Namespace string `json:"namespace"`
 }
 
+func (s *RemoteUnleashSecret) NamespacedName() types.NamespacedName {
+	return types.NamespacedName{
+		Name:      s.Name,
+		Namespace: s.Namespace,
+	}
+}
+
 // RemoteUnleashServer defines the Unleash instance this token is for.
 type RemoteUnleashServer struct {
 	// URL is the URL of the Unleash instance.
@@ -73,4 +85,34 @@ type RemoteUnleashStatus struct {
 	// are considered a guaranteed API.
 	// RemoteUnleash.status.conditions.Message is a human readable message indicating details about the transition.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+func (s *RemoteUnleashStatus) IsReady() bool {
+	for _, c := range s.Conditions {
+		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (u *RemoteUnleash) GetURL() string {
+	return u.Spec.Server.URL
+}
+
+func (u *RemoteUnleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
+	// operatorNamespace is only here to satisfy the interface for UnleashServer, it is not used in this context as the secret namespace is defined by the RemoteUnleash object itself.
+	_ = operatorNamespace
+
+	secret := &v1.Secret{}
+	if err := client.Get(ctx, u.Spec.AdminSecret.NamespacedName(), secret); err != nil {
+		return nil, err
+	}
+
+	return secret.Data[u.Spec.AdminSecret.TokenKey], nil
+}
+
+func (u *RemoteUnleash) IsReady() bool {
+	return u.Status.IsReady()
 }
