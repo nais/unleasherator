@@ -124,18 +124,18 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
 			log.Info("Performing Finalizer Operations for Unleash before delete CR")
 
-			// Let's add here an status "Downgrade" to define that this resource begin its process to be terminated.
-			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeDegradedUnleash,
-				Status: metav1.ConditionUnknown, Reason: "Finalizing",
-				Message: fmt.Sprintf("Performing finalizer operations for the custom resource: %s ", unleash.Name)})
+			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
+				Type:    typeDegradedUnleash,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "Finalizing",
+				Message: "Performing finalizer options",
+			})
 
 			if err := r.Status().Update(ctx, unleash); err != nil {
 				log.Error(err, "Failed to update Unleash status")
 				return ctrl.Result{}, err
 			}
 
-			// Perform all operations required before remove the finalizer and allow
-			// the Kubernetes API to remove the custom resource.
 			r.doFinalizerOperationsForUnleash(unleash, ctx, log)
 
 			// TODO(user): If you add operations to the doFinalizerOperationsForUnleash method

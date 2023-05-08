@@ -21,6 +21,22 @@ type InstanceAdminStatsResult struct {
 	Sum               string  `json:"sum"`
 }
 
+type HealthResult struct {
+	Health string `json:"health"`
+}
+
+// GetHealth returns the health of the Unleash instance.
+func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
+	health := &HealthResult{}
+
+	res, err := c.HTTPGet("/api/health", health)
+	if err != nil {
+		return health, res, err
+	}
+
+	return health, res, nil
+}
+
 // GetInstanceAdminStats returns instance admin stats (admin only endpoint - requires admin token).
 func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Response, error) {
 	adminStats := &InstanceAdminStatsResult{}

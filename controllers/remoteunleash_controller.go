@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/unleash"
 )
 
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
@@ -34,6 +33,8 @@ type RemoteUnleashReconciler struct {
 
 func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+
+	log.Info(fmt.Sprintf("Reconciling RemoteUnleash %s in namespace %s", req.Name, req.Namespace))
 
 	remoteUnleash := &unleashv1.RemoteUnleash{}
 	err := r.Get(ctx, req.NamespacedName, remoteUnleash)
@@ -86,7 +87,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
 
 			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-				Type:    typeDeletedToken,
+				Type:    typeDegradedUnleash,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
 				Message: "Performing finalizer operations",
@@ -130,19 +131,15 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// Get RemoteUnleash secret
-	secret := &corev1.Secret{}
-	err = r.Get(ctx, types.NamespacedName{
-		Namespace: remoteUnleash.Namespace,
-		Name:      remoteUnleash.Spec.SecretName,
-	}, secret)
+	// Get admin token
+	adminToken, err := remoteUnleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to get Secret for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 			Type:    typeDegradedUnleash,
 			Status:  metav1.ConditionFalse,
 			Reason:  "Reconciling",
-			Message: "Failed to get Secret",
+			Message: "Failed to get admin secret",
 		})
 		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
 			log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
@@ -152,15 +149,14 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Check if secret contains token
-	token, ok := secret.Data["token"]
-	if !ok {
-		log.Error(err, fmt.Sprintf("Failed to get token from Secret for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+	// Check admin token
+	if adminToken == nil || len(adminToken) == 0 {
+		log.Error(err, fmt.Sprintf("Failed to get token for Secret for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 			Type:    typeDegradedUnleash,
 			Status:  metav1.ConditionFalse,
 			Reason:  "Reconciling",
-			Message: "Failed to get token from Secret",
+			Message: "Failed to get admin token",
 		})
 		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
 			log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
@@ -170,10 +166,71 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Check connection to Unleash
-	// @TODO: Implement
-	// if err := r.checkUnleashConnection(remoteUnleash, token); err != nil {
-	// }
+	// Create Unleash API client
+	unleashClient, err := unleash.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to create Unleash client for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+			Type:    typeDegradedUnleash,
+			Status:  metav1.ConditionFalse,
+			Reason:  "Reconciling",
+			Message: "Failed to create Unleash client",
+		})
+		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	// Check Unleash connectivity
+	health, res, err := unleashClient.GetHealth()
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to get health for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+			Type:    typeDegradedUnleash,
+			Status:  metav1.ConditionFalse,
+			Reason:  "Reconciling",
+			Message: "Failed to get health",
+		})
+		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	if res.StatusCode != 200 || health.Health != "GOOD" {
+		log.Error(err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s) for RemoteUnleash %s in namespace %s", res.StatusCode, health.Health, remoteUnleash.Name, remoteUnleash.Namespace))
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+			Type:    typeDegradedUnleash,
+			Status:  metav1.ConditionFalse,
+			Reason:  "Reconciling",
+			Message: fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health),
+		})
+
+		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+			log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	log.Info(fmt.Sprintf("RemoteUnleash %s in namespace %s is healthy", remoteUnleash.Name, remoteUnleash.Namespace))
+	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+		Type:    typeAvailableUnleash,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Unleash is healthy",
+	})
+
+	if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+		log.Error(err, fmt.Sprintf("Failed to update status for RemoteUnleash %s in namespace %s", remoteUnleash.Name, remoteUnleash.Namespace))
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }

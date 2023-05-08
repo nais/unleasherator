@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -276,6 +277,15 @@ func (u *Unleash) GetAdminToken(ctx context.Context, client client.Client, opera
 	}
 
 	return secret.Data[UnleashSecretTokenKey], nil
+}
+
+func (u *Unleash) GetApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
+	token, err := u.GetAdminToken(ctx, client, operatorNamespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return unleashclient.NewClient(u.GetURL(), string(token))
 }
 
 func (u *Unleash) IsReady() bool {

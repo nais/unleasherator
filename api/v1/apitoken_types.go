@@ -4,8 +4,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// UnleashInstance defines the Unleash instance this token is for.
-type UnleashInstance struct {
+// ApiTokenUnleashInstance defines the Unleash instance this token is for.
+type ApiTokenUnleashInstance struct {
 	// ApiVersion is the API version of the Unleash instance.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=unleash.nais.io/v1
@@ -25,7 +25,7 @@ type UnleashInstance struct {
 type ApiTokenSpec struct {
 	// UnleashInstance is the Unleash instance this token is for.
 	// +kubebuilder:validation:Required
-	UnleashInstance UnleashInstance `json:"unleashInstance"`
+	UnleashInstance ApiTokenUnleashInstance `json:"unleashInstance"`
 
 	// SecretName is the name of the secret where the token will be stored.
 	// +kubebuilder:validation:Required

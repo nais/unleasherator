@@ -12,10 +12,15 @@ Status: `draft`
 apiVersion: unleash.nais.io/v1alpha1
 kind: RemoteUnleash
 spec:
-  # The URL of the Unleash server
-  url: https://unleash.nais.io
-  # The name of the secret containing the API token
-  apiTokenSecretName: unleash-api-token
-  # The key in the secret containing the API token
-  apiTokenSecretKey: token
+  # Unleash server config
+  unleashServer:
+    url: https://unleash.nais.io
+
+  # Admin secret to use for the Unleash API
+  adminSecret:
+    name: unleasherator-api-token # must start with unleasherator-
+    key: token
+    namespace: default
 ```
+
+`adminSecret.name` must start with `unleasherator-`.

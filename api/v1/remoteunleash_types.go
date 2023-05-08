@@ -3,6 +3,7 @@ package unleash_nais_io_v1
 import (
 	"context"
 
+	"github.com/nais/unleasherator/pkg/unleash"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,7 +54,7 @@ type RemoteUnleashSecret struct {
 	// TokenKey is the key of the secret containing the Unleash instance's API token.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=token
-	TokenKey string `json:"tokenKey"`
+	Key string `json:"key"`
 
 	// Namespace is the namespace of the secret containing the Unleash instance's API token.
 	// +kubebuilder:validation:Optional
@@ -102,7 +103,7 @@ func (u *RemoteUnleash) GetURL() string {
 }
 
 func (u *RemoteUnleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
-	// operatorNamespace is only here to satisfy the interface for UnleashServer, it is not used in this context as the secret namespace is defined by the RemoteUnleash object itself.
+	// operatorNamespace is not used, and is only here to satisfy the interface of UnleashInstance.
 	_ = operatorNamespace
 
 	secret := &v1.Secret{}
@@ -110,7 +111,16 @@ func (u *RemoteUnleash) GetAdminToken(ctx context.Context, client client.Client,
 		return nil, err
 	}
 
-	return secret.Data[u.Spec.AdminSecret.TokenKey], nil
+	return secret.Data[u.Spec.AdminSecret.Key], nil
+}
+
+func (u *RemoteUnleash) GetApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleash.Client, error) {
+	token, err := u.GetAdminToken(ctx, client, operatorNamespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return unleash.NewClient(u.GetURL(), string(token))
 }
 
 func (u *RemoteUnleash) IsReady() bool {

@@ -57,7 +57,7 @@ type ApiTokenReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
-	unleash := &unleashv1.Unleash{}
+
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
 	if err != nil {
@@ -94,7 +94,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Info("Adding finalizer to ApiToken")
 		if ok := controllerutil.AddFinalizer(token, tokenFinalizer); !ok {
 			log.Error(err, "Failed to add finalizer to ApiToken")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 
 		if err = r.Update(ctx, token); err != nil {
@@ -142,7 +142,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("Removing finalizer from ApiToken")
 			if ok := controllerutil.RemoveFinalizer(token, tokenFinalizer); !ok {
 				log.Error(err, "Failed to remove finalizer from ApiToken")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
 
 			if err = r.Update(ctx, token); err != nil {
@@ -154,49 +154,35 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Get Unleash instance
-	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
-		return ctrl.Result{}, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
-	}
-	if token.Spec.UnleashInstance.Kind == "Unleash" {
-		adminToken, unleashUrl, err := r.getAdminTokenForUnleash(ctx, token, unleash)
-	} else if token.Spec.UnleashInstance.Kind == "RemoteUnleash" {
-		adminToken, unleashUrl, err := r.getAdminTokenForRemoteUnleash(ctx, token)
-	} else {
-		return ctrl.Result{}, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
-	}
-
-	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, &unleashv1.Unleash{}); err != nil {
+	unleash, err := r.getUnleashInstance(ctx, token)
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,
 				Status:  metav1.ConditionFalse,
 				Reason:  "UnleashNotFound",
-				Message: "Unleash resource not found",
+				Message: fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace),
 			})
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeFailedToken,
 				Status:  metav1.ConditionTrue,
 				Reason:  "UnleashNotFound",
-				Message: "Unleash resource not found",
+				Message: fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace),
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
 
 			return ctrl.Result{}, nil
 		}
 
 		log.Error(err, "Failed to get Unleash resource")
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{}, err
 	}
 
+	// Check if Unleash instance is ready
 	if !unleash.IsReady() {
-		if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-			log.Error(err, "Failed to get ApiToken")
-			return ctrl.Result{}, err
-		}
-
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
@@ -205,66 +191,45 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		})
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Get Unleash admin API token
-	adminToken, err := unleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
+	// Get Unleash API client
+	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
+		log.Error(err, "Failed to get Unleash client")
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,
 				Status:  metav1.ConditionFalse,
 				Reason:  "UnleashSecretNotFound",
-				Message: "Unleash admin secret not found",
+				Message: "Unleash secret not found",
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
-
-			return ctrl.Result{Requeue: true}, nil
+		} else {
+			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
+				Type:    typeCreatedToken,
+				Status:  metav1.ConditionFalse,
+				Reason:  "FailedToCreateUnleashClient",
+				Message: "Failed to create Unleash client",
+			})
+			if err = r.Status().Update(ctx, token); err != nil {
+				log.Error(err, "Failed to update ApiToken status")
+				return ctrl.Result{}, err
+			}
 		}
 
-		log.Error(err, "Failed to get Unleash admin secret")
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{}, err
 	}
 
-	if adminToken == nil || len(adminToken) == 0 {
-		log.Error(err, "Unleash admin secret does not contain an api key")
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
-			Status:  metav1.ConditionFalse,
-			Reason:  "UnleashSecretMissingApiKey",
-			Message: "Unleash admin secret is empty",
-		})
-		if err = r.Status().Update(ctx, token); err != nil {
-			log.Error(err, "Failed to update ApiToken status")
-			return ctrl.Result{Requeue: true}, err
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	client, err := unleashclient.NewClient(unleash.GetURL(), string(adminToken))
-	if err != nil {
-		log.Error(err, "Failed to create Unleash client")
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
-			Status:  metav1.ConditionFalse,
-			Reason:  "FailedToCreateUnleashClient",
-			Message: "Failed to create Unleash client",
-		})
-		if err = r.Status().Update(ctx, token); err != nil {
-			log.Error(err, "Failed to update ApiToken status")
-			return ctrl.Result{Requeue: true}, err
-		}
-	}
-
-	exists, err := client.CheckAPITokenExists(token.GetObjectMeta().GetName())
+	// Check if token exists
+	exists, err := apiClient.CheckAPITokenExists(token.GetObjectMeta().GetName())
 	if err != nil {
 		log.Error(err, "Failed to check if token exists")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -275,14 +240,15 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		})
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{}, err
 	}
 
+	// Create token if it does not exist
 	if !exists {
-		apiToken, err := client.CreateAPIToken(unleashclient.APITokenRequest{
+		apiToken, err := apiClient.CreateAPIToken(unleashclient.APITokenRequest{
 			Username:    token.GetObjectMeta().GetName(),
 			Type:        token.Spec.Type,
 			Environment: token.Spec.Environment,
@@ -298,10 +264,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
 		}
 
+		// Token secret
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      token.Spec.SecretName,
@@ -312,6 +279,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			},
 		}
 
+		// Delete existing token secret if it exists
 		if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
 			log.Error(err, "Failed to delete secret")
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -322,10 +290,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
 		}
 
+		// Create new token secret
 		if err := r.Create(ctx, secret); err != nil {
 			log.Error(err, "Failed to create secret")
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -336,7 +305,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			})
 			if err = r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{Requeue: true}, err
+				return ctrl.Result{}, err
 			}
 		}
 
@@ -348,34 +317,37 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		})
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 	}
+
+	log.Info(fmt.Sprintf("Reconciled ApiToken %s", token.GetObjectMeta().GetName()))
 
 	return ctrl.Result{}, nil
 }
 
-func (r *ApiTokenReconciler) getAdminTokenForUnleash(ctx context.Context, token *unleashv1.ApiToken, unleash *unleashv1.Unleash) (adminToken []byte, url string, err error) {
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: unleash.Namespace}, secret); err != nil {
-		return nil, "", nil
+func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unleashv1.ApiToken) (UnleashInstance, error) {
+	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
+		return nil, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
 	}
 
-	return secret.Data["token"], unleash.GetURL(), nil
-}
+	if token.Spec.UnleashInstance.Kind == "Unleash" {
+		unleash := &unleashv1.Unleash{}
+		if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
+			return nil, err
+		}
 
-func (r *ApiTokenReconciler) getAdminTokenForRemoteUnleash(ctx context.Context, token *unleashv1.ApiToken) (adminToken []byte, url string, err error) {
-	unleash := &unleashv1.RemoteUnleash{}
-	if err = r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.ObjectMeta.Namespace}, unleash); err != nil {
-		return
+		return unleash, nil
+	} else if token.Spec.UnleashInstance.Kind == "RemoteUnleash" {
+		unleash := &unleashv1.RemoteUnleash{}
+		if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
+			return nil, err
+		}
+
+		return unleash, nil
+	} else {
+		return nil, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
 	}
-
-	adminToken, err = unleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
-	if err != nil {
-		return
-	}
-
-	return adminToken, unleash.GetURL(), nil
 }
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken) {
