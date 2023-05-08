@@ -1,23 +1,8 @@
-/*
-Copyright 2022.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controllers
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -169,8 +154,13 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
+	// @TODO implement support for other Unleash instance types
+	if token.Spec.UnleashInstance.ApiKind != "Unleash" {
+		return ctrl.Result{}, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.ApiKind)
+	}
+
 	unleash := &unleashv1.Unleash{}
-	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashName, Namespace: token.Namespace}, unleash); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
 		if apierrors.IsNotFound(err) {
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    typeCreatedToken,

@@ -9,6 +9,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	// secretPrefix is the prefix used for Unleasherator owned secret
+	secretPrefix = "unleasherator"
+)
+
 func init() {
 	SchemeBuilder.Register(&Unleash{}, &UnleashList{})
 }
@@ -253,11 +258,11 @@ func (u *Unleash) NamespacedInstanceSecretName() types.NamespacedName {
 }
 
 func (u *Unleash) GetInstanceSecretName() string {
-	return fmt.Sprintf("%s-admin-key", u.Name)
+	return fmt.Sprintf("%s-%s-admin-key", secretPrefix, u.Name)
 }
 
 func (u *Unleash) GetOperatorSecretName() string {
-	return fmt.Sprintf("%s-%s-admin-key", u.Namespace, u.Name)
+	return fmt.Sprintf("%s-%s-%s-admin-key", secretPrefix, u.Namespace, u.Name)
 }
 
 func (u *Unleash) GetURL() string {

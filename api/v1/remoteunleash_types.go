@@ -29,8 +29,38 @@ type RemoteUnleash struct {
 
 // RemoteUnleashSpec defines the desired state of RemoteUnleash
 type RemoteUnleashSpec struct {
-	SecretName string `json:"secretName"`
-	URL        string `json:"url"`
+	// Server is the Unleash instance this token is for.
+	// +kubebuilder:validation:Required
+	Server RemoteUnleashServer `json:"unleashInstance"`
+
+	// Secret is the secret containing the Unleash instance's API token.
+	// +kubebuilder:validation:Required
+	AdminSecret RemoteUnleashSecret `json:"adminSecret"`
+}
+
+// RemoteUnleashSecret defines the secret containing the Unleash instance's API token.
+type RemoteUnleashSecret struct {
+	// Name is the name of the secret containing the Unleash instance's API token.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^unleasherator-.+$`
+	Name string `json:"name"`
+
+	// TokenKey is the key of the secret containing the Unleash instance's API token.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=token
+	TokenKey string `json:"tokenKey"`
+
+	// Namespace is the namespace of the secret containing the Unleash instance's API token.
+	// +kubebuilder:validation:Optional
+	Namespace string `json:"namespace"`
+}
+
+// RemoteUnleashServer defines the Unleash instance this token is for.
+type RemoteUnleashServer struct {
+	// URL is the URL of the Unleash instance.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https?://`
+	URL string `json:"url"`
 }
 
 // RemoteUnleashStatus defines the observed state of RemoteUnleash
