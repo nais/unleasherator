@@ -57,7 +57,7 @@ type ApiTokenReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
-
+	unleash := &unleashv1.Unleash{}
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
 	if err != nil {
@@ -157,17 +157,13 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
 		return ctrl.Result{}, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
 	}
-
 	if token.Spec.UnleashInstance.Kind == "Unleash" {
-		adminToken, unleashUrl, err := r.getAdminTokenForUnleash(token)
+		adminToken, unleashUrl, err := r.getAdminTokenForUnleash(ctx, token, unleash)
 	} else if token.Spec.UnleashInstance.Kind == "RemoteUnleash" {
-		adminToken, unleashUrl, err := r.getAdminTokenForRemoteUnleash(token)
+		adminToken, unleashUrl, err := r.getAdminTokenForRemoteUnleash(ctx, token)
 	} else {
 		return ctrl.Result{}, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
 	}
-
-	u := unleashv1.Unleash{}
-	u.GetAnnotations()
 
 	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, &unleashv1.Unleash{}); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -359,18 +355,18 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *ApiTokenReconciler) getAdminTokenForUnleash(token unleashv1.ApiToken) ([]byte, string, error) {
+func (r *ApiTokenReconciler) getAdminTokenForUnleash(ctx context.Context, token *unleashv1.ApiToken, unleash *unleashv1.Unleash) (adminToken []byte, url string, err error) {
 	secret := &corev1.Secret{}
-	if err := r.Get(context.Background(), types.NamespacedName{Name: name, Namespace: namespace}, secret); err != nil {
-		return nil, err
+	if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: unleash.Namespace}, secret); err != nil {
+		return nil, "", nil
 	}
 
-	return secret.Data["token"], nil
+	return secret.Data["token"], unleash.GetURL(), nil
 }
 
-func (r *ApiTokenReconciler) getAdminTokenForRemoteUnleash(ctx context.Context, token unleashv1.ApiToken) (adminToken []byte, url string, err error) {
+func (r *ApiTokenReconciler) getAdminTokenForRemoteUnleash(ctx context.Context, token *unleashv1.ApiToken) (adminToken []byte, url string, err error) {
 	unleash := &unleashv1.RemoteUnleash{}
-	if err = r.Get(context.Background(), types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.ObjectMeta.Namespace}, unleash); err != nil {
+	if err = r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.ObjectMeta.Namespace}, unleash); err != nil {
 		return
 	}
 
