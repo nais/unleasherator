@@ -78,6 +78,7 @@ var _ = BeforeSuite(func() {
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: "default",
 		HttpClient:        httpClient,
+		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

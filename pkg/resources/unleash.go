@@ -44,10 +44,6 @@ func GenerateAdminKey() string {
 	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
 }
 
-func UnleashURL(unleash *unleashv1.Unleash) string {
-	return fmt.Sprintf("http://%s.%s", unleash.Name, unleash.Namespace)
-}
-
 func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -451,7 +447,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	}
 
 	if secretName == "" {
-		return envVars, fmt.Errorf("either database.url or database.secretName must be set")
+		return envVars, &ValidationError{
+			err:      fmt.Errorf("either database.url or database.secretName must be set"),
+			resource: "Deployment",
+		}
 	}
 
 	if secretURLKey != "" {
@@ -465,7 +464,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	} else if unleash.Spec.Database.User != "" {
 		envVars = append(envVars, utils.EnvVar(EnvDatabaseUser, unleash.Spec.Database.User))
 	} else {
-		return envVars, fmt.Errorf("either database.username or database.SecretUserKey must be set")
+		return envVars, &ValidationError{
+			err:      fmt.Errorf("either database.username or database.SecretUserKey must be set"),
+			resource: "Deployment",
+		}
 	}
 
 	if unleash.Spec.Database.SecretDatabaseNameKey != "" {
@@ -473,7 +475,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	} else if unleash.Spec.Database.DatabaseName != "" {
 		envVars = append(envVars, utils.EnvVar(EnvDatabaseName, unleash.Spec.Database.DatabaseName))
 	} else {
-		return envVars, fmt.Errorf("either database.databaseName or database.secretDatabaseNameKey must be set")
+		return envVars, &ValidationError{
+			err:      fmt.Errorf("either database.databaseName or database.secretDatabaseNameKey must be set"),
+			resource: "Deployment",
+		}
 	}
 
 	if unleash.Spec.Database.SecretHostKey != "" {
@@ -481,7 +486,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	} else if unleash.Spec.Database.Host != "" {
 		envVars = append(envVars, utils.EnvVar(EnvDatabaseHost, unleash.Spec.Database.Host))
 	} else {
-		return envVars, fmt.Errorf("either database.host or database.secretHostKey must be set")
+		return envVars, &ValidationError{
+			err:      fmt.Errorf("either database.host or database.secretHostKey must be set"),
+			resource: "Deployment",
+		}
 	}
 
 	if unleash.Spec.Database.SecretPortKey != "" {
@@ -489,7 +497,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	} else if unleash.Spec.Database.Port != "" {
 		envVars = append(envVars, utils.EnvVar(EnvDatabasePort, unleash.Spec.Database.Port))
 	} else {
-		return envVars, fmt.Errorf("either database.port or database.secretPortKey must be set")
+		return envVars, &ValidationError{
+			err:      fmt.Errorf("either database.port or database.secretPortKey must be set"),
+			resource: "Deployment",
+		}
 	}
 
 	if unleash.Spec.Database.SecretSSLKey != "" {

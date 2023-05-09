@@ -24,7 +24,6 @@ import (
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/resources"
-	unleashapi "github.com/nais/unleasherator/pkg/unleash"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
@@ -33,7 +32,10 @@ const (
 	// typeAvailableUnleash represents the status of the Deployment reconciliation
 	typeAvailableUnleash = "Available"
 
-	// typeDegradedUnleash represents the status used when the custom resource is deleted and the finalizer operations are must to occur.
+	// typeConnectionUnleash represents the status of the connection test to Unleash
+	typeConnectionUnleash = "Connection"
+
+	// typeDegradedUnleash represents the status used when the Unleash is deleted and the finalizer operations are must to occur.
 	typeDegradedUnleash = "Degraded"
 )
 
@@ -72,7 +74,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	err := r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
+			// If the Unleash is not found then, it usually means that it was deleted or not created
 			// In this way, we will stop the reconciliation
 			log.Info("unleash resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
@@ -91,7 +93,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 
-		// Let's re-fetch the unleash Custom Resource after update the status
+		// Let's re-fetch the unleash Unleash after update the status
 		// so that we have the latest state of the resource on the cluster and we will avoid
 		// raise the issue "the object has been modified, please apply
 		// your changes to the latest version and try again" which would re-trigger the reconciliation
@@ -103,7 +105,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Let's add a finalizer. Then, we can define some operations which should
-	// occurs before the custom resource to be deleted.
+	// occurs before the Unleash to be deleted.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers
 	if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
 		log.Info("Adding Finalizer for Unleash")
@@ -114,12 +116,12 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
-			log.Error(err, "Failed to add finalizer into the custom resource")
+			log.Error(err, "Failed to add finalizer into the Unleash")
 			return ctrl.Result{Requeue: true}, nil
 		}
 
 		if err = r.Update(ctx, unleash); err != nil {
-			log.Error(err, "Failed to update custom resource to add finalizer")
+			log.Error(err, "Failed to update Unleash to add finalizer")
 			return ctrl.Result{}, err
 		}
 	}
@@ -149,7 +151,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			// then you need to ensure that all worked fine before deleting and updating the Downgrade status
 			// otherwise, you should requeue here.
 
-			// Re-fetch the unleash Custom Resource before update the status
+			// Re-fetch the unleash Unleash before update the status
 			// so that we have the latest state of the resource on the cluster and we will avoid
 			// raise the issue "the object has been modified, please apply
 			// your changes to the latest version and try again" which would re-trigger the reconciliation
@@ -160,7 +162,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeDegradedUnleash,
 				Status: metav1.ConditionTrue, Reason: "Finalizing",
-				Message: fmt.Sprintf("Finalizer operations for custom resource %s name were successfully accomplished", unleash.Name)})
+				Message: fmt.Sprintf("Finalizer operations for Unleash %s name were successfully accomplished", unleash.Name)})
 
 			if err := r.Status().Update(ctx, unleash); err != nil {
 				log.Error(err, "Failed to update Unleash status")
@@ -183,64 +185,80 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var res ctrl.Result
 
-	_, res, err = r.reconcileSecrets(unleash, ctx, log)
+	res, err = r.reconcileSecrets(ctx, unleash)
 	if err != nil {
-		log.Error(err, "Failed to reconcile Secrets for Unleash")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets"); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
 		return res, nil
 	}
 
-	_, res, err = r.reconcileDeployment(unleash, ctx, log)
+	res, err = r.reconcileDeployment(ctx, unleash)
 	if err != nil {
-		log.Error(err, "Failed to reconcile Deployment for Unleash")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment"); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
 		return res, nil
 	}
 
-	_, res, err = r.reconcileService(unleash, ctx, log)
+	res, err = r.reconcileService(ctx, unleash)
 	if err != nil {
-		log.Error(err, "Failed to reconcile Service for Unleash")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
 		return res, nil
 	}
 
-	res, err = r.reconcileNetworkPolicy(unleash, ctx, log)
+	res, err = r.reconcileNetworkPolicy(ctx, unleash)
 	if err != nil {
-		log.Error(err, "Failed to reconcile NetworkPolicy for Unleash")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
 		return res, nil
 	}
 
-	res, err = r.reconcileIngresses(unleash, ctx, log)
+	res, err = r.reconcileIngresses(ctx, unleash)
 	if err != nil {
-		log.Error(err, "Failed to reconcile Ingresses for Unleash")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses"); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
 		return res, nil
 	}
 
-	err = r.testConnection(unleash, ctx, log)
-	if err != nil {
-		log.Error(err, "Failed to test connection to Unleash")
-		return ctrl.Result{}, err
-	}
-
+	// Re-fetch Unleash instance before update the status
 	err = r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
-		log.Error(err, "Failed to re-fetch unleash")
+		log.Error(err, "Failed to re-fetch Unleash")
 		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash,
-		Status: metav1.ConditionTrue, Reason: "Reconciling",
-		Message: fmt.Sprintf("Unleash %s is available", unleash.Name)})
+	// Set the reconcile status of the Unleash instance to available
+	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
+		return ctrl.Result{}, err
+	}
 
-	if err := r.Status().Update(ctx, unleash); err != nil {
-		log.Error(err, "Failed to update Unleash status")
+	// Test connection to Unleash instance
+	err = r.testConnection(unleash, ctx, log)
+	if err != nil {
+		if err := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
+	// Set the connection status of the Unleash instance to available
+	if err = r.updateStatusConnectionSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -275,19 +293,21 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 
 	// Note: It is not recommended to use finalizers with the purpose of delete resources which are
 	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
-	// are defined as depended of the custom resource. See that we use the method ctrl.SetControllerReference.
+	// are defined as depended of the Unleash. See that we use the method ctrl.SetControllerReference.
 	// to set the ownerRef which means that the Deployment will be deleted by the Kubernetes API.
 	// More info: https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/
 
 	// The following implementation will raise an event
 	r.Recorder.Event(cr, "Warning", "Deleting",
-		fmt.Sprintf("Custom Resource %s is being deleted from the namespace %s",
+		fmt.Sprintf("Unleash %s is being deleted from the namespace %s",
 			cr.Name,
 			cr.Namespace))
 }
 
 // reconcileNetworkPolicy will ensure that the required network policy is created
-func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
 	newNetPol, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -340,12 +360,8 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 }
 
 // reconcileIngress will ensure that the required ingress is created
-func (r *UnleashReconciler) reconcileIngress(
-	unleash *unleashv1.Unleash,
-	ingress *unleashv1.IngressConfig,
-	nameSuffix string,
-	ctx context.Context,
-	log logr.Logger) (ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unleashv1.Unleash, ingress *unleashv1.IngressConfig, nameSuffix string) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
 
 	newIngress, err := resources.IngressForUnleash(unleash, ingress, nameSuffix, r.Scheme)
 	if err != nil {
@@ -400,13 +416,13 @@ func (r *UnleashReconciler) reconcileIngress(
 }
 
 // reconcileIngresses will ensure that the required ingresses are created
-func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (ctrl.Result, error) {
-	res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, "web", ctx, log)
+func (r *UnleashReconciler) reconcileIngresses(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	res, err := r.reconcileIngress(ctx, unleash, &unleash.Spec.WebIngress, "web")
 	if err != nil || res.Requeue {
 		return res, err
 	}
 
-	res, err = r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, "api", ctx, log)
+	res, err = r.reconcileIngress(ctx, unleash, &unleash.Spec.ApiIngress, "api")
 	if err != nil || res.Requeue {
 		return res, err
 	}
@@ -415,7 +431,9 @@ func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx c
 }
 
 // reconcileSecrets will ensure that the required secrets are created
-func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Secret, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
 	// Check if operator secret already exists, if not create a new one
 	operatorSecret := &corev1.Secret{}
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), operatorSecret)
@@ -423,15 +441,15 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 		adminKey := resources.GenerateAdminKey()
 		operatorSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
 		if err != nil {
-			return operatorSecret, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {
-			return operatorSecret, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 	} else if err != nil {
-		return operatorSecret, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
 	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])
@@ -439,7 +457,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 		err = fmt.Errorf("operator secret is empty for key %s", unleashv1.UnleashSecretTokenKey)
 		log.Error(err, "Failed to get admin token secret", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name, "Secret.Key", unleashv1.UnleashSecretTokenKey)
 
-		return operatorSecret, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
 	// Check if instance secret already exists, if not create a new one
@@ -448,34 +466,27 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 	if err != nil && apierrors.IsNotFound(err) {
 		instanceSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
 		if err != nil {
-			return instanceSecret, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 		log.Info("Creating Instance Secret for Unleash", "Secret.Namespace", instanceSecret.Namespace, "Secret.Name", instanceSecret.Name)
 		err = r.Create(ctx, instanceSecret)
 		if err != nil {
-			return instanceSecret, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 	} else if err != nil {
-		return instanceSecret, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
-	return instanceSecret, ctrl.Result{}, nil
+	return ctrl.Result{}, nil
 }
 
 // reconcileDeployment will ensure that the required deployment is created
-func (r *UnleashReconciler) reconcileDeployment(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*appsv1.Deployment, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
 	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
 	if err != nil {
-		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash,
-			Status: metav1.ConditionFalse, Reason: "Reconciling",
-			Message: fmt.Sprintf("Failed to create Deployment for the custom resource (%s): (%s)", unleash.Name, err)})
-
-		if err := r.Status().Update(ctx, unleash); err != nil {
-			log.Error(err, "Failed to update Unleash status")
-			return nil, ctrl.Result{}, err
-		}
-
-		return nil, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
 	found := &appsv1.Deployment{}
@@ -484,32 +495,34 @@ func (r *UnleashReconciler) reconcileDeployment(unleash *unleashv1.Unleash, ctx 
 		log.Info("Creating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 		if err = r.Create(ctx, dep); err != nil {
 			log.Error(err, "Failed to create Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
-			return found, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 
-		return found, ctrl.Result{RequeueAfter: time.Minute}, nil
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
-		return found, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	} else if !equality.Semantic.DeepDerivative(dep.Spec, found.Spec) {
 		log.Info("Updating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 
 		found.Spec = dep.Spec
 		if err = r.Update(ctx, found); err != nil {
 			log.Error(err, "Failed to update Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
-			return found, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 	}
 
 	log.Info("Skip reconcile: Deployment already up to date", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
-	return found, ctrl.Result{}, nil
+	return ctrl.Result{}, nil
 }
 
 // reconcileService will ensure that the Service for the Unleash instance is created
-func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Service, ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
 	newSvc, err := resources.ServiceForUnleash(unleash, r.Scheme)
 	if err != nil {
-		return nil, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	}
 
 	existingSvc := &corev1.Service{}
@@ -519,66 +532,47 @@ func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx con
 		err = r.Create(ctx, newSvc)
 		if err != nil {
 			log.Error(err, "Failed to create new Service", "Service.Namespace", newSvc.Namespace, "Service.Name", newSvc.Name)
-			return existingSvc, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 
-		return newSvc, ctrl.Result{}, nil
+		return ctrl.Result{}, nil
 	} else if err != nil {
-		return existingSvc, ctrl.Result{}, err
+		return ctrl.Result{}, err
 	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) {
 		existingSvc.Spec = newSvc.Spec
 		log.Info("Updating Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 		err = r.Update(ctx, existingSvc)
 		if err != nil {
 			log.Error(err, "Failed to update Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
-			return existingSvc, ctrl.Result{}, err
+			return ctrl.Result{}, err
 		}
 	}
 
 	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
-	return existingSvc, ctrl.Result{}, nil
-}
-
-func (r *UnleashReconciler) adminToken(unleash *unleashv1.Unleash, ctx context.Context) (string, error) {
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), secret)
-	if err != nil {
-		return "", err
-	}
-
-	return string(secret.Data[unleashv1.UnleashSecretTokenKey]), nil
-}
-
-func (r *UnleashReconciler) unleashClient(unleash *unleashv1.Unleash, ctx context.Context) (*unleashapi.Client, error) {
-	adminToken, err := r.adminToken(unleash, ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return unleashapi.NewClientWithHttpClient(unleash.GetURL(), adminToken, r.HttpClient)
+	return ctrl.Result{}, nil
 }
 
 // testConnection will test the connection to the Unleash instance
 func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
-	client, err := r.unleashClient(unleash, ctx)
+	client, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
-		log.Error(err, "Failed to set up client for Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+		log.Error(err, "Failed to set up client for Unleash")
 		return err
 	}
 
 	health, res, err := client.GetHealth()
 
 	if err != nil {
-		log.Error(err, "Failed to get instance health", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+		log.Error(err, "Failed to connect to Unleash instance health endpoint")
 		return err
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Instance health endpoint returned unexpected status code", "statusCode", res.StatusCode, "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
+		log.Error(err, "Instance health endpoint returned unexpected status code", "statusCode", res.StatusCode)
 		return err
 	}
 
-	log.Info("Successfully connected to Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "health", health)
+	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "health", health)
 	return nil
 }
 
@@ -597,9 +591,37 @@ func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, un
 func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
 	log := log.FromContext(ctx)
 
-	log.Error(err, fmt.Sprintf("%s for Unleash", message))
+	if verr, ok := err.(*resources.ValidationError); ok {
+		message = fmt.Sprintf("%s: %s", message, verr.Error())
+	}
+
+	log.Error(err, message)
 	return r.updateStatus(ctx, unleash, metav1.Condition{
 		Type:    typeAvailableUnleash,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: message,
+	})
+}
+
+func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
+	log := log.FromContext(ctx)
+
+	log.Info("Successfully connected to Unleash")
+	return r.updateStatus(ctx, unleash, metav1.Condition{
+		Type:    typeConnectionUnleash,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Successfully connected to Unleash instance",
+	})
+}
+
+func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+	log := log.FromContext(ctx)
+
+	log.Error(err, fmt.Sprintf("%s for Unleash", message))
+	return r.updateStatus(ctx, unleash, metav1.Condition{
+		Type:    typeConnectionUnleash,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -59,7 +60,7 @@ var _ = Describe("Unleash controller", func() {
 			Expect(createdUnleash.Status.Conditions[0].Type).To(Equal(typeAvailableUnleash))
 			Expect(createdUnleash.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
 			Expect(createdUnleash.Status.Conditions[0].Reason).To(Equal("Reconciling"))
-			Expect(createdUnleash.Status.Conditions[0].Message).To(Equal("Failed to create Deployment for the custom resource (test-unleash-fail): (either database.url or database.secretName must be set)"))
+			Expect(createdUnleash.Status.Conditions[0].Message).To(Equal("Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)"))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 
 			By("By cleaning up the Unleash")
@@ -67,6 +68,51 @@ var _ = Describe("Unleash controller", func() {
 		})
 
 		It("Should succeed when it can connect to Unleash", func() {
+			ctx := context.Background()
+
+			By("By mocking Unleash API")
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/api/health",
+				httpmock.NewStringResponder(200, `{"health": "GOOD"}`))
+
+			By("By creating a new Unleash")
+			unleash := &unleashv1.Unleash{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "unleash.nais.io/v1",
+					Kind:       "Unleash",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-unleash-success",
+					Namespace: UnleashNamespace,
+				},
+				Spec: unleashv1.UnleashSpec{
+					Database: unleashv1.DatabaseConfig{
+						URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			unleashLookupKey := unleash.NamespacedName()
+			createdUnleash := &unleashv1.Unleash{}
+
+			Eventually(func() ([]metav1.Condition, error) {
+				err := k8sClient.Get(ctx, unleashLookupKey, createdUnleash)
+				if err != nil {
+					return nil, err
+				}
+				return createdUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(HaveLen(2))
+
+			Expect(createdUnleash.Status.Conditions[1].Message).To(Equal("Successfully connected to Unleash instance"))
+			Expect(createdUnleash.Status.Conditions[1].Type).To(Equal(typeConnectionUnleash))
+			Expect(createdUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
+			Expect(createdUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
+			Expect(createdUnleash.IsReady()).To(BeTrue())
+
+			By("By cleaning up the Unleash")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 	})
 })
