@@ -54,7 +54,6 @@ spec:
                       the Unleash instance's API token.
                     type: string
                 required:
-                - key
                 - name
                 type: object
               unleashInstance:

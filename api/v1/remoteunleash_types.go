@@ -2,14 +2,12 @@ package unleash_nais_io_v1
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/nais/unleasherator/pkg/unleash"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func init() {
@@ -56,11 +54,11 @@ type RemoteUnleashSecret struct {
 	// TokenKey is the key of the secret containing the Unleash instance's API token.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=token
-	Key string `json:"key"`
+	Key string `json:"key,omitempty"`
 
 	// Namespace is the namespace of the secret containing the Unleash instance's API token.
 	// +kubebuilder:validation:Optional
-	Namespace string `json:"namespace"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 func (u *RemoteUnleash) GetAdminSecretNamespacedName() types.NamespacedName {
@@ -111,17 +109,14 @@ func (u *RemoteUnleash) GetURL() string {
 }
 
 func (u *RemoteUnleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
-	log := log.FromContext(ctx)
-
 	// operatorNamespace is not used, and is only here to satisfy the interface of UnleashInstance.
 	_ = operatorNamespace
 
 	secret := &v1.Secret{}
 	if err := client.Get(ctx, u.GetAdminSecretNamespacedName(), secret); err != nil {
-		log.Error(err, fmt.Sprintf("THis here is the namespace for adminSecret %v", u.GetAdminSecretNamespacedName()))
 		return nil, err
 	}
-	log.Info(fmt.Sprintf("Got secret %s, there's a key %s", secret.Data["token"], u.Spec.AdminSecret.Key))
+
 	return secret.Data[u.Spec.AdminSecret.Key], nil
 }
 

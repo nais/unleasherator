@@ -53,8 +53,6 @@ spec:
                     description: Namespace is the namespace of the secret containing
                       the Unleash instance's API token.
                     type: string
-                required:
-                - name
                 type: object
               unleashInstance:
                 description: Server is the Unleash instance this token is for.
@@ -66,9 +64,6 @@ spec:
                 required:
                 - url
                 type: object
-            required:
-            - adminSecret
-            - unleashInstance
             type: object
           status:
             description: RemoteUnleashStatus defines the observed state of RemoteUnleash
