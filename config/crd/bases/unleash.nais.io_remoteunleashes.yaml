@@ -40,7 +40,7 @@ spec:
                   API token.
                 properties:
                   key:
-                    default: INIT_ADMIN_API_TOKENS
+                    default: token
                     description: TokenKey is the key of the secret containing the
                       Unleash instance's API token.
                     type: string
