@@ -58,9 +58,8 @@ var _ = Describe("RemoteUnleash controller", func() {
 					return nil, err
 				}
 				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(Not(BeNil()))
+			}, timeout, interval).Should(HaveLen(2))
 
-			Expect(createdRemoteUnleash.Status.Conditions).To(HaveLen(2))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Type).To(Equal(typeAvailableUnleash))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionFalse))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
