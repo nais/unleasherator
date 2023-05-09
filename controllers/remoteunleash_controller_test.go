@@ -65,6 +65,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(createdRemoteUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionFalse))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Message).To(Equal("Failed to get admin secret"))
+			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
 		})
 	})
 })
