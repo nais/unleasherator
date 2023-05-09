@@ -6,5 +6,5 @@ const (
 	StatusConditionTypeDegraded    = "Degraded"
 
 	UnleashSecretNamePrefix = "unleasherator"
-	UnleashSecretTokenKey   = "token"
+	UnleashSecretTokenKey   = "INIT_ADMIN_API_TOKENS"
 )

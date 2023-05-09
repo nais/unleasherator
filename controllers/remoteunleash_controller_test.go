@@ -103,7 +103,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 					Namespace: "default",
 				},
 				Data: map[string][]byte{
-					"token": []byte(RemoteUnleashToken),
+					"INIT_ADMIN_API_TOKENS": []byte(RemoteUnleashToken),
 				},
 			}
 			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())

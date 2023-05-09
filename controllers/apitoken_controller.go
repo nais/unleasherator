@@ -275,7 +275,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Namespace: token.GetObjectMeta().GetNamespace(),
 			},
 			Data: map[string][]byte{
-				"token": []byte(apiToken.Secret),
+				"INIT_ADMIN_API_TOKENS": []byte(apiToken.Secret),
 			},
 		}
 

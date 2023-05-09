@@ -53,7 +53,7 @@ type RemoteUnleashSecret struct {
 
 	// TokenKey is the key of the secret containing the Unleash instance's API token.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default=token
+	// +kubebuilder:default=INIT_ADMIN_API_TOKENS
 	Key string `json:"key,omitempty"`
 
 	// Namespace is the namespace of the secret containing the Unleash instance's API token.
