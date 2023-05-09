@@ -44,6 +44,7 @@ type UnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	HttpClient        *http.Client
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -553,7 +554,7 @@ func (r *UnleashReconciler) unleashClient(unleash *unleashv1.Unleash, ctx contex
 		return nil, err
 	}
 
-	return unleashapi.NewClient(unleash.GetURL(), adminToken)
+	return unleashapi.NewClientWithHttpClient(unleash.GetURL(), adminToken, r.HttpClient)
 }
 
 // testConnection will test the connection to the Unleash instance
@@ -564,19 +565,19 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 		return err
 	}
 
-	stats, res, err := client.GetInstanceAdminStats()
+	health, res, err := client.GetHealth()
 
 	if err != nil {
-		log.Error(err, "Failed to get instance stats", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
+		log.Error(err, "Failed to get instance health", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace)
 		return err
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Instance stats returned unexpected status code", "statusCode", res.StatusCode, "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
+		log.Error(err, "Instance health endpoint returned unexpected status code", "statusCode", res.StatusCode, "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "status", res.Status)
 		return err
 	}
 
-	log.Info("Successfully connected to Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "stats", stats)
+	log.Info("Successfully connected to Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "health", health)
 	return nil
 }
 

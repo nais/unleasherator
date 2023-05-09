@@ -49,7 +49,6 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
 
-	client := &http.Client{}
 	req, err := http.NewRequest(requestMethod, requestURL, nil)
 
 	if err != nil {
@@ -59,7 +58,7 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", c.ApiToken)
 
-	res, err := client.Do(req)
+	res, err := c.HttpClient.Do(req)
 	if err != nil {
 		return res, err
 	}
@@ -90,7 +89,6 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 		return nil, err
 	}
 
-	client := &http.Client{}
 	req, err := http.NewRequest(requestMethod, requestURL, bytes.NewBuffer(requestBody))
 
 	if err != nil {
@@ -101,7 +99,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", c.ApiToken)
 
-	res, err := client.Do(req)
+	res, err := c.HttpClient.Do(req)
 	if err != nil {
 		return res, err
 	}

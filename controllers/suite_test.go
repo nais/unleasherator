@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"net/http"
 	"path/filepath"
 	"testing"
 
@@ -24,11 +25,12 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	cfg       *rest.Config
-	k8sClient client.Client // You'll be using this client in your tests.
-	testEnv   *envtest.Environment
-	ctx       context.Context
-	cancel    context.CancelFunc
+	cfg        *rest.Config
+	k8sClient  client.Client // You'll be using this client in your tests.
+	testEnv    *envtest.Environment
+	ctx        context.Context
+	cancel     context.CancelFunc
+	httpClient *http.Client
 )
 
 func TestAPIs(t *testing.T) {
@@ -59,6 +61,8 @@ var _ = BeforeSuite(func() {
 
 	//+kubebuilder:scaffold:scheme
 
+	httpClient = &http.Client{}
+
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
@@ -75,6 +79,13 @@ var _ = BeforeSuite(func() {
 		OperatorNamespace: "default",
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
+
+	err = (&UnleashReconciler{
+		Client:            k8sManager.GetClient(),
+		Scheme:            k8sManager.GetScheme(),
+		OperatorNamespace: "default",
+		HttpClient:        httpClient,
+	}).SetupWithManager(k8sManager)
 
 	go func() {
 		defer GinkgoRecover()
