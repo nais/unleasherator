@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,7 +20,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
 	const (
 		RemoteUnleashNamespace = "default"
-		RemoteUnleashServerURL = "https://unleash.nais.io"
+		RemoteUnleashServerURL = "http://unleash.nais.io"
 		RemoteUnleashToken     = "test"
 
 		timeout  = time.Second * 10
@@ -76,6 +78,17 @@ var _ = Describe("RemoteUnleash controller", func() {
 		})
 
 		It("Should succeed when it can connect to Unleash", func() {
+			// Mock Unleash server with a health endpoint
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/health" {
+					w.WriteHeader(http.StatusNotFound)
+				}
+
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"health": "GOOD"}`))
+			}))
+			defer srv.Close()
+
 			ctx := context.Background()
 			RemoteUnleashName := "test-unleash-success"
 
@@ -107,7 +120,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 				},
 				Spec: unleashv1.RemoteUnleashSpec{
 					Server: unleashv1.RemoteUnleashServer{
-						URL: RemoteUnleashServerURL,
+						URL: srv.URL,
 					},
 					AdminSecret: unleashv1.RemoteUnleashSecret{
 						Name: secret.GetName(),
@@ -127,11 +140,11 @@ var _ = Describe("RemoteUnleash controller", func() {
 				return createdRemoteUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(HaveLen(2))
 
+			Expect(createdRemoteUnleash.Status.Conditions[1].Message).To(Equal("Reconciled successfully"))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Type).To(Equal(typeAvailableUnleash))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
 			Expect(createdRemoteUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
-			Expect(createdRemoteUnleash.Status.Conditions[1].Message).To(Equal("Reconciled successfully"))
-			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
+			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
 		})
 	})
 })

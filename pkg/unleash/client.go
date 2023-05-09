@@ -11,11 +11,16 @@ import (
 )
 
 type Client struct {
-	URL      url.URL
-	ApiToken string
+	URL        url.URL
+	ApiToken   string
+	HttpClient *http.Client
 }
 
 func NewClient(instanceUrl string, apiToken string) (*Client, error) {
+	return NewClientWithHttpClient(instanceUrl, apiToken, &http.Client{})
+}
+
+func NewClientWithHttpClient(instanceUrl string, apiToken string, httpClient *http.Client) (*Client, error) {
 	u, err := url.Parse(instanceUrl)
 	if err != nil {
 		return nil, err
@@ -26,8 +31,9 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 	}
 
 	return &Client{
-		URL:      *u,
-		ApiToken: apiToken,
+		URL:        *u,
+		ApiToken:   apiToken,
+		HttpClient: httpClient,
 	}, nil
 }
 
