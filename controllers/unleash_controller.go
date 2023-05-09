@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -290,7 +289,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 	existingNetPol := &networkingv1.NetworkPolicy{}
 	err = r.Get(ctx, unleash.NamespacedName(), existingNetPol)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "Failed to get NetworkPolicy for Unleash", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 		return ctrl.Result{}, err
 	}
@@ -309,7 +308,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 	}
 
 	// If the netpol is enabled and does not exist, we create it.
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		log.Info("Creating NetworkPolicy", "NetworkPolicy.Namespace", newNetPol.Namespace, "NetworkPolicy.Name", newNetPol.Name)
 		err = r.Create(ctx, newNetPol)
 		if err != nil {
@@ -349,7 +348,7 @@ func (r *UnleashReconciler) reconcileIngress(
 	existingIngress := &networkingv1.Ingress{}
 	err = r.Get(ctx, unleash.NamespacedNameWithSuffix(nameSuffix), existingIngress)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "Failed to get Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 		return ctrl.Result{}, err
 	}
@@ -369,7 +368,7 @@ func (r *UnleashReconciler) reconcileIngress(
 	}
 
 	// If the ingress is enabled and does not exist, we create it.
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		log.Info("Creating Ingress", "Ingress.Namespace", newIngress.Namespace, "Ingress.Name", newIngress.Name)
 		err = r.Create(ctx, newIngress)
 		if err != nil {
@@ -414,7 +413,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 	// Check if operator secret already exists, if not create a new one
 	found := &corev1.Secret{}
 	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), found)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		adminKey := resources.GenerateAdminKey()
 		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
 		if err != nil {
@@ -441,7 +440,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 	// Check if instance secret already exists, if not create a new one
 	found = &corev1.Secret{}
 	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), found)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
 		if err != nil {
 			return found, ctrl.Result{}, err
@@ -513,7 +512,7 @@ func (r *UnleashReconciler) reconcileService(unleash *unleashv1.Unleash, ctx con
 
 	existingSvc := &corev1.Service{}
 	err = r.Get(ctx, unleash.NamespacedName(), existingSvc)
-	if err != nil && errors.IsNotFound(err) {
+	if err != nil && apierrors.IsNotFound(err) {
 		log.Info("Creating Service", "Service.Namespace", newSvc.Namespace, "Service.Name", newSvc.Name)
 		err = r.Create(ctx, newSvc)
 		if err != nil {

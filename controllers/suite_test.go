@@ -73,6 +73,14 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&UnleashReconciler{
+		Client:            k8sManager.GetClient(),
+		Scheme:            k8sManager.GetScheme(),
+		OperatorNamespace: "default",
+		HttpClient:        httpClient,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	err = (&RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
@@ -80,12 +88,12 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&UnleashReconciler{
+	err = (&ApiTokenReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: "default",
-		HttpClient:        httpClient,
 	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
 
 	go func() {
 		defer GinkgoRecover()
