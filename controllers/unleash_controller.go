@@ -432,7 +432,7 @@ func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx con
 
 	log.Info("Skip reconcile: Operator Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
 
-	adminKey := string(found.Data[resources.EnvInitAdminAPIToken])
+	adminKey := string(found.Data[unleashv1.UnleashSecretTokenKey])
 	if adminKey == "" {
 		return found, ctrl.Result{}, fmt.Errorf("operator secret AdminKey is empty")
 	}
@@ -544,7 +544,7 @@ func (r *UnleashReconciler) adminToken(unleash *unleashv1.Unleash, ctx context.C
 		return "", err
 	}
 
-	return string(secret.Data[resources.EnvInitAdminAPIToken]), nil
+	return string(secret.Data[unleashv1.UnleashSecretTokenKey]), nil
 }
 
 func (r *UnleashReconciler) unleashClient(unleash *unleashv1.Unleash, ctx context.Context) (*unleashapi.Client, error) {
@@ -597,5 +597,5 @@ func GetApiToken(ctx context.Context, r client.Client, unleashName, operatorName
 		return "", err
 	}
 
-	return string(secret.Data[resources.EnvInitAdminAPIToken]), nil
+	return string(secret.Data[unleashv1.UnleashSecretTokenKey]), nil
 }

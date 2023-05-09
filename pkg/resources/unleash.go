@@ -55,7 +55,7 @@ func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, 
 			Namespace: namespace,
 		},
 		StringData: map[string]string{
-			EnvInitAdminAPIToken: adminKey,
+			unleashv1.UnleashSecretTokenKey: adminKey,
 		},
 	}
 
@@ -441,7 +441,7 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	secretURLKey := unleash.Spec.Database.SecretURLKey
 	databaseURL := unleash.Spec.Database.URL
 
-	envVars := []corev1.EnvVar{utils.SecretEnvVar(EnvInitAdminAPIToken, unleash.GetInstanceSecretName(), EnvInitAdminAPIToken)}
+	envVars := []corev1.EnvVar{utils.SecretEnvVar(EnvInitAdminAPIToken, unleash.GetInstanceSecretName(), unleashv1.UnleashSecretTokenKey)}
 
 	if databaseURL != "" {
 		return append(envVars, corev1.EnvVar{
