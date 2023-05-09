@@ -65,9 +65,9 @@ type UnleashReconciler struct {
 func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
+	log.Info("Starting reconciliation of Unleash")
+
 	// Fetch the Unleash instance
-	// The purpose is check if the Custom Resource for the Kind Unleash
-	// is applied on the cluster if not we return nil to stop the reconciliation
 	unleash := &unleashv1.Unleash{}
 	err := r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
@@ -84,6 +84,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Let's just set the status as Unknown when no status are available
 	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
+		log.Info("Setting status as Unknown for Unleash")
 		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, unleash); err != nil {
 			log.Error(err, "Failed to update Unleash status")
@@ -106,6 +107,12 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers
 	if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
 		log.Info("Adding Finalizer for Unleash")
+
+		if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
+			log.Error(err, "Failed to re-fetch unleash")
+			return ctrl.Result{}, err
+		}
+
 		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
 			log.Error(err, "Failed to add finalizer into the custom resource")
 			return ctrl.Result{Requeue: true}, nil
@@ -332,7 +339,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(unleash *unleashv1.Unleash, c
 	return ctrl.Result{}, nil
 }
 
-// reconcileIngess will ensure that the required ingress is created
+// reconcileIngress will ensure that the required ingress is created
 func (r *UnleashReconciler) reconcileIngress(
 	unleash *unleashv1.Unleash,
 	ingress *unleashv1.IngressConfig,
@@ -397,7 +404,6 @@ func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx c
 	res, err := r.reconcileIngress(unleash, &unleash.Spec.WebIngress, "web", ctx, log)
 	if err != nil || res.Requeue {
 		return res, err
-
 	}
 
 	res, err = r.reconcileIngress(unleash, &unleash.Spec.ApiIngress, "api", ctx, log)
@@ -411,53 +417,49 @@ func (r *UnleashReconciler) reconcileIngresses(unleash *unleashv1.Unleash, ctx c
 // reconcileSecrets will ensure that the required secrets are created
 func (r *UnleashReconciler) reconcileSecrets(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) (*corev1.Secret, ctrl.Result, error) {
 	// Check if operator secret already exists, if not create a new one
-	found := &corev1.Secret{}
-	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), found)
+	operatorSecret := &corev1.Secret{}
+	err := r.Get(ctx, unleash.NamespacedOperatorSecretName(r.OperatorNamespace), operatorSecret)
 	if err != nil && apierrors.IsNotFound(err) {
 		adminKey := resources.GenerateAdminKey()
-		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
+		operatorSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
 		if err != nil {
-			return found, ctrl.Result{}, err
+			return operatorSecret, ctrl.Result{}, err
 		}
-		log.Info("Creating a new Operator Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
-		err = r.Create(ctx, secret)
+		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
+		err = r.Create(ctx, operatorSecret)
 		if err != nil {
-			return found, ctrl.Result{}, err
+			return operatorSecret, ctrl.Result{}, err
 		}
-
-		return found, ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
-		return found, ctrl.Result{}, err
+		return operatorSecret, ctrl.Result{}, err
 	}
 
-	log.Info("Skip reconcile: Operator Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
-
-	adminKey := string(found.Data[unleashv1.UnleashSecretTokenKey])
+	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])
 	if adminKey == "" {
-		return found, ctrl.Result{}, fmt.Errorf("operator secret AdminKey is empty")
+		err = fmt.Errorf("operator secret is empty for key %s", unleashv1.UnleashSecretTokenKey)
+		log.Error(err, "Failed to get admin token secret", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name, "Secret.Key", unleashv1.UnleashSecretTokenKey)
+
+		return operatorSecret, ctrl.Result{}, err
 	}
 
 	// Check if instance secret already exists, if not create a new one
-	found = &corev1.Secret{}
-	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), found)
+	instanceSecret := &corev1.Secret{}
+	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), instanceSecret)
 	if err != nil && apierrors.IsNotFound(err) {
-		secret, err := resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
+		instanceSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
 		if err != nil {
-			return found, ctrl.Result{}, err
+			return instanceSecret, ctrl.Result{}, err
 		}
-		log.Info("Creating a new Instance Secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
-		err = r.Create(ctx, secret)
+		log.Info("Creating Instance Secret for Unleash", "Secret.Namespace", instanceSecret.Namespace, "Secret.Name", instanceSecret.Name)
+		err = r.Create(ctx, instanceSecret)
 		if err != nil {
-			return found, ctrl.Result{}, err
+			return instanceSecret, ctrl.Result{}, err
 		}
-
-		return found, ctrl.Result{Requeue: true}, nil
 	} else if err != nil {
-		return found, ctrl.Result{}, err
+		return instanceSecret, ctrl.Result{}, err
 	}
 
-	log.Info("Skip reconcile: Instance Secret already exists", "Secret.Namespace", found.Namespace, "Secret.Name", found.Name)
-	return found, ctrl.Result{}, nil
+	return instanceSecret, ctrl.Result{}, nil
 }
 
 // reconcileDeployment will ensure that the required deployment is created
@@ -577,6 +579,42 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	}
 
 	log.Info("Successfully connected to Unleash", "unleash", unleash.Name, "namespace", unleash.Namespace, "operatorNamespace", r.OperatorNamespace, "health", health)
+	return nil
+}
+
+func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
+	log := log.FromContext(ctx)
+
+	log.Info("Successfully reconciled Unleash")
+	return r.updateStatus(ctx, unleash, metav1.Condition{
+		Type:    typeAvailableUnleash,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Reconciled successfully",
+	})
+}
+
+func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+	log := log.FromContext(ctx)
+
+	log.Error(err, fmt.Sprintf("%s for Unleash", message))
+	return r.updateStatus(ctx, unleash, metav1.Condition{
+		Type:    typeAvailableUnleash,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: message,
+	})
+}
+
+func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, status metav1.Condition) error {
+	log := log.FromContext(ctx)
+
+	meta.SetStatusCondition(&unleash.Status.Conditions, status)
+	if err := r.Status().Update(ctx, unleash); err != nil {
+		log.Error(err, "Failed to update status for Unleash")
+		return err
+	}
+
 	return nil
 }
 

@@ -50,7 +50,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Set status to unknown if not set
 	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
 		if err := r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-			Type:    typeDegradedUnleash,
+			Type:    typeAvailableUnleash,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
