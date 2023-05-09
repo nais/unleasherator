@@ -44,7 +44,6 @@ func (c *Client) requestURL(requestPath string) *url.URL {
 
 	return req
 }
-
 func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
@@ -62,12 +61,14 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	if err != nil {
 		return res, err
 	}
-	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return res, err
 	}
+
+	// Put the read body back into the res.Body
+	res.Body = ioutil.NopCloser(bytes.NewReader(body))
 
 	if res.StatusCode != 200 {
 		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)

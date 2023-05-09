@@ -1,6 +1,8 @@
 package unleash
 
-import "net/http"
+import (
+	"net/http"
+)
 
 type InstanceAdminStatsResult struct {
 	InstanceID        string  `json:"instanceId"`
@@ -28,11 +30,12 @@ type HealthResult struct {
 // GetHealth returns the health of the Unleash instance.
 func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 	health := &HealthResult{}
-
 	res, err := c.HTTPGet("/api/health", health)
+
 	if err != nil {
 		return health, res, err
 	}
+	defer res.Body.Close()
 
 	return health, res, nil
 }
