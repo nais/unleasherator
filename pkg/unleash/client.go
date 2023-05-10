@@ -11,11 +11,16 @@ import (
 )
 
 type Client struct {
-	URL      url.URL
-	ApiToken string
+	URL        url.URL
+	ApiToken   string
+	HttpClient *http.Client
 }
 
 func NewClient(instanceUrl string, apiToken string) (*Client, error) {
+	return NewClientWithHttpClient(instanceUrl, apiToken, &http.Client{})
+}
+
+func NewClientWithHttpClient(instanceUrl string, apiToken string, httpClient *http.Client) (*Client, error) {
 	u, err := url.Parse(instanceUrl)
 	if err != nil {
 		return nil, err
@@ -26,8 +31,9 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 	}
 
 	return &Client{
-		URL:      *u,
-		ApiToken: apiToken,
+		URL:        *u,
+		ApiToken:   apiToken,
+		HttpClient: httpClient,
 	}, nil
 }
 
@@ -38,12 +44,10 @@ func (c *Client) requestURL(requestPath string) *url.URL {
 
 	return req
 }
-
 func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
 
-	client := &http.Client{}
 	req, err := http.NewRequest(requestMethod, requestURL, nil)
 
 	if err != nil {
@@ -53,11 +57,10 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", c.ApiToken)
 
-	res, err := client.Do(req)
+	res, err := c.HttpClient.Do(req)
 	if err != nil {
 		return res, err
 	}
-	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
@@ -84,7 +87,6 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 		return nil, err
 	}
 
-	client := &http.Client{}
 	req, err := http.NewRequest(requestMethod, requestURL, bytes.NewBuffer(requestBody))
 
 	if err != nil {
@@ -95,7 +97,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 	req.Header.Add("Accept", "application/json")
 	req.Header.Add("Authorization", c.ApiToken)
 
-	res, err := client.Do(req)
+	res, err := c.HttpClient.Do(req)
 	if err != nil {
 		return res, err
 	}

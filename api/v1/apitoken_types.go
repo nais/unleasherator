@@ -4,12 +4,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ApiTokenUnleashInstance defines the Unleash instance this token is for.
+type ApiTokenUnleashInstance struct {
+	// ApiVersion is the API version of the Unleash instance.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=unleash.nais.io/v1
+	ApiVersion string `json:"apiVersion"`
+
+	// Kind is the API kind of the Unleash instance.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=Unleash;RemoteUnleash
+	Kind string `json:"kind"`
+
+	// Name is the name of the Unleash instance.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
+
 // ApiTokenSpec defines the desired state of ApiToken
 type ApiTokenSpec struct {
-	// UnleashName is the name of the Unleash instance this token is for.
-	UnleashName string `json:"unleashName"`
+	// UnleashInstance is the Unleash instance this token is for.
+	// +kubebuilder:validation:Required
+	UnleashInstance ApiTokenUnleashInstance `json:"unleashInstance"`
 
 	// SecretName is the name of the secret where the token will be stored.
+	// +kubebuilder:validation:Required
 	SecretName string `json:"secretName"`
 
 	// Type is the type of token to create. Valid values are "CLIENT" and "FRONTEND".

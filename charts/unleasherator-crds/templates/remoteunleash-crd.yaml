@@ -35,13 +35,40 @@ spec:
           spec:
             description: RemoteUnleashSpec defines the desired state of RemoteUnleash
             properties:
-              secretName:
-                type: string
-              url:
-                type: string
+              adminSecret:
+                description: Secret is the secret containing the Unleash instance's
+                  API token.
+                properties:
+                  key:
+                    default: token
+                    description: TokenKey is the key of the secret containing the Unleash
+                      instance's API token.
+                    type: string
+                  name:
+                    description: Name is the name of the secret containing the Unleash
+                      instance's API token.
+                    pattern: ^unleasherator-.+$
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the secret containing
+                      the Unleash instance's API token.
+                    type: string
+                required:
+                - name
+                type: object
+              unleashInstance:
+                description: Server is the Unleash instance this token is for.
+                properties:
+                  url:
+                    description: URL is the URL of the Unleash instance.
+                    pattern: ^https?://
+                    type: string
+                required:
+                - url
+                type: object
             required:
-            - secretName
-            - url
+            - adminSecret
+            - unleashInstance
             type: object
           status:
             description: RemoteUnleashStatus defines the observed state of RemoteUnleash

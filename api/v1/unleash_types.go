@@ -1,12 +1,15 @@
 package unleash_nais_io_v1
 
 import (
+	"context"
 	"fmt"
 
+	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func init() {
@@ -39,7 +42,7 @@ type UnleashSpec struct {
 	Size int32 `json:"size,omitempty"`
 	// CustomImage points to a customImage, this overrides all other version settings
 	// Use at your own risk
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
 
 	// Database is the database configuration
@@ -215,12 +218,13 @@ type UnleashStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-func (u *UnleashStatus) IsReady() bool {
-	for _, condition := range u.Conditions {
-		if condition.Type == "Available" && condition.Status == "True" {
+func (s *UnleashStatus) IsReady() bool {
+	for _, c := range s.Conditions {
+		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -253,13 +257,37 @@ func (u *Unleash) NamespacedInstanceSecretName() types.NamespacedName {
 }
 
 func (u *Unleash) GetInstanceSecretName() string {
-	return fmt.Sprintf("%s-admin-key", u.Name)
+	return fmt.Sprintf("%s-%s-admin-key", UnleashSecretNamePrefix, u.Name)
 }
 
 func (u *Unleash) GetOperatorSecretName() string {
-	return fmt.Sprintf("%s-%s-admin-key", u.Namespace, u.Name)
+	return fmt.Sprintf("%s-%s-%s-admin-key", UnleashSecretNamePrefix, u.Namespace, u.Name)
 }
 
 func (u *Unleash) GetURL() string {
 	return fmt.Sprintf("http://%s.%s", u.Name, u.Namespace)
+}
+
+func (u *Unleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
+	secret := &corev1.Secret{}
+
+	err := client.Get(ctx, u.NamespacedOperatorSecretName(operatorNamespace), secret)
+	if err != nil {
+		return nil, err
+	}
+
+	return secret.Data[UnleashSecretTokenKey], nil
+}
+
+func (u *Unleash) GetApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
+	token, err := u.GetAdminToken(ctx, client, operatorNamespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return unleashclient.NewClient(u.GetURL(), string(token))
+}
+
+func (u *Unleash) IsReady() bool {
+	return u.Status.IsReady()
 }

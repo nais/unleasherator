@@ -57,13 +57,30 @@ spec:
                 - CLIENT
                 - FRONTEND
                 type: string
-              unleashName:
-                description: UnleashName is the name of the Unleash instance this token
-                  is for.
-                type: string
+              unleashInstance:
+                description: UnleashInstance is the Unleash instance this token is for.
+                properties:
+                  apiVersion:
+                    default: unleash.nais.io/v1
+                    description: ApiVersion is the API version of the Unleash instance.
+                    type: string
+                  kind:
+                    description: Kind is the API kind of the Unleash instance.
+                    enum:
+                    - Unleash
+                    - RemoteUnleash
+                    type: string
+                  name:
+                    description: Name is the name of the Unleash instance.
+                    type: string
+                required:
+                - apiVersion
+                - kind
+                - name
+                type: object
             required:
             - secretName
-            - unleashName
+            - unleashInstance
             type: object
           status:
             description: ApiTokenStatus defines the observed state of ApiToken
