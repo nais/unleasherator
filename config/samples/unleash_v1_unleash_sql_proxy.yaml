@@ -2,10 +2,10 @@ apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
   labels:
-    app.kuberentes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/instance: unleash-sample
     app.kubernetes.io/name: unleash
+    app.kubernetes.io/instance: unleash-sample
+    app.kubernetes.io/part-of: unleasherator
+    app.kuberentes.io/managed-by: kustomize
     app.kubernetes.io/created-by: unleasherator
   name: unleash-sql-proxy-sample
 spec:
