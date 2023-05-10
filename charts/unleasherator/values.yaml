@@ -44,11 +44,11 @@ managerConfig:
     metadata:
       labels:
         appKubernetesIocomponent: manager
-        appKubernetesIocreatedBy: controller-manager
+        appKubernetesIocreatedBy: unleasherator
         appKubernetesIoinstance: controller-manager-configuration
         appKubernetesIomanagedBy: kustomize
         appKubernetesIoname: controllermanagerconfig
-        appKubernetesIopartOf: controller-manager
+        appKubernetesIopartOf: unleasherator
     metrics:
       bindAddress: 127.0.0.1:8080
     webhook:

@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/instance: unleash-viewer-role
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
     app.kubernetes.io/managed-by: kustomize
   name: unleash-viewer-role
 rules:

@@ -4,8 +4,8 @@ metadata:
   name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: controller-manager
-    app.kubernetes.io/part-of: controller-manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
   {{- include "unleasherator.labels" . | nindent 4 }}
 ---
 apiVersion: apps/v1
@@ -14,8 +14,8 @@ metadata:
   name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: controller-manager
-    app.kubernetes.io/part-of: controller-manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
     control-plane: controller-manager
   {{- include "unleasherator.labels" . | nindent 4 }}
 spec:

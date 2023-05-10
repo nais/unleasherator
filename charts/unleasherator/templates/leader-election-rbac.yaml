@@ -4,8 +4,8 @@ metadata:
   name: {{ include "unleasherator.fullname" . }}-leader-election-role
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: controller-manager
-    app.kubernetes.io/part-of: controller-manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
     app.kubernets.io/managed-by: kustomize
   {{- include "unleasherator.labels" . | nindent 4 }}
 rules:
@@ -47,8 +47,8 @@ metadata:
   name: {{ include "unleasherator.fullname" . }}-leader-election-rolebinding
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: controller-manager
-    app.kubernetes.io/part-of: controller-manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
   {{- include "unleasherator.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
