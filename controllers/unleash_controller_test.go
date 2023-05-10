@@ -78,7 +78,7 @@ var _ = Describe("Unleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/api/health",
+			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/health",
 				httpmock.NewStringResponder(200, `{"health": "GOOD"}`))
 
 			By("By creating a new Unleash")
