@@ -277,9 +277,6 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err = r.updateStatusConnectionSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, "available").Set(1)
-	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, "degraded").Set(0)
 	return ctrl.Result{}, nil
 }
 
@@ -650,6 +647,13 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 
 func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
+
+	val := 0.0
+	if status.Status == metav1.ConditionTrue {
+		val = 1.0
+	}
+
+	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&unleash.Status.Conditions, status)
 	if err := r.Status().Update(ctx, unleash); err != nil {
