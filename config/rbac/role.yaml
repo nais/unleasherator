@@ -115,32 +115,6 @@ rules:
 - apiGroups:
   - unleash.nais.io
   resources:
-  - RemoteUnleashs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - RemoteUnleashs/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - RemoteUnleashs/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
   - apitokens
   verbs:
   - create
@@ -160,6 +134,32 @@ rules:
   - unleash.nais.io
   resources:
   - apitokens/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - remoteunleashes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - remoteunleashes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - remoteunleashes/status
   verbs:
   - get
   - patch
