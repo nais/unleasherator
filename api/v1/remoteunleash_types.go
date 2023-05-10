@@ -94,14 +94,21 @@ type RemoteUnleashStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-func (s *RemoteUnleashStatus) IsReady() bool {
+func (s *RemoteUnleashStatus) GetConditionStatus(conditionType string) metav1.ConditionStatus {
 	for _, c := range s.Conditions {
-		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
-			return true
+		if c.Type == conditionType {
+			return c.Status
 		}
 	}
 
-	return false
+	return metav1.ConditionUnknown
+}
+
+func (s *RemoteUnleashStatus) IsReady() bool {
+	statusAvailable := s.GetConditionStatus(UnleashStatusConditionTypeAvailable)
+	statusConnection := s.GetConditionStatus(UnleashStatusConditionTypeConnection)
+
+	return statusAvailable == metav1.ConditionTrue && statusConnection == metav1.ConditionTrue
 }
 
 func (u *RemoteUnleash) GetURL() string {

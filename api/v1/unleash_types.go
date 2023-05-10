@@ -47,19 +47,19 @@ type UnleashSpec struct {
 
 	// Database is the database configuration
 	// +kubebuilder:validation:Required
-	Database DatabaseConfig `json:"database,omitempty"`
+	Database UnleashDatabaseConfig `json:"database,omitempty"`
 
 	// WebIngress defines the ingress configuration for the web interface
 	// +kubebuilder:validation:Optional
-	WebIngress IngressConfig `json:"webIngress,omitempty"`
+	WebIngress UnleashIngressConfig `json:"webIngress,omitempty"`
 
 	// ApiIngress defines the ingress for the endpoints of Unleash
 	// +kubebuilder:validation:Optional
-	ApiIngress IngressConfig `json:"apiIngress,omitempty"`
+	ApiIngress UnleashIngressConfig `json:"apiIngress,omitempty"`
 
 	// NetworkPolicy defines the network policy configuration
 	// +kubebuilder:validation:Optional
-	NetworkPolicy NetworkPolicyConfig `json:"networkPolicy,omitempty"`
+	NetworkPolicy UnleashNetworkPolicyConfig `json:"networkPolicy,omitempty"`
 
 	// ExtraEnv is a list of extra environment variables to add to the deployment
 	// +kubebuilder:validation:Optional
@@ -87,8 +87,8 @@ type UnleashSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// NetworkPolicyConfig defines the network policy configuration
-type NetworkPolicyConfig struct {
+// UnleashNetworkPolicyConfig defines the network policy configuration
+type UnleashNetworkPolicyConfig struct {
 	// Enable enables the network policy
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled,omitempty"`
@@ -118,8 +118,8 @@ type NetworkPolicyConfig struct {
 	ExtraEgressRules []networkingv1.NetworkPolicyEgressRule `json:"extraEgressRules,omitempty"`
 }
 
-// IngressConfig defines the ingress configuration
-type IngressConfig struct {
+// UnleashIngressConfig defines the ingress configuration
+type UnleashIngressConfig struct {
 	// Enable enables the ingress
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
@@ -135,7 +135,7 @@ type IngressConfig struct {
 
 	// TLS is the TLS configuration to use for the ingress
 	// +kubebuilder:validation:Optional
-	TLS *IngressTLSConfig `json:"tls,omitempty"`
+	TLS *UnleashIngressTLSConfig `json:"tls,omitempty"`
 
 	// Annotations is a map of annotations to add to the ingress
 	// +kubebuilder:validation:Optional
@@ -146,8 +146,8 @@ type IngressConfig struct {
 	Class string `json:"class,omitempty"`
 }
 
-// IngressTLSConfig defines the TLS configuration for the ingress
-type IngressTLSConfig struct {
+// UnleashIngressTLSConfig defines the TLS configuration for the ingress
+type UnleashIngressTLSConfig struct {
 	// SecretName is the name of the secret containing the TLS certificate
 	// +kubebuilder:validation:Required
 	SecretName string `json:"secretName,omitempty"`
@@ -161,8 +161,8 @@ type IngressTLSConfig struct {
 	SecretKeyKey string `json:"secretKeyKey,omitempty"`
 }
 
-// DatabaseConfig defines the database configuration
-type DatabaseConfig struct {
+// UnleashDatabaseConfig defines the database configuration
+type UnleashDatabaseConfig struct {
 	// SecretName is the name of the secret containing the database credentials
 	SecretName string `json:"secretName,omitempty"`
 
@@ -218,14 +218,21 @@ type UnleashStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-func (s *UnleashStatus) IsReady() bool {
+func (s *UnleashStatus) GetConditionStatus(conditionType string) metav1.ConditionStatus {
 	for _, c := range s.Conditions {
-		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
-			return true
+		if c.Type == conditionType {
+			return c.Status
 		}
 	}
 
-	return false
+	return metav1.ConditionUnknown
+}
+
+func (s *UnleashStatus) IsReady() bool {
+	statusAvailable := s.GetConditionStatus(UnleashStatusConditionTypeAvailable)
+	statusConnection := s.GetConditionStatus(UnleashStatusConditionTypeConnection)
+
+	return statusAvailable == metav1.ConditionTrue && statusConnection == metav1.ConditionTrue
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {

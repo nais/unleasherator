@@ -62,7 +62,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Set status to unknown if not set
 	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
 		if err := r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-			Type:    typeAvailableUnleash,
+			Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
@@ -101,7 +101,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
 
 			if err := r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-				Type:    typeDegradedUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
 				Message: "Performing finalizer operations",
@@ -117,7 +117,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 
 			if err := r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-				Type:    typeDegradedUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Finalizing",
 				Message: "Finalizer operations completed",
@@ -199,7 +199,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Cont
 
 	log.Info("Successfully connected to Unleash")
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    typeConnectionUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeConnection,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Successfully connected to Unleash",
@@ -211,7 +211,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Conte
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    typeConnectionUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeConnection,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,
@@ -223,7 +223,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Conte
 
 	log.Info("Successfully reconciled RemoteUnleash")
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    typeAvailableUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Reconciled successfully",
@@ -235,7 +235,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 
 	log.Error(err, fmt.Sprintf("%s for RemoteUnleash", message))
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    typeAvailableUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,

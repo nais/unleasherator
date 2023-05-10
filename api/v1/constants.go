@@ -1,9 +1,9 @@
 package unleash_nais_io_v1
 
 const (
-	StatusConditionTypeAvailable   = "Available"
-	StatusConditionTypeProgressing = "Progressing"
-	StatusConditionTypeDegraded    = "Degraded"
+	UnleashStatusConditionTypeAvailable  = "Available"
+	UnleashStatusConditionTypeConnection = "Connection"
+	UnleashStatusConditionTypeDegraded   = "Degraded"
 
 	UnleashSecretNamePrefix = "unleasherator"
 	UnleashSecretTokenKey   = "token"

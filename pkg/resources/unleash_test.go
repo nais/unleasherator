@@ -39,7 +39,7 @@ func TestDeploymentForUnleash(t *testing.T) {
 		},
 		Spec: unleashv1.UnleashSpec{
 			Size: 1,
-			Database: unleashv1.DatabaseConfig{
+			Database: unleashv1.UnleashDatabaseConfig{
 				SecretName:   "unleash-db",
 				SecretURLKey: "url",
 			},
