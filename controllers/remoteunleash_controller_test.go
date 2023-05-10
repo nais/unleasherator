@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -64,7 +65,6 @@ var _ = Describe("RemoteUnleash controller", func() {
 				if err != nil {
 					return nil, err
 				}
-
 				// unset condition.LastTransitionTime to make comparison easier
 				unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions)
 
@@ -77,6 +77,10 @@ var _ = Describe("RemoteUnleash controller", func() {
 			}))
 
 			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
+			var m = &dto.Metric{}
+			err := unleashStatus.WithLabelValues(RemoteUnleashNamespace, RemoteUnleashName, "available").Write(m)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(m.GetGauge().GetValue()).To(Equal(float64(0)))
 
 			By("By deleting the RemoteUnleash")
 			Expect(k8sClient.Delete(ctx, createdRemoteUnleash)).Should(Succeed())
