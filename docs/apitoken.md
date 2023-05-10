@@ -1,14 +1,14 @@
 # ApiToken
 
-Status: `draft`
+Status: `alpha`
 
-`ApiToken` is a resource that allows you to create API tokens for Unleash.
+`ApiToken` is a resource that allows you to create API tokens for an Unleash instance.
 
 ## Implementation
 
-Check if an `Unleash` or `RemoteUnleash`, resource exists in the same namespace, or a `GlobalUnleash`, with the name specified in the `unleashName` field. If it does, create an API token for the Unleash instance and store it in a secret with the name specified in the `secretName` in the same namespace.
+Creates a new unleash API token for the Unleash instance specified in the `unleashInstance` field. This can be either an `Unleash` or a `RemoteUnleash` resource in the same namespace.
 
-Inside the secret, the API token will be stored in the `token` key.
+The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains a single key `token` with the value of the token.
 
 ## Spec
 
@@ -16,8 +16,12 @@ Inside the secret, the API token will be stored in the `token` key.
 apiVersion: unleash.nais.io/v1alpha1
 kind: ApiToken
 spec:
-  # The name of the Unleash instance to create the token for
-  unleashName: unleash
+  # The Unleash instance to create the token for
+  unleashInstance:
+    apiVersion: unleash.nais.io/v1
+    kind: Unleash
+    name: my-unleash-instance
+
   # The name of the secret to store the token in
   secretName: unleash-api-token
 ```
