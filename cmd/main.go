@@ -92,6 +92,15 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
+	if err = (&controllers.RemoteUnleashReconciler{
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
+		OperatorNamespace: operatorNamespace,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
+		os.Exit(1)
+	}
 	if err = (&controllers.ApiTokenReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
