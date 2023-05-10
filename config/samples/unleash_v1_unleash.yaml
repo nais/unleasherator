@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: unleash
     app.kubernetes.io/instance: unleash-sample
-    app.kubernetes.io/part-of: controller-manager
+    app.kubernetes.io/created-by: unleasherator
     app.kuberentes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/created-by: unleasherator
   name: unleash-sample
 spec:
   size: 1

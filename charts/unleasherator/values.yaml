@@ -22,7 +22,7 @@ controllerManager:
         drop:
         - ALL
     image:
-      repository: ghcr.io/nais/controller-manager
+      repository: ghcr.io/nais/unleasherator
       tag: main
     imagePullPolicy: Always
     resources:

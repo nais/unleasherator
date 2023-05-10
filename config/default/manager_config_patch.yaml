@@ -8,7 +8,7 @@ spec:
     spec:
       containers:
       - name: manager
-        image: ghcr.io/nais/controller-manager:main
+        image: ghcr.io/nais/unleasherator:main
         imagePullPolicy: Always
         env:
         - name: OPERATOR_NAMESPACE

@@ -1,4 +1,4 @@
-namespace: controller-manager-system
+namespace: unleasherator-system
 resources:
 - ../default
 
