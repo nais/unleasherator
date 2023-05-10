@@ -183,7 +183,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Check if Unleash instance is ready
 	if !unleash.IsReady() {
-	    log.Info("Unleash instance for ApiToken is not ready")
+		log.Info("Unleash instance for ApiToken is not ready")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
