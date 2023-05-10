@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: apitoken
     app.kubernetes.io/instance: apitoken-sample
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/part-of: controller-manager
     app.kuberentes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/created-by: controller-manager
   name: apitoken-sample
 spec:
   unleashName: unleash-sample

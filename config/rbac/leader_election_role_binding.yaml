@@ -5,8 +5,8 @@ metadata:
     app.kubernetes.io/name: rolebinding
     app.kubernetes.io/instance: leader-election-rolebinding
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/part-of: controller-manager
     app.kubernetes.io/managed-by: kustomize
   name: leader-election-rolebinding
 roleRef:
@@ -15,5 +15,5 @@ roleRef:
   name: leader-election-role
 subjects:
 - kind: ServiceAccount
-  name: unleasherator
+  name: controller-manager
   namespace: system

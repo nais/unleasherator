@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: unleasherator
+  name: controller-manager
   namespace: system
 spec:
   template:
     spec:
       containers:
       - name: manager
-        image: ghcr.io/nais/unleasherator:main
+        image: ghcr.io/nais/controller-manager:main
         imagePullPolicy: Always
         env:
         - name: OPERATOR_NAMESPACE

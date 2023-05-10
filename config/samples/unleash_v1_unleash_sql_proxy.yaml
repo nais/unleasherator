@@ -3,10 +3,10 @@ kind: Unleash
 metadata:
   labels:
     app.kuberentes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/created-by: controller-manager
     app.kubernetes.io/instance: unleash-sample
     app.kubernetes.io/name: unleash
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/part-of: controller-manager
   name: unleash-sql-proxy-sample
 spec:
   size: 1

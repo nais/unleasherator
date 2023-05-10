@@ -6,8 +6,8 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: unleash-viewer-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/part-of: controller-manager
     app.kubernetes.io/managed-by: kustomize
   name: unleash-viewer-role
 rules:
