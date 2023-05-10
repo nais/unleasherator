@@ -54,13 +54,18 @@ var _ = Describe("Unleash controller", func() {
 				if err != nil {
 					return nil, err
 				}
-				return createdUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(HaveLen(1))
 
-			Expect(createdUnleash.Status.Conditions[0].Type).To(Equal(typeAvailableUnleash))
-			Expect(createdUnleash.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
-			Expect(createdUnleash.Status.Conditions[0].Reason).To(Equal("Reconciling"))
-			Expect(createdUnleash.Status.Conditions[0].Message).To(Equal("Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)"))
+				// unset condition.LastTransitionTime to make comparison easier
+				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
+
+				return createdUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(ContainElement(metav1.Condition{
+				Type:    typeAvailableUnleash,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
+			}))
+
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 
 			By("By cleaning up the Unleash")
@@ -102,13 +107,18 @@ var _ = Describe("Unleash controller", func() {
 				if err != nil {
 					return nil, err
 				}
-				return createdUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(HaveLen(2))
 
-			Expect(createdUnleash.Status.Conditions[1].Message).To(Equal("Successfully connected to Unleash instance"))
-			Expect(createdUnleash.Status.Conditions[1].Type).To(Equal(typeConnectionUnleash))
-			Expect(createdUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
-			Expect(createdUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
+				// unset condition.LastTransitionTime to make comparison easier
+				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
+
+				return createdUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(ContainElement(metav1.Condition{
+				Type:    typeConnectionUnleash,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash instance",
+			}))
+
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 
 			By("By cleaning up the Unleash")

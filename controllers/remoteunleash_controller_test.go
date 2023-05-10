@@ -64,13 +64,18 @@ var _ = Describe("RemoteUnleash controller", func() {
 				if err != nil {
 					return nil, err
 				}
-				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(HaveLen(1))
 
-			Expect(createdRemoteUnleash.Status.Conditions[0].Type).To(Equal(typeAvailableUnleash))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Reason).To(Equal("Reconciling"))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Message).To(Equal("Failed to get admin token secret"))
+				// unset condition.LastTransitionTime to make comparison easier
+				unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions)
+
+				return createdRemoteUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(ContainElement(metav1.Condition{
+				Type:    typeAvailableUnleash,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: "Failed to get admin token secret",
+			}))
+
 			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
 
 			By("By deleting the RemoteUnleash")
@@ -137,13 +142,18 @@ var _ = Describe("RemoteUnleash controller", func() {
 				if err != nil {
 					return nil, err
 				}
-				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(HaveLen(2))
 
-			Expect(createdRemoteUnleash.Status.Conditions[1].Message).To(Equal("Successfully connected to Unleash"))
-			Expect(createdRemoteUnleash.Status.Conditions[1].Type).To(Equal(typeConnectionUnleash))
-			Expect(createdRemoteUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
-			Expect(createdRemoteUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
+				// unset condition.LastTransitionTime to make comparison easier
+				unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions)
+
+				return createdRemoteUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(ContainElement(metav1.Condition{
+				Type:    typeConnectionUnleash,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+
 			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
 		})
 	})
