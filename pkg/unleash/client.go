@@ -67,9 +67,6 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 		return res, err
 	}
 
-	// Put the read body back into the res.Body
-	res.Body = ioutil.NopCloser(bytes.NewReader(body))
-
 	if res.StatusCode != 200 {
 		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)
 	}

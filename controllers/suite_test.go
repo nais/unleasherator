@@ -30,7 +30,6 @@ var (
 	testEnv    *envtest.Environment
 	ctx        context.Context
 	cancel     context.CancelFunc
-	httpClient *http.Client
 )
 
 func TestAPIs(t *testing.T) {
@@ -61,8 +60,6 @@ var _ = BeforeSuite(func() {
 
 	//+kubebuilder:scaffold:scheme
 
-	httpClient = &http.Client{}
-
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
@@ -77,7 +74,6 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: "default",
-		HttpClient:        httpClient,
 		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())

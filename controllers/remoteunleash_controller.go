@@ -170,7 +170,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	if res.StatusCode != 200 || health.Health != "GOOD" {
+	if health.Health != "GOOD" {
 		err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
 		return ctrl.Result{}, err
 	}

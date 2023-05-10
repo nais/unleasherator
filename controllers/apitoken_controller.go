@@ -183,6 +183,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Check if Unleash instance is ready
 	if !unleash.IsReady() {
+	    log.Info("Unleash instance for ApiToken is not ready")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    typeCreatedToken,
 			Status:  metav1.ConditionFalse,
@@ -247,6 +248,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Create token if it does not exist
+	// This operation is not atomic, and there exists no other checks if the token secret has been created. This is an edge-case but should be handled.
 	if !exists {
 		apiToken, err := apiClient.CreateAPIToken(unleashclient.APITokenRequest{
 			Username:    token.GetObjectMeta().GetName(),
@@ -275,7 +277,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Namespace: token.GetObjectMeta().GetNamespace(),
 			},
 			Data: map[string][]byte{
-				"INIT_ADMIN_API_TOKENS": []byte(apiToken.Secret),
+				unleashv1.UnleashSecretTokenKey: []byte(apiToken.Secret),
 			},
 		}
 
@@ -321,7 +323,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	log.Info(fmt.Sprintf("Reconciled ApiToken %s", token.GetObjectMeta().GetName()))
+	log.Info("Successfully reconciled ApiToken")
 
 	return ctrl.Result{}, nil
 }
