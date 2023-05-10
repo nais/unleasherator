@@ -31,8 +31,8 @@ var (
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "unleash_status",
-			Help: "Status of Unleash instances",
+			Name: "unleasherator_remoteunleash_status",
+			Help: "Status of remote Unleash instances",
 		},
 		[]string{"namespace", "name", "status"},
 	)

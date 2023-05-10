@@ -150,6 +150,15 @@ make generate manifests helm
 
 More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
+### Metrics
+
+There's prometheus metrics covering <https://book.kubebuilder.io/reference/metrics-reference.html> the default set of kubebuilder provided performance gauges as well as additional metrics for deployment status.
+
+| Metric                             | Type  | Description                        |
+|------------------------------------|-------|------------------------------------|
+| unleasherator_unleash_status       | Gauge | Status of Unleash instance         |
+| unleasherator_remoteunleash_status | Gauge | Status of remote Unleash instances |
+
 ## License
 
 MIT License
