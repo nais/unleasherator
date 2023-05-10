@@ -38,9 +38,9 @@ var (
 	)
 )
 
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=RemoteUnleashs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=RemoteUnleashs/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=RemoteUnleashs/finalizers,verbs=update
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
