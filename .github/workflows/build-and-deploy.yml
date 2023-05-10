@@ -152,4 +152,4 @@ jobs:
       - uses: nais/fasit-deploy@main
         with:
           json: '{"controllerManager": {"manager": {"image": {"tag": "${{ needs.docker.outputs.version }}"}}}}'
-          feature_name: ${{ github.repository }}
+          feature_name: ${{ github.event.repository.name }}
