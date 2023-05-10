@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-controller-manager-metrics-monitor
+  labels:
+    app.kubernetes.io/component: metrics
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
+    app.kubernets.io/name: servicemonitor
+    control-plane: controller-manager
+  {{- include "unleasherator.labels" . | nindent 4 }}
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      control-plane: controller-manager

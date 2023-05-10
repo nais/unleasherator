@@ -7,6 +7,7 @@ import (
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -120,6 +121,14 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
+			var m = &dto.Metric{}
+
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, typeConnectionUnleash).Write(m)).Should(Succeed())
+
+			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
+
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, typeAvailableUnleash).Write(m)).Should(Succeed())
+			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())

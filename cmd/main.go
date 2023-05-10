@@ -43,7 +43,6 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-
 	utilruntime.Must(unleashv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -38,6 +40,21 @@ const (
 	// typeDegradedUnleash represents the status used when the Unleash is deleted and the finalizer operations are must to occur.
 	typeDegradedUnleash = "Degraded"
 )
+
+var (
+	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
+	unleashStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_unleash_status",
+			Help: "Status of Unleash instances",
+		},
+		[]string{"namespace", "name", "status"},
+	)
+)
+
+func init() {
+	metrics.Registry.MustRegister(unleashStatus)
+}
 
 // UnleashReconciler reconciles a Unleash object
 type UnleashReconciler struct {
@@ -260,7 +277,6 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err = r.updateStatusConnectionSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -410,6 +426,8 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
+
+	// update prometheus metrics
 
 	return ctrl.Result{}, nil
 }
@@ -629,6 +647,13 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 
 func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
+
+	val := 0.0
+	if status.Status == metav1.ConditionTrue {
+		val = 1.0
+	}
+
+	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&unleash.Status.Conditions, status)
 	if err := r.Status().Update(ctx, unleash); err != nil {

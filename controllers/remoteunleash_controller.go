@@ -16,6 +16,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleash"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
@@ -25,6 +26,17 @@ type RemoteUnleashReconciler struct {
 	Recorder          record.EventRecorder
 	OperatorNamespace string
 }
+
+var (
+	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
+	remoteUnleashStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_remoteunleash_status",
+			Help: "Status of remote Unleash instances",
+		},
+		[]string{"namespace", "name", "status"},
+	)
+)
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=RemoteUnleashs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=RemoteUnleashs/status,verbs=get;update;patch
@@ -232,6 +244,13 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
+
+	val := 0.0
+	if status.Status == metav1.ConditionTrue {
+		val = 1.0
+	}
+
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
 	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
