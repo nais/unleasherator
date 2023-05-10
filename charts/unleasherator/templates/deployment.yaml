@@ -1,33 +1,33 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "unleasherator.fullname" . }}-unleasherator
+  name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/part-of: controller-manager
   {{- include "unleasherator.labels" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "unleasherator.fullname" . }}-unleasherator
+  name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
     app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/part-of: unleasherator
-    control-plane: unleasherator
+    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/part-of: controller-manager
+    control-plane: controller-manager
   {{- include "unleasherator.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.unleasherator.replicas }}
+  replicas: {{ .Values.controllerManager.replicas }}
   selector:
     matchLabels:
-      control-plane: unleasherator
+      control-plane: controller-manager
     {{- include "unleasherator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        control-plane: unleasherator
+        control-plane: controller-manager
       {{- include "unleasherator.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: manager
@@ -60,9 +60,9 @@ spec:
               fieldPath: metadata.namespace
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.unleasherator.manager.image.repository }}:{{ .Values.unleasherator.manager.image.tag
+        image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
           | default .Chart.AppVersion }}
-        imagePullPolicy: {{ .Values.unleasherator.manager.imagePullPolicy }}
+        imagePullPolicy: {{ .Values.controllerManager.manager.imagePullPolicy }}
         livenessProbe:
           httpGet:
             path: /healthz
@@ -76,8 +76,9 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
-        resources: {{- toYaml .Values.unleasherator.manager.resources | nindent 10 }}
-        securityContext: {{- toYaml .Values.unleasherator.manager.containerSecurityContext
+        resources: {{- toYaml .Values.controllerManager.manager.resources | nindent 10
+          }}
+        securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
         volumeMounts:
         - mountPath: /controller_manager_config.yaml
@@ -91,20 +92,20 @@ spec:
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
-        image: {{ .Values.unleasherator.kubeRbacProxy.image.repository }}:{{ .Values.unleasherator.kubeRbacProxy.image.tag
+        image: {{ .Values.controllerManager.kubeRbacProxy.image.repository }}:{{ .Values.controllerManager.kubeRbacProxy.image.tag
           | default .Chart.AppVersion }}
         name: kube-rbac-proxy
         ports:
         - containerPort: 8443
           name: https
           protocol: TCP
-        resources: {{- toYaml .Values.unleasherator.kubeRbacProxy.resources | nindent 10
-          }}
-        securityContext: {{- toYaml .Values.unleasherator.kubeRbacProxy.containerSecurityContext
+        resources: {{- toYaml .Values.controllerManager.kubeRbacProxy.resources | nindent
+          10 }}
+        securityContext: {{- toYaml .Values.controllerManager.kubeRbacProxy.containerSecurityContext
           | nindent 10 }}
       securityContext:
         runAsNonRoot: true
-      serviceAccountName: {{ include "unleasherator.fullname" . }}-unleasherator
+      serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
       - configMap:

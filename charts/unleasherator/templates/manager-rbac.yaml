@@ -197,8 +197,8 @@ metadata:
   name: {{ include "unleasherator.fullname" . }}-manager-rolebinding
   labels:
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: unleasherator
-    app.kubernetes.io/part-of: unleasherator
+    app.kubernetes.io/created-by: controller-manager
+    app.kubernetes.io/part-of: controller-manager
   {{- include "unleasherator.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -206,5 +206,5 @@ roleRef:
   name: '{{ include "unleasherator.fullname" . }}-manager-role'
 subjects:
 - kind: ServiceAccount
-  name: '{{ include "unleasherator.fullname" . }}-unleasherator'
+  name: '{{ include "unleasherator.fullname" . }}-controller-manager'
   namespace: '{{ .Release.Namespace }}'
