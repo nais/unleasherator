@@ -156,10 +156,14 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if err = r.updateStatusReconcileSuccess(ctx, remoteUnleash); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Check Unleash connectivity
 	health, res, err := unleashClient.GetHealth()
 	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, err, "Failed to connect to Unleash"); err != nil {
+		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, "Failed to connect to Unleash instance health endpoint"); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -167,15 +171,39 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if res.StatusCode != 200 || health.Health != "GOOD" {
-		err := r.updateStatusReconcileFailed(ctx, remoteUnleash, err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
+		err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
 		return ctrl.Result{}, err
 	}
 
-	if err = r.updateStatusReconcileSuccess(ctx, remoteUnleash); err != nil {
+	if err := r.updateStatusConnectionSuccess(ctx, remoteUnleash); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {
+	log := log.FromContext(ctx)
+
+	log.Info("Successfully connected to Unleash")
+	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
+		Type:    typeConnectionUnleash,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Successfully connected to Unleash",
+	})
+}
+
+func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, err error, message string) error {
+	log := log.FromContext(ctx)
+
+	log.Error(err, fmt.Sprintf("%s for Unleash", message))
+	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
+		Type:    typeConnectionUnleash,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: message,
+	})
 }
 
 func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {

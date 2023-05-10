@@ -568,7 +568,7 @@ func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx conte
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, "Instance health endpoint returned unexpected status code", "statusCode", res.StatusCode)
+		log.Error(err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
 		return err
 	}
 

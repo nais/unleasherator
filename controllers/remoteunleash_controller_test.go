@@ -138,12 +138,12 @@ var _ = Describe("RemoteUnleash controller", func() {
 					return nil, err
 				}
 				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(HaveLen(1))
+			}, timeout, interval).Should(HaveLen(2))
 
-			Expect(createdRemoteUnleash.Status.Conditions[0].Message).To(Equal("Reconciled successfully"))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Type).To(Equal(typeAvailableUnleash))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
-			Expect(createdRemoteUnleash.Status.Conditions[0].Reason).To(Equal("Reconciling"))
+			Expect(createdRemoteUnleash.Status.Conditions[1].Message).To(Equal("Successfully connected to Unleash"))
+			Expect(createdRemoteUnleash.Status.Conditions[1].Type).To(Equal(typeConnectionUnleash))
+			Expect(createdRemoteUnleash.Status.Conditions[1].Status).To(Equal(metav1.ConditionTrue))
+			Expect(createdRemoteUnleash.Status.Conditions[1].Reason).To(Equal("Reconciling"))
 			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
 		})
 	})
