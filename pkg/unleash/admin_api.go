@@ -30,7 +30,7 @@ type HealthResult struct {
 // GetHealth returns the health of the Unleash instance.
 func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 	health := &HealthResult{}
-	res, err := c.HTTPGet("/api/health", health)
+	res, err := c.HTTPGet("/health", health)
 
 	if err != nil {
 		return health, res, err

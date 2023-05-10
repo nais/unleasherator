@@ -85,7 +85,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			// Mock Unleash server with a health endpoint
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/health" {
+				if r.URL.Path != "/health" {
 					w.WriteHeader(http.StatusNotFound)
 				}
 
