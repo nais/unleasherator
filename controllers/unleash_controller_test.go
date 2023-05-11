@@ -7,7 +7,10 @@ import (
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	dto "github.com/prometheus/client_model/go"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -121,14 +124,26 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			var m = &dto.Metric{}
 
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnection).Write(m)).Should(Succeed())
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, unleashLookupKey, deployment)).Should(Succeed())
 
-			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
+			service := &corev1.Service{}
+			Expect(k8sClient.Get(ctx, unleashLookupKey, service)).Should(Succeed())
 
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeAvailable).Write(m)).Should(Succeed())
-			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
+			secret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedInstanceSecretName(), secret)).Should(Succeed())
+
+			serviceMonitor := &monitoringv1.ServiceMonitor{}
+			Expect(k8sClient.Get(ctx, unleashLookupKey, serviceMonitor)).Should(Succeed())
+
+			var m1 = &dto.Metric{}
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnection).Write(m1)).Should(Succeed())
+			Expect(m1.GetGauge().GetValue()).To(Equal(float64(1)))
+
+			var m2 = &dto.Metric{}
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeAvailable).Write(m2)).Should(Succeed())
+			Expect(m2.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
