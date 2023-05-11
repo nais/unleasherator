@@ -283,11 +283,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 // finalizeUnleash will perform the required operations before delete the CR.
 func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) {
-	// TODO(user): Add the cleanup steps that the operator
-	// needs to do before the CR can be deleted. Examples
-	// of finalizers include performing backups and deleting
-	// resources that are not owned by this CR, like a PVC.
-
+	// @TODO make it optional to delete the operator secret
 	operatorSecret := cr.NamespacedOperatorSecretName(r.OperatorNamespace)
 
 	err := r.Delete(ctx, &corev1.Secret{
@@ -306,12 +302,6 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 				operatorSecret.Name,
 				operatorSecret.Namespace))
 	}
-
-	// Note: It is not recommended to use finalizers with the purpose of delete resources which are
-	// created and managed in the reconciliation. These ones, such as the Deployment created on this reconcile,
-	// are defined as depended of the Unleash. See that we use the method ctrl.SetControllerReference.
-	// to set the ownerRef which means that the Deployment will be deleted by the Kubernetes API.
-	// More info: https://kubernetes.io/docs/tasks/administer-cluster/use-cascading-deletion/
 
 	// The following implementation will raise an event
 	r.Recorder.Event(cr, "Warning", "Deleting",
@@ -360,9 +350,12 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 	}
 
 	// If the ServiceMonitor exists, we check if it needs to be updated
-	if !equality.Semantic.DeepEqual(newServiceMonitor.Spec, existingServiceMonitor.Spec) {
-		existingServiceMonitor.Spec = newServiceMonitor.Spec
+	if !equality.Semantic.DeepDerivative(newServiceMonitor.Spec, existingServiceMonitor.Spec) || !equality.Semantic.DeepDerivative(newServiceMonitor.ObjectMeta.Labels, existingServiceMonitor.ObjectMeta.Labels) {
 		log.Info("Updating ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+
+		existingServiceMonitor.Spec = newServiceMonitor.Spec
+		existingServiceMonitor.ObjectMeta.Labels = newServiceMonitor.ObjectMeta.Labels
+
 		if err := r.Update(ctx, existingServiceMonitor); err != nil {
 			log.Error(err, "Failed to update ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
 			return ctrl.Result{}, err
@@ -413,14 +406,17 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 	}
 
 	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
-	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.Labels, existingNetPol.Labels) {
+	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.ObjectMeta.Labels, existingNetPol.ObjectMeta.Labels) {
 		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
+
 		existingNetPol.Spec = newNetPol.Spec
-		existingNetPol.Labels = newNetPol.Labels
-		err = r.Update(ctx, existingNetPol)
-		if err != nil {
+		existingNetPol.ObjectMeta.Labels = newNetPol.ObjectMeta.Labels
+
+		if err := r.Update(ctx, existingNetPol); err != nil {
+			log.Error(err, "Failed to update NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 			return ctrl.Result{}, err
 		}
+
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -467,14 +463,16 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 	}
 
 	// If the ingress is enabled and exists, we update it if it has changed.
-	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepDerivative(newIngress.Labels, existingIngress.Labels) {
+	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepDerivative(newIngress.ObjectMeta.Labels, existingIngress.ObjectMeta.Labels) {
 		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
+
 		existingIngress.Spec = newIngress.Spec
-		existingIngress.Labels = newIngress.Labels
-		err = r.Update(ctx, existingIngress)
-		if err != nil {
+		existingIngress.ObjectMeta.Labels = newIngress.ObjectMeta.Labels
+
+		if err := r.Update(ctx, existingIngress); err != nil {
 			return ctrl.Result{}, err
 		}
+
 		return ctrl.Result{Requeue: true}, nil
 	}
 
@@ -570,11 +568,13 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
-	} else if !equality.Semantic.DeepDerivative(dep.Spec, found.Spec) {
+	} else if !equality.Semantic.DeepDerivative(dep.Spec, found.Spec) || !equality.Semantic.DeepEqual(dep.ObjectMeta.Labels, found.ObjectMeta.Labels) {
 		log.Info("Updating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 
 		found.Spec = dep.Spec
-		if err = r.Update(ctx, found); err != nil {
+		found.ObjectMeta.Labels = dep.ObjectMeta.Labels
+
+		if err := r.Update(ctx, found); err != nil {
 			log.Error(err, "Failed to update Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 			return ctrl.Result{}, err
 		}
@@ -606,11 +606,13 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, nil
 	} else if err != nil {
 		return ctrl.Result{}, err
-	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) {
-		existingSvc.Spec = newSvc.Spec
+	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) || !equality.Semantic.DeepDerivative(newSvc.ObjectMeta.Labels, existingSvc.ObjectMeta.Labels) {
 		log.Info("Updating Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
-		err = r.Update(ctx, existingSvc)
-		if err != nil {
+
+		existingSvc.Spec = newSvc.Spec
+		existingSvc.ObjectMeta.Labels = newSvc.ObjectMeta.Labels
+
+		if err := r.Update(ctx, existingSvc); err != nil {
 			log.Error(err, "Failed to update Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 			return ctrl.Result{}, err
 		}
