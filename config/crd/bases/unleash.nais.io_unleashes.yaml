@@ -3517,6 +3517,15 @@ spec:
                       type: object
                     type: array
                 type: object
+              prometheus:
+                description: Prometheus defines the prometheus metrics collection
+                  configuration
+                properties:
+                  enabled:
+                    default: true
+                    description: Enable enables the prometheus metrics endpoint
+                    type: boolean
+                type: object
               resources:
                 default:
                   limits:

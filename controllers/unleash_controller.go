@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -240,6 +241,16 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	res, err = r.reconcileServiceMonitor(ctx, unleash)
+	if err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
 	// Re-fetch Unleash instance before update the status
 	err = r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
@@ -308,6 +319,55 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 			cr.Namespace))
 }
 
+// reconcileServiceMonitor will ensure that the required ServiceMonitor is created
+func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	newServiceMonitor, err := resources.ServiceMonitorForUnleash(unleash, r.Scheme)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	existingServiceMonitor := &monitoringv1.ServiceMonitor{}
+	err = r.Get(ctx, unleash.NamespacedName(), existingServiceMonitor)
+
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get ServiceMonitor for Unleash", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+		return ctrl.Result{}, err
+	}
+
+	// If the ServiceMonitor is not enabled, we delete it
+	if !unleash.Spec.Prometheus.Enabled {
+		if err := r.Delete(ctx, existingServiceMonitor); err != nil {
+			log.Error(err, "Failed to delete ServiceMonitor for Unleash", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// If the ServiceMonitor does not exist, we create it
+	if apierrors.IsNotFound(err) {
+		log.Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", newServiceMonitor.Namespace, "ServiceMonitor.Name", newServiceMonitor.Name)
+		if err := r.Create(ctx, newServiceMonitor); err != nil {
+			log.Error(err, "Failed to create new ServiceMonitor", "ServiceMonitor.Namespace", newServiceMonitor.Namespace, "ServiceMonitor.Name", newServiceMonitor.Name)
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// If the ServiceMonitor exists, we check if it needs to be updated
+	if !equality.Semantic.DeepEqual(newServiceMonitor.Spec, existingServiceMonitor.Spec) {
+		existingServiceMonitor.Spec = newServiceMonitor.Spec
+		log.Info("Updating ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+		if err := r.Update(ctx, existingServiceMonitor); err != nil {
+			log.Error(err, "Failed to update ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
 // reconcileNetworkPolicy will ensure that the required network policy is created
 func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -325,7 +385,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{}, err
 	}
 
-	// If the netpol is not enabled, we delete it if it exists.
+	// If the NetworkPolicy is not enabled, we delete it if it exists.
 	if !unleash.Spec.NetworkPolicy.Enabled {
 		if err == nil {
 			log.Info("Deleting NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
@@ -338,7 +398,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{}, nil
 	}
 
-	// If the netpol is enabled and does not exist, we create it.
+	// If the NetworkPolicy is enabled and does not exist, we create it.
 	if err != nil && apierrors.IsNotFound(err) {
 		log.Info("Creating NetworkPolicy", "NetworkPolicy.Namespace", newNetPol.Namespace, "NetworkPolicy.Name", newNetPol.Name)
 		err = r.Create(ctx, newNetPol)
@@ -348,7 +408,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// If the netpol is enabled and exists, we update it if it is not up to date.
+	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
 	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.Labels, existingNetPol.Labels) {
 		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 		existingNetPol.Spec = newNetPol.Spec

@@ -40,10 +40,15 @@ type UnleashSpec struct {
 	// Size is the size of the unleash deployment
 	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
+
 	// CustomImage points to a customImage, this overrides all other version settings
 	// Use at your own risk
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
+
+	// Prometheus defines the prometheus metrics collection configuration
+	// +kubebuilder:validation:Optional
+	Prometheus UnleashPrometheusConfig `json:"prometheus,omitempty"`
 
 	// Database is the database configuration
 	// +kubebuilder:validation:Required
@@ -85,6 +90,13 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// UnleashPrometheusConfig defines the prometheus configuration
+type UnleashPrometheusConfig struct {
+	// Enable enables the prometheus metrics endpoint
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // UnleashNetworkPolicyConfig defines the network policy configuration
