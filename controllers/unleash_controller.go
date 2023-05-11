@@ -385,7 +385,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{}, err
 	}
 
-	// If the netpol is not enabled, we delete it if it exists.
+	// If the NetworkPolicy is not enabled, we delete it if it exists.
 	if !unleash.Spec.NetworkPolicy.Enabled {
 		if err == nil {
 			log.Info("Deleting NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
@@ -398,7 +398,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{}, nil
 	}
 
-	// If the netpol is enabled and does not exist, we create it.
+	// If the NetworkPolicy is enabled and does not exist, we create it.
 	if err != nil && apierrors.IsNotFound(err) {
 		log.Info("Creating NetworkPolicy", "NetworkPolicy.Namespace", newNetPol.Namespace, "NetworkPolicy.Name", newNetPol.Name)
 		err = r.Create(ctx, newNetPol)
@@ -408,7 +408,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// If the netpol is enabled and exists, we update it if it is not up to date.
+	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
 	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.Labels, existingNetPol.Labels) {
 		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 		existingNetPol.Spec = newNetPol.Spec

@@ -11,6 +11,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -131,8 +132,14 @@ var _ = Describe("Unleash controller", func() {
 			service := &corev1.Service{}
 			Expect(k8sClient.Get(ctx, unleashLookupKey, service)).Should(Succeed())
 
-			secret := &corev1.Secret{}
-			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedInstanceSecretName(), secret)).Should(Succeed())
+			instanceSecret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedInstanceSecretName(), instanceSecret)).Should(Succeed())
+
+			operatorSecret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedOperatorSecretName(operatorNamespace), operatorSecret)).Should(Succeed())
+
+			networkPolicy := &networkingv1.NetworkPolicy{}
+			Expect(k8sClient.Get(ctx, unleashLookupKey, networkPolicy)).Should(Succeed())
 
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, unleashLookupKey, serviceMonitor)).Should(Succeed())

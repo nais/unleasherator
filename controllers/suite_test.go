@@ -24,6 +24,8 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
+const operatorNamespace = "default"
+
 var (
 	cfg       *rest.Config
 	k8sClient client.Client // You'll be using this client in your tests.
@@ -79,7 +81,7 @@ var _ = BeforeSuite(func() {
 	err = (&UnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: "default",
+		OperatorNamespace: operatorNamespace,
 		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -87,14 +89,14 @@ var _ = BeforeSuite(func() {
 	err = (&RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: "default",
+		OperatorNamespace: operatorNamespace,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: "default",
+		OperatorNamespace: operatorNamespace,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
