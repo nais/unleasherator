@@ -69,6 +69,7 @@ type UnleashReconciler struct {
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies/finalizers,verbs=update
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
 func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
@@ -336,12 +337,15 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 		return ctrl.Result{}, err
 	}
 
-	// If the ServiceMonitor is not enabled, we delete it
 	if !unleash.Spec.Prometheus.Enabled {
-		if err := r.Delete(ctx, existingServiceMonitor); err != nil {
-			log.Error(err, "Failed to delete ServiceMonitor for Unleash", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
-			return ctrl.Result{}, err
+		if !apierrors.IsNotFound(err) {
+			log.Info("Deleting ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+			if err := r.Delete(ctx, existingServiceMonitor); err != nil {
+				log.Error(err, "Failed to delete ServiceMonitor for Unleash", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
+				return ctrl.Result{}, err
+			}
 		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -387,14 +391,14 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 
 	// If the NetworkPolicy is not enabled, we delete it if it exists.
 	if !unleash.Spec.NetworkPolicy.Enabled {
-		if err == nil {
+		if !apierrors.IsNotFound(err) {
 			log.Info("Deleting NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
-			err = r.Delete(ctx, existingNetPol)
-			if err != nil {
+			if err := r.Delete(ctx, existingNetPol); err != nil {
+				log.Error(err, "Failed to delete NetworkPolicy for Unleash", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
 		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -442,14 +446,12 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 
 	// If the ingress is not enabled, we delete the existing one if it exists.
 	if !ingress.Enabled {
-		if err == nil {
+		if !apierrors.IsNotFound(err) {
 			log.Info("Deleting Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
-			err = r.Delete(ctx, existingIngress)
-			if err != nil {
+			if err := r.Delete(ctx, existingIngress); err != nil {
 				log.Error(err, "Failed to delete Ingress for Unleash", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, nil
 	}
