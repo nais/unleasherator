@@ -39,12 +39,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - secrets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ""
-  resources:
   - services
   verbs:
   - create
@@ -54,12 +48,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - services/finalizers
-  verbs:
-  - update
 - apiGroups:
   - networking.k8s.io
   resources:
@@ -75,20 +63,6 @@ rules:
 - apiGroups:
   - networking.k8s.io
   resources:
-  - ingresses/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
   - networkpolicies
   verbs:
   - create
@@ -98,20 +72,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - networkpolicies/status
-  verbs:
-  - get
-  - patch
-  - update
 - apiGroups:
   - unleash.nais.io
   resources:
