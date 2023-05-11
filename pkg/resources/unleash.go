@@ -6,6 +6,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/utils"
+	promoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -44,11 +45,43 @@ func GenerateAdminKey() string {
 	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
 }
 
+func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*promoperatorv1.ServiceMonitor, error) {
+	ls := labelsForUnleash(unleash)
+
+	serviceMonitor := &promoperatorv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unleash.Name,
+			Namespace: unleash.Namespace,
+			Labels:    ls,
+		},
+		Spec: promoperatorv1.ServiceMonitorSpec{
+			Endpoints: []promoperatorv1.Endpoint{
+				{
+					Port: DefaultUnleashPortName,
+					Path: "/internal-backstage/prometheus",
+				},
+			},
+			Selector: metav1.LabelSelector{
+				MatchLabels: ls,
+			},
+		},
+	}
+
+	if err := ctrl.SetControllerReference(unleash, serviceMonitor, scheme); err != nil {
+		return nil, err
+	}
+
+	return serviceMonitor, nil
+}
+
 func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
+	ls := labelsForUnleash(unleash)
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels:    ls,
 		},
 		StringData: map[string]string{
 			unleashv1.UnleashSecretTokenKey: adminKey,
@@ -65,10 +98,13 @@ func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, 
 }
 
 func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.ServiceAccount, error) {
+	ls := labelsForUnleash(unleash)
+
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.Name,
 			Namespace: unleash.Namespace,
+			Labels:    ls,
 		},
 	}
 
@@ -86,6 +122,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.Name,
 			Namespace: unleash.Namespace,
+			Labels:    ls,
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -119,6 +156,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.Name,
 			Namespace: unleash.Namespace,
+			Labels:    ls,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
