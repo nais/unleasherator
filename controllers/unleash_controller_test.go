@@ -41,7 +41,7 @@ var _ = Describe("Unleash controller", func() {
 					Namespace: UnleashNamespace,
 				},
 				Spec: unleashv1.UnleashSpec{
-					Database: unleashv1.DatabaseConfig{},
+					Database: unleashv1.UnleashDatabaseConfig{},
 				},
 			}
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
@@ -61,7 +61,7 @@ var _ = Describe("Unleash controller", func() {
 
 				return createdUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeAvailableUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
@@ -93,7 +93,7 @@ var _ = Describe("Unleash controller", func() {
 					Namespace: UnleashNamespace,
 				},
 				Spec: unleashv1.UnleashSpec{
-					Database: unleashv1.DatabaseConfig{
+					Database: unleashv1.UnleashDatabaseConfig{
 						URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 					},
 				},
@@ -114,7 +114,7 @@ var _ = Describe("Unleash controller", func() {
 
 				return createdUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeConnectionUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeConnection,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
 				Message: "Successfully connected to Unleash instance",
@@ -123,11 +123,11 @@ var _ = Describe("Unleash controller", func() {
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 			var m = &dto.Metric{}
 
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, typeConnectionUnleash).Write(m)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnection).Write(m)).Should(Succeed())
 
 			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
 
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, typeAvailableUnleash).Write(m)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeAvailable).Write(m)).Should(Succeed())
 			Expect(m.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")

@@ -70,7 +70,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 				return createdRemoteUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeAvailableUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
 				Message: "Failed to get admin token secret",
@@ -152,7 +152,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 				return createdRemoteUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeConnectionUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeConnection,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
 				Message: "Successfully connected to Unleash",

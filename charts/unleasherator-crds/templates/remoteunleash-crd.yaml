@@ -75,7 +75,7 @@ spec:
             properties:
               conditions:
                 description: 'Represents the observations of a RemoteUnleash''s current
-                  state. RemoteUnleash.status.conditions.type are: "Available", "Progressing",
+                  state. RemoteUnleash.status.conditions.type are: "Available", "Connection",
                   and "Degraded" RemoteUnleash.status.conditions.status are one of True,
                   False, Unknown. RemoteUnleash.status.conditions.reason the value should
                   be a CamelCase string and producers of specific condition types may

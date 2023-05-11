@@ -30,17 +30,6 @@ import (
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
 
-const (
-	// typeAvailableUnleash represents the status of the Deployment reconciliation
-	typeAvailableUnleash = "Available"
-
-	// typeConnectionUnleash represents the status of the connection test to Unleash
-	typeConnectionUnleash = "Connection"
-
-	// typeDegradedUnleash represents the status used when the Unleash is deleted and the finalizer operations are must to occur.
-	typeDegradedUnleash = "Degraded"
-)
-
 var (
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -103,7 +92,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Let's just set the status as Unknown when no status are available
 	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
 		log.Info("Setting status as Unknown for Unleash")
-		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeAvailableUnleash, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: unleashv1.UnleashStatusConditionTypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, unleash); err != nil {
 			log.Error(err, "Failed to update Unleash status")
 			return ctrl.Result{}, err
@@ -150,7 +139,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			log.Info("Performing Finalizer Operations for Unleash before delete CR")
 
 			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
-				Type:    typeDegradedUnleash,
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
 				Message: "Performing finalizer options",
@@ -176,7 +165,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return ctrl.Result{}, err
 			}
 
-			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: typeDegradedUnleash,
+			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: unleashv1.UnleashStatusConditionTypeDegraded,
 				Status: metav1.ConditionTrue, Reason: "Finalizing",
 				Message: fmt.Sprintf("Finalizer operations for Unleash %s name were successfully accomplished", unleash.Name)})
 
@@ -375,7 +364,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 }
 
 // reconcileIngress will ensure that the required ingress is created
-func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unleashv1.Unleash, ingress *unleashv1.IngressConfig, nameSuffix string) (ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unleashv1.Unleash, ingress *unleashv1.UnleashIngressConfig, nameSuffix string) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	newIngress, err := resources.IngressForUnleash(unleash, ingress, nameSuffix, r.Scheme)
@@ -598,7 +587,7 @@ func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, un
 
 	log.Info("Successfully reconciled Unleash")
 	return r.updateStatus(ctx, unleash, metav1.Condition{
-		Type:    typeAvailableUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Reconciled successfully",
@@ -614,7 +603,7 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 
 	log.Error(err, message)
 	return r.updateStatus(ctx, unleash, metav1.Condition{
-		Type:    typeAvailableUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,
@@ -626,7 +615,7 @@ func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, u
 
 	log.Info("Successfully connected to Unleash")
 	return r.updateStatus(ctx, unleash, metav1.Condition{
-		Type:    typeConnectionUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeConnection,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Successfully connected to Unleash instance",
@@ -638,7 +627,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
 	return r.updateStatus(ctx, unleash, metav1.Condition{
-		Type:    typeConnectionUnleash,
+		Type:    unleashv1.UnleashStatusConditionTypeConnection,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,

@@ -47,19 +47,19 @@ type UnleashSpec struct {
 
 	// Database is the database configuration
 	// +kubebuilder:validation:Required
-	Database DatabaseConfig `json:"database,omitempty"`
+	Database UnleashDatabaseConfig `json:"database,omitempty"`
 
 	// WebIngress defines the ingress configuration for the web interface
 	// +kubebuilder:validation:Optional
-	WebIngress IngressConfig `json:"webIngress,omitempty"`
+	WebIngress UnleashIngressConfig `json:"webIngress,omitempty"`
 
 	// ApiIngress defines the ingress for the endpoints of Unleash
 	// +kubebuilder:validation:Optional
-	ApiIngress IngressConfig `json:"apiIngress,omitempty"`
+	ApiIngress UnleashIngressConfig `json:"apiIngress,omitempty"`
 
 	// NetworkPolicy defines the network policy configuration
 	// +kubebuilder:validation:Optional
-	NetworkPolicy NetworkPolicyConfig `json:"networkPolicy,omitempty"`
+	NetworkPolicy UnleashNetworkPolicyConfig `json:"networkPolicy,omitempty"`
 
 	// ExtraEnv is a list of extra environment variables to add to the deployment
 	// +kubebuilder:validation:Optional
@@ -87,8 +87,8 @@ type UnleashSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// NetworkPolicyConfig defines the network policy configuration
-type NetworkPolicyConfig struct {
+// UnleashNetworkPolicyConfig defines the network policy configuration
+type UnleashNetworkPolicyConfig struct {
 	// Enable enables the network policy
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled,omitempty"`
@@ -118,8 +118,8 @@ type NetworkPolicyConfig struct {
 	ExtraEgressRules []networkingv1.NetworkPolicyEgressRule `json:"extraEgressRules,omitempty"`
 }
 
-// IngressConfig defines the ingress configuration
-type IngressConfig struct {
+// UnleashIngressConfig defines the ingress configuration
+type UnleashIngressConfig struct {
 	// Enable enables the ingress
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
@@ -135,7 +135,7 @@ type IngressConfig struct {
 
 	// TLS is the TLS configuration to use for the ingress
 	// +kubebuilder:validation:Optional
-	TLS *IngressTLSConfig `json:"tls,omitempty"`
+	TLS *UnleashIngressTLSConfig `json:"tls,omitempty"`
 
 	// Annotations is a map of annotations to add to the ingress
 	// +kubebuilder:validation:Optional
@@ -146,8 +146,8 @@ type IngressConfig struct {
 	Class string `json:"class,omitempty"`
 }
 
-// IngressTLSConfig defines the TLS configuration for the ingress
-type IngressTLSConfig struct {
+// UnleashIngressTLSConfig defines the TLS configuration for the ingress
+type UnleashIngressTLSConfig struct {
 	// SecretName is the name of the secret containing the TLS certificate
 	// +kubebuilder:validation:Required
 	SecretName string `json:"secretName,omitempty"`
@@ -161,8 +161,8 @@ type IngressTLSConfig struct {
 	SecretKeyKey string `json:"secretKeyKey,omitempty"`
 }
 
-// DatabaseConfig defines the database configuration
-type DatabaseConfig struct {
+// UnleashDatabaseConfig defines the database configuration
+type UnleashDatabaseConfig struct {
 	// SecretName is the name of the secret containing the database credentials
 	SecretName string `json:"secretName,omitempty"`
 
@@ -209,23 +209,13 @@ type DatabaseConfig struct {
 // UnleashStatus defines the observed state of Unleash
 type UnleashStatus struct {
 	// Represents the observations of a Unleash's current state.
-	// Unleash.status.conditions.type are: "Available", "Progressing", and "Degraded"
+	// Unleash.status.conditions.type are: "Available", "Connection", and "Degraded"
 	// Unleash.status.conditions.status are one of True, False, Unknown.
 	// Unleash.status.conditions.reason the value should be a CamelCase string and producers of specific
 	// condition types may define expected values and meanings for this field, and whether the values
 	// are considered a guaranteed API.
 	// Unleash.status.conditions.Message is a human readable message indicating details about the transition.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
-func (s *UnleashStatus) IsReady() bool {
-	for _, c := range s.Conditions {
-		if c.Type == StatusConditionTypeAvailable && c.Status == metav1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {
@@ -288,6 +278,8 @@ func (u *Unleash) GetApiClient(ctx context.Context, client client.Client, operat
 	return unleashclient.NewClient(u.GetURL(), string(token))
 }
 
+// IsReady returns true if the Unleash instance is ready.
+// We define ready as having both the Available and Connection conditions set to true.
 func (u *Unleash) IsReady() bool {
-	return u.Status.IsReady()
+	return conditionStatusIsReady(u.Status.Conditions)
 }
