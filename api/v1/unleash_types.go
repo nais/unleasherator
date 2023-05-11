@@ -209,30 +209,13 @@ type UnleashDatabaseConfig struct {
 // UnleashStatus defines the observed state of Unleash
 type UnleashStatus struct {
 	// Represents the observations of a Unleash's current state.
-	// Unleash.status.conditions.type are: "Available", "Progressing", and "Degraded"
+	// Unleash.status.conditions.type are: "Available", "Connection", and "Degraded"
 	// Unleash.status.conditions.status are one of True, False, Unknown.
 	// Unleash.status.conditions.reason the value should be a CamelCase string and producers of specific
 	// condition types may define expected values and meanings for this field, and whether the values
 	// are considered a guaranteed API.
 	// Unleash.status.conditions.Message is a human readable message indicating details about the transition.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-}
-
-func (s *UnleashStatus) GetConditionStatus(conditionType string) metav1.ConditionStatus {
-	for _, c := range s.Conditions {
-		if c.Type == conditionType {
-			return c.Status
-		}
-	}
-
-	return metav1.ConditionUnknown
-}
-
-func (s *UnleashStatus) IsReady() bool {
-	statusAvailable := s.GetConditionStatus(UnleashStatusConditionTypeAvailable)
-	statusConnection := s.GetConditionStatus(UnleashStatusConditionTypeConnection)
-
-	return statusAvailable == metav1.ConditionTrue && statusConnection == metav1.ConditionTrue
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {
@@ -295,6 +278,8 @@ func (u *Unleash) GetApiClient(ctx context.Context, client client.Client, operat
 	return unleashclient.NewClient(u.GetURL(), string(token))
 }
 
+// IsReady returns true if the Unleash instance is ready.
+// We define ready as having both the Available and Connection conditions set to true.
 func (u *Unleash) IsReady() bool {
-	return u.Status.IsReady()
+	return conditionStatusIsReady(u.Status.Conditions)
 }

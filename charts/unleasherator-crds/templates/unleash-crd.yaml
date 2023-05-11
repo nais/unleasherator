@@ -3565,7 +3565,7 @@ spec:
             properties:
               conditions:
                 description: 'Represents the observations of a Unleash''s current state.
-                  Unleash.status.conditions.type are: "Available", "Progressing", and
+                  Unleash.status.conditions.type are: "Available", "Connection", and
                   "Degraded" Unleash.status.conditions.status are one of True, False,
                   Unknown. Unleash.status.conditions.reason the value should be a CamelCase
                   string and producers of specific condition types may define expected
