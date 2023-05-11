@@ -6,7 +6,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/utils"
-	promoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -45,17 +45,17 @@ func GenerateAdminKey() string {
 	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
 }
 
-func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*promoperatorv1.ServiceMonitor, error) {
+func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*monitoringv1.ServiceMonitor, error) {
 	ls := labelsForUnleash(unleash)
 
-	serviceMonitor := &promoperatorv1.ServiceMonitor{
+	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.Name,
 			Namespace: unleash.Namespace,
 			Labels:    ls,
 		},
-		Spec: promoperatorv1.ServiceMonitorSpec{
-			Endpoints: []promoperatorv1.Endpoint{
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Endpoints: []monitoringv1.Endpoint{
 				{
 					Port: DefaultUnleashPortName,
 					Path: "/internal-backstage/prometheus",

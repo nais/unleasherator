@@ -3462,7 +3462,7 @@ spec:
                     type: array
                 type: object
               prometheus:
-                description: Prometheus defines the prometheus configuration
+                description: Prometheus defines the prometheus metrics collection configuration
                 properties:
                   enabled:
                     default: true

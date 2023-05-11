@@ -46,7 +46,7 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
 
-	// Prometheus defines the prometheus configuration
+	// Prometheus defines the prometheus metrics collection configuration
 	// +kubebuilder:validation:Optional
 	Prometheus UnleashPrometheusConfig `json:"prometheus,omitempty"`
 
