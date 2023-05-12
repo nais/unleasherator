@@ -2,11 +2,11 @@
 
 Kubernetes operator for managing [Unleash](https://getunleash.io) - the open-source feature toggle service.
 
-Currently supports the following resources:
+Unleasherator currently supports the following resources:
 
 - [x] [Unleash](./docs/unleash.md)
 - [x] [ApiToken](./docs/apitoken.md)
-- [ ] [RemoteUnleash](./docs/remoteunleash.md)
+- [x] [RemoteUnleash](./docs/remoteunleash.md)
 - [ ] [Federation](./docs/federation.md)
 - ~~[ ] Project~~*
 - ~~[ ] Environment~~*
@@ -15,7 +15,13 @@ Currently supports the following resources:
 
 ## Description
 
-Unleasherator is a Kubernetes operator for managing Unleash instances and API tokens across multiple clusters or environments.
+Unleasherator is a Kubernetes operator for managing Unleash instances and API tokens across multiple clusters or environments. It is built using the [Kubebuilder](https://book.kubebuilder.io/) framework and is cloud and infrastructure agnostic.
+
+You'll find the documentation for various Unleash resources in the [docs](./docs) directory.
+
+* [Unleash](./docs/unleash.md)
+* [ApiToken](./docs/apitoken.md)
+* [RemoteUnleash](./docs/remoteunleash.md)
 
 ### Creating an Unleash instance
 
@@ -66,8 +72,9 @@ sequenceDiagram
     Unleasherator->>Kubernetes: Create Unleash ingress
     Unleasherator->>Kubernetes: Create Unleash network policy
     Unleasherator->>Unleash: Test connection
-
 ```
+
+You can find more examples in the [config/samples](./config/samples) directory.
 
 ## Getting Started
 
@@ -113,7 +120,7 @@ make undeploy
 
 ## Contributing
 
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for more info.
 
 ### How it works
 
