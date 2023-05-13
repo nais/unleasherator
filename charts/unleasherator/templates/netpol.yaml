@@ -8,6 +8,12 @@ spec:
   - to:
     - ipBlock:
         cidr: {{ .Values.networkPolicy.apiServerCIDR | required "networkPolicy.apiServerCIDR is required" }}
+  {{- if .Values.networkPolicy.extraOutboundIPs }}
+  {{- range .Values.networkPolicy.extraOutboundIPs }}
+    - ipBlock:
+        cidr: {{ . }}/32
+  {{- end }}
+  {{- end }}
   {{- if .Values.networkPolicy.allowDNS }}
   - to:
     - namespaceSelector: {}
