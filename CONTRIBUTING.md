@@ -19,6 +19,8 @@ Pull requests are the best way to propose changes to the codebase. We actively w
 
 All code should be tested. Controller code should be tested with [envtest](https://github.com/kubernetes-sigs/controller-runtime/blob/master/pkg/envtest/README.md) and [Ginkgo](https://onsi.github.io/ginkgo/). All other code is tested with [testify](https://github.com/stretchr/testify).
 
+You can read more about writing Ginko tests [here](https://onsi.github.io/ginkgo/) as well as writing kubebuilder envtests [here](https://book.kubebuilder.io/reference/envtest.html).
+
 ## Style guide
 
 We follow go best practices and the [Effective Go](https://golang.org/doc/effective_go) style guide. We also use [golangci-lint](https://github.com/golangci/golangci-lint) to enforce style and best practices.
