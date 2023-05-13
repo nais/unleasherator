@@ -277,7 +277,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Namespace: token.GetObjectMeta().GetNamespace(),
 			},
 			Data: map[string][]byte{
-				unleashv1.UnleashSecretTokenKey: []byte(apiToken.Secret),
+				unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
+				unleashv1.ApiTokenSecretServerEnv: []byte(unleash.GetURL()),
 			},
 		}
 
