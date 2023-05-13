@@ -67,7 +67,7 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 		return res, err
 	}
 
-	if res.StatusCode != 200 {
+	if res.StatusCode != http.StatusOK {
 		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)
 	}
 
@@ -108,7 +108,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 		return res, err
 	}
 
-	if res.StatusCode != 201 {
+	if res.StatusCode != http.StatusCreated {
 		return res, fmt.Errorf("unexpected http status code %d with body %s", res.StatusCode, string(body))
 	}
 
