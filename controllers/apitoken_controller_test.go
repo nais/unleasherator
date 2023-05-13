@@ -46,6 +46,7 @@ var _ = Describe("ApiToken controller", func() {
 
 			apiTokenName := "test-apitoken-remoteunleash-success"
 			apiTokenLookupKey := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+			apiTokenSecret := "*:*.be44368985f7fb3237c584ef86f3d6bdada42ddbd63a019d26955178"
 
 			By("Mocking RemoteUnleash endpoints")
 			httpmock.Activate()
@@ -55,12 +56,12 @@ var _ = Describe("ApiToken controller", func() {
 			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
 				httpmock.NewStringResponder(200, `{"tokens": []}`))
 			httpmock.RegisterResponder("POST", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
-				httpmock.NewStringResponder(201, `{
+				httpmock.NewStringResponder(201, fmt.Sprintf(`{
 					"username": "test",
 					"tokenName": "test",
-					"secret": "*:*.be44368985f7fb3237c584ef86f3d6bdada42ddbd63a019d26955178",
+					"secret": "%s",
 					"type": "client"
-				}`))
+				}`, apiTokenSecret)))
 
 			By("By creating a new RemoteUnleash")
 			createdRemoteUnleashSecret := &corev1.Secret{
@@ -160,9 +161,11 @@ var _ = Describe("ApiToken controller", func() {
 
 			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretTokenEnv))
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretTokenEnv]).ShouldNot(BeEmpty())
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretTokenEnv]).Should(Equal([]byte(apiTokenSecret)))
 
 			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretServerEnv))
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 		})
 	})
 })
