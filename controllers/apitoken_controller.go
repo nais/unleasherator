@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -174,7 +175,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{}, nil
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
 
 		log.Error(err, "Failed to get Unleash resource")
@@ -277,7 +278,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				Namespace: token.GetObjectMeta().GetNamespace(),
 			},
 			Data: map[string][]byte{
-				unleashv1.UnleashSecretTokenKey: []byte(apiToken.Secret),
+				unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
+				unleashv1.ApiTokenSecretServerEnv: []byte(unleash.GetURL()),
 			},
 		}
 
@@ -324,7 +326,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("Successfully reconciled ApiToken")
-
 	return ctrl.Result{}, nil
 }
 

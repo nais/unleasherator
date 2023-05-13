@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -146,7 +147,11 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, err
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		} else {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Check admin token
@@ -191,7 +196,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, nil
+	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {

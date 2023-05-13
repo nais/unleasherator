@@ -8,7 +8,10 @@ Status: `alpha`
 
 Creates a new unleash API token for the Unleash instance specified in the `unleashInstance` field. This can be either an `Unleash` or a `RemoteUnleash` resource in the same namespace.
 
-The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains a single key `token` with the value of the token.
+The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains two keys:
+
+- `UNLEASH_SERVER_API_TOKEN` - the token itself
+- `UNLEASH_SERVER_API_URL` - the URL of the Unleash instance
 
 ## Spec
 
