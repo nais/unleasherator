@@ -1,0 +1,17 @@
+apiVersion: unleash.nais.io/v1
+kind: RemoteUnleash
+metadata:
+  labels:
+    app.kubernetes.io/name: remoteunleash
+    app.kubernetes.io/instance: remoteunleash-sample
+    app.kubernetes.io/part-of: unleasherator
+    app.kuberentes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: unleasherator
+  name: remoteunleash-sample
+spec:
+  unleashInstance:
+    url: https://unleash.nais.io
+  adminSecret:
+    name: unleasherator-admin-key
+    key: token
+    namespace: default

@@ -9,18 +9,21 @@ Status: `alpha`
 `RemoteUnleash` has the following spec:
 
 ```yaml
-apiVersion: unleash.nais.io/v1alpha1
+apiVersion: unleash.nais.io/v1
 kind: RemoteUnleash
+metadata:
+  name: my-unleash
+  namespace: my-namespace
 spec:
   # Unleash server config
-  unleashServer:
+  unleashInstance:
     url: https://unleash.nais.io
 
   # Admin secret to use for the Unleash API
   adminSecret:
-    name: unleasherator-api-token # must start with unleasherator-
+    name: unleasherator-my-unleash-admin-key-k0hzn3uxcx
     key: token
-    namespace: default
+    namespace: my-namespace
 ```
 
 `adminSecret.name` must start with `unleasherator-`.
