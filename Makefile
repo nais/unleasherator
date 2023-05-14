@@ -51,7 +51,7 @@ fmt: ## Run go fmt against code.
 	go fmt ./...
 
 .PHONY: lint
-lint: ## Run golangci-lint against code.
+lint: golangci-lint ## Run golangci-lint against code.
 	$(GOLANGCI_LINT) run
 
 .PHONY: vet
