@@ -50,7 +50,7 @@ The following example can be used with [bitnami/postgresql][bitnami-postgresql] 
 [bitnami-postgresql]: https://artifacthub.io/packages/helm/bitnami/postgresql
 
 ```yaml
-apiVersion: unleash.nais.io/v1alpha1
+apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
   name: unleash
