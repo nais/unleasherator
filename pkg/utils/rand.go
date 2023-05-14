@@ -1,15 +1,16 @@
 package utils
 
 import (
+	"crypto/rand"
 	"encoding/base64"
-	"math/rand"
 )
 
-func RandomString(length int) string {
+func RandomString(length int) (string, error) {
 	// Create an array of bytes with the given length
 	b := make([]byte, length)
 	// Fill the array with random numbers
-	rand.Read(b)
+	_, err := rand.Read(b)
+
 	// Convert the array to a base64 encoded string
-	return base64.StdEncoding.EncodeToString(b)
+	return base64.StdEncoding.EncodeToString(b), err
 }

@@ -268,7 +268,7 @@ var _ = Describe("ApiToken controller", func() {
 
 			By("By checking that the ApiToken secret has been created")
 			createdApiTokenSecret := &corev1.Secret{}
-			k8sClient.Get(ctx, apiTokenLookupKey, createdApiTokenSecret)
+			Expect(k8sClient.Get(ctx, apiTokenLookupKey, createdApiTokenSecret)).Should(Succeed())
 
 			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretTokenEnv))
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretTokenEnv]).ShouldNot(BeEmpty())

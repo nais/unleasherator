@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "Makefile"
       - "Dockerfile"
@@ -16,7 +16,7 @@ on:
       - "**.go"
       - .github/workflows/build-and-deploy.yml
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "Makefile"
       - "Dockerfile"
@@ -45,17 +45,17 @@ jobs:
       - name: Set up Go environment
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - name: Install make
         run: sudo apt-get update && sudo apt-get install make
       - name: Lint code
         run: |
-          make fmt
+          make fmt lint
           if git diff-index --quiet HEAD --; then
             echo "Code formatted successfully."
           else
             echo "Code has formatting issues."
-            echo "Please run 'make fmt' and commit the changes."
+            echo "Please run 'make fmt lint' and commit the changes."
             exit 1
           fi
       - name: Generate code

@@ -41,8 +41,9 @@ const (
 	EnvDatabaseSSL       = "DATABASE_SSL"
 )
 
-func GenerateAdminKey() string {
-	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
+func GenerateAdminKey() (string, error) {
+	random, err := utils.RandomString(32)
+	return fmt.Sprintf("*:*.%s", random), err
 }
 
 func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*monitoringv1.ServiceMonitor, error) {

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -62,7 +62,7 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 		return res, err
 	}
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return res, err
 	}
@@ -103,7 +103,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 	}
 	defer res.Body.Close()
 
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return res, err
 	}
