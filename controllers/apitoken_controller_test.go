@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -13,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/unleash"
 )
 
 var _ = Describe("ApiToken controller", func() {
@@ -144,12 +147,32 @@ var _ = Describe("ApiToken controller", func() {
 			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
 				httpmock.NewStringResponder(200, `{"tokens": []}`))
 			httpmock.RegisterResponder("POST", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
-				httpmock.NewStringResponder(201, fmt.Sprintf(`{
-					"username": "test",
-					"tokenName": "test",
-					"secret": "%s",
-					"type": "client"
-				}`, apiTokenSecret)))
+				func(req *http.Request) (*http.Response, error) {
+					defer GinkgoRecover()
+
+					tokenRequest := unleash.ApiTokenRequest{}
+					if err := json.NewDecoder(req.Body).Decode(&tokenRequest); err != nil {
+						return httpmock.NewStringResponse(400, ""), nil
+					}
+
+					Expect(tokenRequest.Username).Should(Equal(fmt.Sprintf("%s-%s", apiTokenName, ApiTokenNameSuffix)))
+
+					resp, err := httpmock.NewJsonResponse(201, unleash.ApiToken{
+						Secret:      apiTokenSecret,
+						Username:    tokenRequest.Username,
+						Type:        tokenRequest.Type,
+						Environment: tokenRequest.Environment,
+						Project:     tokenRequest.Project,
+						Projects:    tokenRequest.Projects,
+						ExpiresAt:   tokenRequest.ExpiresAt,
+						CreatedAt:   time.Now().Format("2006-01-02T15:04:05.999Z"),
+					})
+
+					if err != nil {
+						return httpmock.NewStringResponse(500, ""), nil
+					}
+					return resp, nil
+				})
 
 			By("By creating a new RemoteUnleash")
 			createdRemoteUnleashSecret := &corev1.Secret{

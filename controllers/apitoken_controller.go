@@ -256,7 +256,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Create token if it does not exist
 	// This operation is not atomic, and there exists no other checks if the token secret has been created. This is an edge-case but should be handled.
 	if !exists {
-		apiToken, err := apiClient.CreateAPIToken(unleashclient.APITokenRequest{
+		apiToken, err := apiClient.CreateAPIToken(unleashclient.ApiTokenRequest{
 			Username:    token.UnleashClientName(r.ApiTokenNameSuffix),
 			Type:        token.Spec.Type,
 			Environment: token.Spec.Environment,

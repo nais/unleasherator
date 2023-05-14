@@ -52,7 +52,7 @@ func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Respo
 	return adminStats, res, nil
 }
 
-type APIToken struct {
+type ApiToken struct {
 	Secret      string   `json:"secret"`
 	Username    string   `json:"username"`
 	Type        string   `json:"type"` // Possible values: [client, admin, frontend]
@@ -65,11 +65,11 @@ type APIToken struct {
 	Alias       string   `json:"alias"`
 }
 
-type APITokenResult struct {
-	Tokens []APIToken `json:"tokens"`
+type ApiTokenResult struct {
+	Tokens []ApiToken `json:"tokens"`
 }
 
-type APITokenRequest struct {
+type ApiTokenRequest struct {
 	Secret      string   `json:"secret,omitempty"`
 	Username    string   `json:"username"`
 	Type        string   `json:"type"` // One of client, admin, frontend
@@ -81,8 +81,8 @@ type APITokenRequest struct {
 
 // CreateAPIToken creates a new API token (admin only endpoint - requires admin token).
 // https://docs.getunleash.io/reference/api/unleash/create-api-token
-func (c *Client) CreateAPIToken(req APITokenRequest) (*APIToken, error) {
-	res := &APIToken{}
+func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
+	res := &ApiToken{}
 
 	_, err := c.HTTPPost("/api/admin/api-tokens", req, res)
 	if err != nil {
@@ -94,8 +94,8 @@ func (c *Client) CreateAPIToken(req APITokenRequest) (*APIToken, error) {
 
 // GetAllAPITokens returns all API tokens (admin only endpoint - requires admin token).
 // https://docs.getunleash.io/reference/api/unleash/get-all-api-tokens
-func (c *Client) GetAllAPITokens() (*APITokenResult, error) {
-	res := &APITokenResult{}
+func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
+	res := &ApiTokenResult{}
 
 	_, err := c.HTTPGet("/api/admin/api-tokens", &res)
 	if err != nil {
