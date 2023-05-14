@@ -89,12 +89,15 @@ var _ = Describe("RemoteUnleash controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			// Mock Unleash server with a health endpoint
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer GinkgoRecover()
+
 				if r.URL.Path != "/health" {
 					w.WriteHeader(http.StatusNotFound)
 				}
 
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"health": "GOOD"}`))
+				_, err := w.Write([]byte(`{"health": "GOOD"}`))
+				Expect(err).ToNot(HaveOccurred())
 			}))
 			defer srv.Close()
 

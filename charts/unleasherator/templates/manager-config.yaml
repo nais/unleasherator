@@ -5,33 +5,5 @@ metadata:
   labels:
   {{- include "unleasherator.labels" . | nindent 4 }}
 data:
-  controller_manager_config.yaml: |
-    apiVersion: controller-runtime.sigs.k8s.io/v1alpha1
-    health:
-      healthProbeBindAddress: {{ .Values.managerConfig.controllerManagerConfigYaml.health.healthProbeBindAddress
-        | quote }}
-    kind: ControllerManagerConfig
-    leaderElection:
-      leaderElect: {{ .Values.managerConfig.controllerManagerConfigYaml.leaderElection.leaderElect
-        }}
-      resourceName: {{ .Values.managerConfig.controllerManagerConfigYaml.leaderElection.resourceName
-        | quote }}
-    metadata:
-      labels:
-        app.kubernetes.io/component: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIocomponent
-          | quote }}
-        app.kubernetes.io/created-by: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIocreatedBy
-          | quote }}
-        app.kubernetes.io/instance: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIoinstance
-          | quote }}
-        app.kubernetes.io/managed-by: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIomanagedBy
-          | quote }}
-        app.kubernetes.io/name: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIoname
-          | quote }}
-        app.kubernetes.io/part-of: {{ .Values.managerConfig.controllerManagerConfigYaml.metadata.labels.appKubernetesIopartOf
-          | quote }}
-    metrics:
-      bindAddress: {{ .Values.managerConfig.controllerManagerConfigYaml.metrics.bindAddress
-        | quote }}
-    webhook:
-      port: {{ .Values.managerConfig.controllerManagerConfigYaml.webhook.port }}
+  controller_manager_config.yaml: {{ .Values.managerConfig.controllerManagerConfigYaml
+    | toYaml | indent 1 }}

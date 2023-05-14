@@ -41,8 +41,9 @@ const (
 	EnvDatabaseSSL       = "DATABASE_SSL"
 )
 
-func GenerateAdminKey() string {
-	return fmt.Sprintf("*:*.%s", utils.RandomString(32))
+func GenerateAdminKey() (string, error) {
+	random, err := utils.RandomString(32)
+	return fmt.Sprintf("*:*.%s", random), err
 }
 
 func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*monitoringv1.ServiceMonitor, error) {
@@ -287,7 +288,6 @@ func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
 }
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
-// @TODO add unleash.ObjectMeta.Labels?
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
 	labels := labelsForUnleash(unleash)
 	pathType := networkingv1.PathTypeImplementationSpecific
@@ -324,6 +324,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 			},
 		},
 	}
+
 	if err := ctrl.SetControllerReference(unleash, ingress, scheme); err != nil {
 		return nil, err
 	}

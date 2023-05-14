@@ -40,6 +40,11 @@ type ApiTokenReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+
+	// ApiTokenNameSuffix is the suffix used for the ApiToken names
+	// in order to avoid name collisions when multiple clusters are
+	// using the same Unleash instance.
+	ApiTokenNameSuffix string
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens,verbs=get;list;watch;create;update;patch;delete
@@ -231,7 +236,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Check if token exists
-	exists, err := apiClient.CheckAPITokenExists(token.GetObjectMeta().GetName())
+	exists, err := apiClient.CheckAPITokenExists(token.UnleashClientName(r.ApiTokenNameSuffix))
 	if err != nil {
 		log.Error(err, "Failed to check if token exists")
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -251,8 +256,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Create token if it does not exist
 	// This operation is not atomic, and there exists no other checks if the token secret has been created. This is an edge-case but should be handled.
 	if !exists {
-		apiToken, err := apiClient.CreateAPIToken(unleashclient.APITokenRequest{
-			Username:    token.GetObjectMeta().GetName(),
+		apiToken, err := apiClient.CreateAPIToken(unleashclient.ApiTokenRequest{
+			Username:    token.UnleashClientName(r.ApiTokenNameSuffix),
 			Type:        token.Spec.Type,
 			Environment: token.Spec.Environment,
 			Projects:    token.Spec.Projects,

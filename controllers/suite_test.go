@@ -27,11 +27,12 @@ import (
 const operatorNamespace = "default"
 
 var (
-	cfg       *rest.Config
-	k8sClient client.Client // You'll be using this client in your tests.
-	testEnv   *envtest.Environment
-	ctx       context.Context
-	cancel    context.CancelFunc
+	cfg                *rest.Config
+	k8sClient          client.Client // You'll be using this client in your tests.
+	testEnv            *envtest.Environment
+	ctx                context.Context
+	cancel             context.CancelFunc
+	ApiTokenNameSuffix = "unleasherator"
 )
 
 func TestAPIs(t *testing.T) {
@@ -94,9 +95,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
-		Client:            k8sManager.GetClient(),
-		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: operatorNamespace,
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
+		OperatorNamespace:  operatorNamespace,
+		ApiTokenNameSuffix: ApiTokenNameSuffix,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

@@ -49,11 +49,12 @@ spec:
                 values:
                 - linux
       containers:
-      - args:
-        - --config=controller_manager_config.yaml
+      - args: {{- toYaml .Values.controllerManager.manager.args | nindent 8 }}
         command:
         - /manager
         env:
+        - name: API_TOKEN_NAME_SUFFIX
+          value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
@@ -84,11 +85,7 @@ spec:
         - mountPath: /controller_manager_config.yaml
           name: manager-config
           subPath: controller_manager_config.yaml
-      - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=0
+      - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}

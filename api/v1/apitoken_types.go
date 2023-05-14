@@ -77,6 +77,10 @@ type ApiTokenList struct {
 	Items           []ApiToken `json:"items"`
 }
 
+func (t *ApiToken) UnleashClientName(suffix string) string {
+	return t.Name + "-" + suffix
+}
+
 func init() {
 	SchemeBuilder.Register(&ApiToken{}, &ApiTokenList{})
 }
