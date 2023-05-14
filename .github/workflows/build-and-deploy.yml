@@ -49,6 +49,8 @@ jobs:
           cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
       - name: Install make
         run: sudo apt-get update && sudo apt-get install make
       - name: Generate code
