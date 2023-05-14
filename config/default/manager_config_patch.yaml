@@ -11,6 +11,8 @@ spec:
         image: ghcr.io/nais/unleasherator:main
         imagePullPolicy: Always
         env:
+        - name: API_TOKEN_NAME_SUFFIX
+          value: "unleasherator"
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:

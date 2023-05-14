@@ -21,6 +21,8 @@ controllerManager:
       capabilities:
         drop:
         - ALL
+    env:
+      apiTokenNameSuffix: unleasherator
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main

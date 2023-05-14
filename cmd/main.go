@@ -63,6 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	apiTokenNameSuffix := os.Getenv("API_TOKEN_NAME_SUFFIX")
 	operatorNamespace := os.Getenv("OPERATOR_NAMESPACE")
 	if operatorNamespace == "" {
 		setupLog.Error(err, "unable to get OPERATOR_NAMESPACE from environment")
@@ -88,10 +89,11 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.ApiTokenReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace: operatorNamespace,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("api-token-controller"),
+		OperatorNamespace:  operatorNamespace,
+		ApiTokenNameSuffix: apiTokenNameSuffix,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)

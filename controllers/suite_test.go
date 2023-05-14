@@ -25,6 +25,7 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 const operatorNamespace = "default"
+const apiTokenNameSuffix = "unleasherator"
 
 var (
 	cfg       *rest.Config
@@ -94,9 +95,10 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
-		Client:            k8sManager.GetClient(),
-		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: operatorNamespace,
+		Client:             k8sManager.GetClient(),
+		Scheme:             k8sManager.GetScheme(),
+		OperatorNamespace:  operatorNamespace,
+		ApiTokenNameSuffix: apiTokenNameSuffix,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

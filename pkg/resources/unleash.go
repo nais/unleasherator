@@ -287,7 +287,6 @@ func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
 }
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
-// @TODO add unleash.ObjectMeta.Labels?
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
 	labels := labelsForUnleash(unleash)
 	pathType := networkingv1.PathTypeImplementationSpecific
@@ -324,6 +323,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 			},
 		},
 	}
+
 	if err := ctrl.SetControllerReference(unleash, ingress, scheme); err != nil {
 		return nil, err
 	}

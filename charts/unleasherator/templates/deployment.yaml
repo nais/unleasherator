@@ -54,6 +54,8 @@ spec:
         command:
         - /manager
         env:
+        - name: API_TOKEN_NAME_SUFFIX
+          value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
