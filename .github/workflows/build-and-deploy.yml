@@ -10,7 +10,6 @@ on:
     paths:
       - "Makefile"
       - "Dockerfile"
-      - "config/**"
       - "go.mod"
       - "go.sum"
       - "**.go"
@@ -20,7 +19,6 @@ on:
     paths:
       - "Makefile"
       - "Dockerfile"
-      - "config/**"
       - "go.mod"
       - "go.sum"
       - "**.go"
