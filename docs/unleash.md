@@ -1,6 +1,6 @@
 # Unleash
 
-Implementation status: `alpha`
+Implementation status: `beta`
 
 `Unleash` represents an Unleash server that is managed directly by the operator.
 
@@ -11,7 +11,7 @@ The operator will create a deployment with the Unleash server and a service to e
 ## Features
 
 - [x] Deployment
-  - [ ] Custom Image
+  - [x] Custom Image
   - [x] Extra containers
   - [x] Extra volumes
   - [x] Extra environment variables
@@ -23,7 +23,7 @@ The operator will create a deployment with the Unleash server and a service to e
 ## Spec
 
 ```yaml
-apiVersion: unleash.nais.io/v1alpha1
+apiVersion: unleash.nais.io/v1
 kind: Unleash
 spec:
   # The number of replicas to run

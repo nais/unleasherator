@@ -13,10 +13,10 @@ graph LR
 
   subgraph Dev Cluster
     dev-unleasherator[Unleasherator]
+    dev-team-a-unleash-token[AdminApiToken]
 
     subgraph team-a-dev[Team Namespace]
       dev-team-a-unleash[RemoteUnleash]
-      dev-team-a-unleash-token[AdminApiToken]
     end
   end
 
@@ -32,6 +32,8 @@ graph LR
 
   dev-unleasherator-.create.->dev-team-a-unleash
   dev-unleasherator-.create.->dev-team-a-unleash-token
+
+  dev-team-a-unleash-token-..->dev-team-a-unleash
 ```
 
 In the example above we have three clusters: a management cluster, a dev cluster and a prod cluster. The management cluster is where the Unleash instance is created. The dev and prod clusters are where the teams are deploying their applications.

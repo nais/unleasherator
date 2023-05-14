@@ -1,12 +1,31 @@
 # ApiToken
 
-Status: `alpha`
+Implementation status: `beta`
 
 `ApiToken` is a resource that allows you to create API tokens for an Unleash instance.
 
 ## Implementation
 
 Creates a new unleash API token for the Unleash instance specified in the `unleashInstance` field. This can be either an `Unleash` or a `RemoteUnleash` resource in the same namespace.
+
+```mermaid
+sequenceDiagram
+    participant ApiToken
+    participant Unleasherator
+    participant Kubernetes
+    participant Unleash
+
+    ApiToken->>Unleasherator: Watch
+    Unleasherator->>Kubernetes: Get Unleash config
+    Unleasherator->>Unleash: Check if token exists
+
+    opt If token does not exist
+      Unleasherator->>Unleash: Create new token
+      Unleasherator->>Kubernetes: Save token in secret
+    end
+
+    Unleasherator->>ApiToken: Update status
+```
 
 The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains two keys:
 
@@ -16,7 +35,7 @@ The token will be stored in secret in the same namespace as the `ApiToken` resou
 ## Spec
 
 ```yaml
-apiVersion: unleash.nais.io/v1alpha1
+apiVersion: unleash.nais.io/v1
 kind: ApiToken
 spec:
   # The Unleash instance to create the token for
