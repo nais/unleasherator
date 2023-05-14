@@ -2,16 +2,36 @@
 
 Kubernetes operator for managing [Unleash](https://getunleash.io) - the open-source feature toggle service.
 
-Unleasherator currently supports the following resources:
+It has support for creating and managing Unleash instances and API tokens across multiple clusters or environments and only depends on Kubernetes native resources.
 
-- [x] [Unleash](./docs/unleash.md)
-- [x] [ApiToken](./docs/apitoken.md)
-- [x] [RemoteUnleash](./docs/remoteunleash.md)
-- [ ] [Federation](./docs/federation.md)
-- ~~[ ] Project~~*
-- ~~[ ] Environment~~*
+Used in production at the Norwegian Labour and Welfare Administration (NAV).
 
-*These resources are not supported by the Unleash Open Source version and we don't have any plans to support them in this operator.
+```mermaid
+graph LR
+  postgres[PostgreSQL]
+
+  subgraph Kubernetes
+    subgraph unleasherator-system
+      unleasherator[Unleasherator]
+    end
+
+    subgraph my-namespace
+      unleash[Unleash]
+      apiToken[ApiToken]
+      tokenSecret[Secret]
+
+      deployment[Deployment]
+    end
+  end
+
+  unleasherator -- manages --> unleash
+  unleasherator -- manages --> apiToken
+  apiToken -..- unleash
+  apiToken -..-> tokenSecret
+  unleash -- uses --> postgres
+
+  tokenSecret -..-> deployment
+```
 
 ## Description
 
