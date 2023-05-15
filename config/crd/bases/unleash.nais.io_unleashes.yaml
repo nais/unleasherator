@@ -14,7 +14,20 @@ spec:
     singular: unleash
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.apiIngress.host
+      name: API Ingress
+      type: string
+    - jsonPath: .spec.webIngress.host
+      name: Web Ingress
+      type: string
+    - jsonPath: .status.reconciled
+      name: Reconciled
+      type: boolean
+    - jsonPath: .status.connected
+      name: Connected
+      type: boolean
+    name: v1
     schema:
       openAPIV3Schema:
         description: Unleash defines an Unleash instance

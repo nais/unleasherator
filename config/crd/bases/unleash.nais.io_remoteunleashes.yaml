@@ -14,7 +14,17 @@ spec:
     singular: remoteunleash
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.unleashInstance.url
+      name: URL
+      type: string
+    - jsonPath: .status.reconciled
+      name: Reconciled
+      type: boolean
+    - jsonPath: .status.connected
+      name: Connected
+      type: boolean
+    name: v1
     schema:
       openAPIV3Schema:
         description: RemoteUnleash defines an RemoteUnleash instance

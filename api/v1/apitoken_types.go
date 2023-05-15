@@ -29,20 +29,17 @@ type ApiTokenSpec struct {
 
 	// SecretName is the name of the secret where the token will be stored.
 	// +kubebuilder:validation:Required
-	// +kubebuilder:printcolumn:name="Secret",type=string,JSONPath=`.spec.secretName`
 	SecretName string `json:"secretName"`
 
 	// Type is the type of token to create. Valid values are "CLIENT" and "FRONTEND".
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=CLIENT;FRONTEND
 	// +kubebuilder:default=CLIENT
-	// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
 	Type string `json:"type,omitempty"`
 
 	// Environment is the environment to create the token for.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default=development
-	// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.spec.environment`
 	Environment string `json:"environment,omitempty"`
 
 	// Projects is the list of projects to create the token for.
@@ -66,19 +63,22 @@ type ApiTokenStatus struct {
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Created",type=boolean,JSONPath=`.status.created`
 	Created bool `json:"created,omitempty"`
 
 	// Failed is true when the Unleash API token creation has failed
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Failed",type=boolean,JSONPath=`.status.failed`
 	Failed bool `json:"failed,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Created",type=boolean,JSONPath=`.status.created`
+// +kubebuilder:printcolumn:name="Secret",type=string,JSONPath=`.spec.secretName`
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
+// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=`.spec.environment`
+// +kubebuilder:printcolumn:name="Failed",type=boolean,JSONPath=`.status.failed`
 type ApiToken struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
