@@ -46,4 +46,18 @@ spec:
 
   # The name of the secret to store the token in
   secretName: unleash-api-token
+
+  # Token type (optional, can be either 'CLIENT' or 'FRONTEND')
+  # defaults to 'CLIENT'
+  type: CLIENT
+
+  # Environment the token is valid for (optional)
+  # defaults to 'development'
+  environment: development
+
+  # Projects the token is valid for (optional)
+  # defaults to '*' (all projects)
+  projects:
+    - my-project
+    - my-other-project
 ```
