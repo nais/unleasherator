@@ -65,7 +65,7 @@ var _ = Describe("Unleash controller", func() {
 
 				return createdUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeAvailable,
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
@@ -118,7 +118,7 @@ var _ = Describe("Unleash controller", func() {
 
 				return createdUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeConnection,
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
 				Message: "Successfully connected to Unleash instance",
@@ -145,11 +145,11 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Get(ctx, unleashLookupKey, serviceMonitor)).Should(Succeed())
 
 			var m1 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnection).Write(m1)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnected).Write(m1)).Should(Succeed())
 			Expect(m1.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			var m2 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeAvailable).Write(m2)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeReconciled).Write(m2)).Should(Succeed())
 			Expect(m2.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")

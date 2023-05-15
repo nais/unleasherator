@@ -19,19 +19,20 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const tokenFinalizer = "unleash.nais.io/finalizer"
 
-const (
-	// typeCreatedToken is the event reason for a created token
-	typeCreatedToken = "Created"
-
-	// typeDeletedToken is the event reason for a deleted token
-	typeDeletedToken = "Deleted"
-
-	// typeFailedToken is the event reason for a failed token
-	typeFailedToken = "Failed"
+var (
+	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
+	apiTokenStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_unleash_status",
+			Help: "Status of Unleash instances",
+		},
+		[]string{"namespace", "name", "status"},
+	)
 )
 
 // ApiTokenReconciler reconciles a ApiToken object
@@ -78,7 +79,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Set status to unknown if not set
 	if token.Status.Conditions == nil || len(token.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
+			Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
@@ -115,7 +116,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("Performing Finalizer Operations for ApiToken before deletion")
 
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeDeletedToken,
+				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
 				Message: "Performing finalizer operations",
@@ -134,7 +135,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeDeletedToken,
+				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Finalizing",
 				Message: "Finalizer operations completed",
@@ -163,24 +164,12 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	unleash, err := r.getUnleashInstance(ctx, token)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "UnleashNotFound",
-				Message: fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace),
-			})
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeFailedToken,
-				Status:  metav1.ConditionTrue,
-				Reason:  "UnleashNotFound",
-				Message: fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace),
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
+			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
+			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 
 		log.Error(err, "Failed to get Unleash resource")
@@ -189,15 +178,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Check if Unleash instance is ready
 	if !unleash.IsReady() {
-		log.Info("Unleash instance for ApiToken is not ready")
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
-			Status:  metav1.ConditionFalse,
-			Reason:  "UnleashNotReady",
-			Message: "Unleash resource not ready",
-		})
-		if err = r.Status().Update(ctx, token); err != nil {
-			log.Error(err, "Failed to update ApiToken status")
+		if err := r.updateStatusFailed(ctx, token, nil, "UnleashNotReady", "Unleash instance not ready"); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -207,29 +188,16 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Get Unleash API client
 	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
-		log.Error(err, "Failed to get Unleash client")
+		reason := "UnleashClientFailed"
+		message := "Failed to create Unleash client"
+
 		if apierrors.IsNotFound(err) {
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "UnleashSecretNotFound",
-				Message: "Unleash secret not found",
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{}, err
-			}
-		} else {
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "FailedToCreateUnleashClient",
-				Message: "Failed to create Unleash client",
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{}, err
-			}
+			reason = "UnleashSecretNotFound"
+			message = "Unleash secret not found"
+		}
+
+		if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
+			return ctrl.Result{}, err
 		}
 
 		return ctrl.Result{}, err
@@ -238,18 +206,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Check if token exists
 	exists, err := apiClient.CheckAPITokenExists(token.UnleashClientName(r.ApiTokenNameSuffix))
 	if err != nil {
-		log.Error(err, "Failed to check if token exists")
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
-			Status:  metav1.ConditionFalse,
-			Reason:  "FailedToCheckIfTokenExists",
-			Message: "Failed to check if token exists",
-		})
-		if err = r.Status().Update(ctx, token); err != nil {
-			log.Error(err, "Failed to update ApiToken status")
+		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists"); err != nil {
 			return ctrl.Result{}, err
 		}
-
 		return ctrl.Result{}, err
 	}
 
@@ -263,17 +222,10 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			Projects:    token.Spec.Projects,
 		})
 		if err != nil {
-			log.Error(err, "Failed to create token")
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "FailedToCreateToken",
-				Message: "Failed to create token",
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
+			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to created token"); err != nil {
 				return ctrl.Result{}, err
 			}
+			return ctrl.Result{}, err
 		}
 
 		// Token secret
@@ -288,50 +240,31 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			},
 		}
 
+		if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
+			log.Error(err, "Failed to set controller reference on secret for ApiToken")
+			return ctrl.Result{}, err
+		}
+
 		// Delete existing token secret if it exists
 		if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
-			log.Error(err, "Failed to delete secret")
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "FailedToDeleteExistingSecret",
-				Message: "Failed to delete existing secret",
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
 				return ctrl.Result{}, err
 			}
+			return ctrl.Result{}, err
 		}
 
 		// Create new token secret
 		if err := r.Create(ctx, secret); err != nil {
-			log.Error(err, "Failed to create secret")
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    typeCreatedToken,
-				Status:  metav1.ConditionFalse,
-				Reason:  "FailedToCreateSecret",
-				Message: "Failed to create secret",
-			})
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
 				return ctrl.Result{}, err
 			}
-		}
-
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    typeCreatedToken,
-			Status:  metav1.ConditionTrue,
-			Reason:  "CreatedToken",
-			Message: "Created token",
-		})
-		if err = r.Status().Update(ctx, token); err != nil {
-			log.Error(err, "Failed to update ApiToken status")
 			return ctrl.Result{}, err
 		}
 	}
 
-	log.Info("Successfully reconciled ApiToken")
-	return ctrl.Result{}, nil
+	// Set ApiToken status to success
+	err = r.updateStatusSuccess(ctx, token)
+	return ctrl.Result{}, err
 }
 
 func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unleashv1.ApiToken) (UnleashInstance, error) {
@@ -356,6 +289,63 @@ func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unle
 	} else {
 		return nil, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
 	}
+}
+
+// updateStatusSuccess will set the status condition as created and reset the failed status condition
+func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *unleashv1.ApiToken) error {
+	log := log.FromContext(ctx)
+	log.Info("Successfully created ApiToken")
+
+	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeCreated).Set(1.0)
+	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(0.0)
+
+	apiToken.Status.Created = true
+	apiToken.Status.Failed = false
+
+	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
+		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "API token successfully created",
+	})
+
+	meta.RemoveStatusCondition(&apiToken.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
+
+	if err := r.Status().Update(ctx, apiToken); err != nil {
+		log.Error(err, "Failed to update status for ApiToken")
+		return err
+	}
+
+	return nil
+}
+
+// updateStatusFailed will set the status condition as failed, but not reset the created status condition
+func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, err error, reason, message string) error {
+	log := log.FromContext(ctx)
+
+	if err != nil {
+		log.Error(err, fmt.Sprintf("%s for ApiToken", message))
+	} else {
+		log.Info(fmt.Sprintf("%s for ApiToken", message))
+	}
+
+	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(1.0)
+
+	apiToken.Status.Failed = true
+
+	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
+		Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
+		Status:  metav1.ConditionTrue,
+		Reason:  reason,
+		Message: message,
+	})
+
+	if err := r.Status().Update(ctx, apiToken); err != nil {
+		log.Error(err, "Failed to update status for ApiToken")
+		return err
+	}
+
+	return nil
 }
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken) {

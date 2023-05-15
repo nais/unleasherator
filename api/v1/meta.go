@@ -21,9 +21,13 @@ var (
 )
 
 const (
-	UnleashStatusConditionTypeAvailable  = "Available"
-	UnleashStatusConditionTypeConnection = "Connection"
+	UnleashStatusConditionTypeReconciled = "Reconciled"
+	UnleashStatusConditionTypeConnected  = "Connected"
 	UnleashStatusConditionTypeDegraded   = "Degraded"
+
+	ApiTokenStatusConditionTypeCreated = "Created"
+	ApiTokenStatusConditionTypeFailed  = "Failed"
+	ApiTokenStatusConditionTypeDeleted = "Deleted"
 
 	UnleashSecretNamePrefix = "unleasherator"
 	UnleashSecretTokenKey   = "token"

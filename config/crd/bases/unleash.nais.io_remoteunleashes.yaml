@@ -74,7 +74,7 @@ spec:
             properties:
               conditions:
                 description: 'Represents the observations of a RemoteUnleash''s current
-                  state. RemoteUnleash.status.conditions.type are: "Available", "Connection",
+                  state. RemoteUnleash.status.conditions.type are: "Reconciled", "Connected",
                   and "Degraded" RemoteUnleash.status.conditions.status are one of
                   True, False, Unknown. RemoteUnleash.status.conditions.reason the
                   value should be a CamelCase string and producers of specific condition
@@ -148,6 +148,19 @@ spec:
                   - type
                   type: object
                 type: array
+              connected:
+                default: false
+                description: Connected is true when the Unleash resource has been
+                  connected to the Unleash server This is used for kubectl printing
+                  purposes. Rather than relying on this value, check the conditions
+                  instead.
+                type: boolean
+              reconciled:
+                default: false
+                description: Reconciled is true when the Unleash resources hav been
+                  reconciled successfully. This is used for kubectl printing purposes.
+                  Rather than relying on this value, check the conditions instead.
+                type: boolean
             type: object
         type: object
     served: true

@@ -9,3 +9,10 @@ func unsetConditionLastTransitionTime(conditions []metav1.Condition) {
 		conditions[i].LastTransitionTime = metav1.Time{}
 	}
 }
+
+func promGaugeValueForStatus(status metav1.ConditionStatus) float64 {
+	if status == metav1.ConditionTrue {
+		return 1
+	}
+	return 0
+}
