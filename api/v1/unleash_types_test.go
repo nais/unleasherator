@@ -28,7 +28,7 @@ func TestUnleashIsReady(t *testing.T) {
 		Status: UnleashStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   UnleashStatusConditionTypeAvailable,
+					Type:   UnleashStatusConditionTypeReconciled,
 					Status: metav1.ConditionFalse,
 				},
 			},
@@ -41,7 +41,7 @@ func TestUnleashIsReady(t *testing.T) {
 	assert.Equal(t, unleash.IsReady(), false, "Unleash should not be ready when connection condition is missing")
 
 	unleash.Status.Conditions = append(unleash.Status.Conditions, metav1.Condition{
-		Type:   UnleashStatusConditionTypeConnection,
+		Type:   UnleashStatusConditionTypeConnected,
 		Status: metav1.ConditionFalse,
 	})
 	assert.Equal(t, unleash.IsReady(), false, "Unleash should not be ready when connection condition is false")

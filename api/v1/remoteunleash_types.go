@@ -72,13 +72,28 @@ type RemoteUnleashServer struct {
 // RemoteUnleashStatus defines the observed state of RemoteUnleash
 type RemoteUnleashStatus struct {
 	// Represents the observations of a RemoteUnleash's current state.
-	// RemoteUnleash.status.conditions.type are: "Available", "Connection", and "Degraded"
+	// RemoteUnleash.status.conditions.type are: "Reconciled", "Connected", and "Degraded"
 	// RemoteUnleash.status.conditions.status are one of True, False, Unknown.
 	// RemoteUnleash.status.conditions.reason the value should be a CamelCase string and producers of specific
 	// condition types may define expected values and meanings for this field, and whether the values
 	// are considered a guaranteed API.
 	// RemoteUnleash.status.conditions.Message is a human readable message indicating details about the transition.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Reconciled is true when the Unleash resources hav been reconciled
+	// successfully.
+	// This is used for kubectl printing purposes. Rather than relying on this
+	// value, check the conditions instead.
+	// +kubebuilder:default=false
+	// +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
+	Reconciled bool `json:"reconciled,omitempty"`
+
+	// Connected is true when the Unleash resource has been connected to the Unleash server
+	// This is used for kubectl printing purposes. Rather than relying on this
+	// value, check the conditions instead.
+	// +kubebuilder:default=false
+	// +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
+	Connected bool `json:"connected,omitempty"`
 }
 
 // GetURL returns the URL of the Unleash instance.

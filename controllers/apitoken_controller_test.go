@@ -70,7 +70,7 @@ var _ = Describe("ApiToken controller", func() {
 
 				return createdApiToken.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeCreatedToken,
+				Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
 				Status:  metav1.ConditionFalse,
 				Reason:  "UnleashNotFound",
 				Message: "Unleash resource with name test-unleash-not-exist not found in namespace default",
@@ -118,7 +118,7 @@ var _ = Describe("ApiToken controller", func() {
 
 				return createdApiToken.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeCreatedToken,
+				Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
 				Status:  metav1.ConditionFalse,
 				Reason:  "UnleashNotFound",
 				Message: "RemoteUnleash resource with name test-remoteunleash-not-exist not found in namespace default",
@@ -222,7 +222,7 @@ var _ = Describe("ApiToken controller", func() {
 
 				return createdRemoteUnleash.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeConnection,
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
 				Message: "Successfully connected to Unleash",
@@ -260,7 +260,7 @@ var _ = Describe("ApiToken controller", func() {
 
 				return createdApiToken.Status.Conditions, nil
 			}, timeout, interval).Should(ContainElement(metav1.Condition{
-				Type:    typeCreatedToken,
+				Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
 				Status:  metav1.ConditionTrue,
 				Reason:  "CreatedToken",
 				Message: "Created token",

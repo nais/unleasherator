@@ -63,7 +63,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Set status to unknown if not set
 	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
 		if err := r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-			Type:    unleashv1.UnleashStatusConditionTypeAvailable,
+			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
@@ -204,7 +204,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Cont
 
 	log.Info("Successfully connected to Unleash")
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeConnection,
+		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Successfully connected to Unleash",
@@ -216,7 +216,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Conte
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeConnection,
+		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,
@@ -228,7 +228,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Conte
 
 	log.Info("Successfully reconciled RemoteUnleash")
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Reconciled successfully",
@@ -240,7 +240,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 
 	log.Error(err, fmt.Sprintf("%s for RemoteUnleash", message))
 	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeAvailable,
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: message,
@@ -250,12 +250,15 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
-	val := 0.0
-	if status.Status == metav1.ConditionTrue {
-		val = 1.0
+	switch status.Type {
+	case unleashv1.UnleashStatusConditionTypeReconciled:
+		remoteUnleash.Status.Reconciled = status.Status == metav1.ConditionTrue
+	case unleashv1.UnleashStatusConditionTypeConnected:
+		remoteUnleash.Status.Connected = status.Status == metav1.ConditionTrue
 	}
 
-	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
+	val := promGaugeValueForStatus(status.Status)
+	unleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
 	if err := r.Status().Update(ctx, remoteUnleash); err != nil {

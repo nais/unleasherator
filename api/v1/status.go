@@ -13,8 +13,8 @@ func getConditionStatus(conditions []metav1.Condition, t string) metav1.Conditio
 }
 
 func conditionStatusIsReady(conditions []metav1.Condition) bool {
-	statusAvailable := getConditionStatus(conditions, UnleashStatusConditionTypeAvailable)
-	statusConnection := getConditionStatus(conditions, UnleashStatusConditionTypeConnection)
+	statusAvailable := getConditionStatus(conditions, UnleashStatusConditionTypeReconciled)
+	statusConnection := getConditionStatus(conditions, UnleashStatusConditionTypeConnected)
 
 	return statusAvailable == metav1.ConditionTrue && statusConnection == metav1.ConditionTrue
 }
