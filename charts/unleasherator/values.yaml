@@ -10,6 +10,8 @@ controllerManager:
       capabilities:
         drop:
         - ALL
+      seccompProfile:
+        type: RuntimeDefault
     image:
       repository: gcr.io/kubebuilder/kube-rbac-proxy
       tag: v0.13.0
@@ -28,6 +30,8 @@ controllerManager:
       capabilities:
         drop:
         - ALL
+      seccompProfile:
+        type: RuntimeDefault
     env:
       apiTokenNameSuffix: unleasherator
     image:
