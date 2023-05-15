@@ -102,6 +102,8 @@ spec:
           | nindent 10 }}
       securityContext:
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
