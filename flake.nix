@@ -1,5 +1,5 @@
 {
-  description = "My haskell application";
+  description = "Unleasherator";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs";
@@ -27,7 +27,7 @@
         in pkgs.fetchzip {
           url =
             #this needs a per-system mapping to google names
-            "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.25.0-${nixToKubebuilderTools}.tar.gz";
+            "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-${nixToKubebuilderTools}.tar.gz";
           sha256 = "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
         };
         unleash = pkgs.buildGoModule {
@@ -65,6 +65,9 @@
             helmify
             kubernetes-controller-tools
           ];
+          shellHook = ''
+            export KUBE_ASSETS=${kubetools}/bin
+          '';
         };
         kubetools = kubetools;
       });
