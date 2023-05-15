@@ -15,7 +15,7 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        kubetools = let
+        kubetools-1_27_1 = let
           nixToKubebuilderTools = let
             platformMapping = {
               x86_64-linux = "linux-amd64";
@@ -32,8 +32,8 @@
         };
         unleash = pkgs.buildGoModule {
           name = "unleasherator";
-          nativeBuildInputs = [ pkgs.kubebuilder kubetools ];
-          KUBEBUILDER_ASSETS = "${kubetools}/bin";
+          nativeBuildInputs = [ pkgs.kubebuilder kubetools-1_27_1 ];
+          KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 = "sha256-XrwMUAjsGCIJQt2wu53VD7F3XUR8Gq7GEtxH4EJnXcM=";
         };
@@ -66,9 +66,9 @@
             kubernetes-controller-tools
           ];
           shellHook = ''
-            export KUBE_ASSETS=${kubetools}/bin
+            export KUBE_ASSETS=${kubetools-1_27_1}/bin
           '';
         };
-        kubetools = kubetools;
+        kubetools = kubetools-1_27_1;
       });
 }
