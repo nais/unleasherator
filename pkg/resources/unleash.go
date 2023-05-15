@@ -75,13 +75,14 @@ func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 	return serviceMonitor, nil
 }
 
-func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, namespace, adminKey string, setControllerReference bool) (*corev1.Secret, error) {
+// Creates a secret that is managed by way of controller reference
+func InstanceSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, adminKey string) (*corev1.Secret, error) {
 	ls := labelsForUnleash(unleash)
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:      unleash.GetInstanceSecretName(),
+			Namespace: unleash.Namespace,
 			Labels:    ls,
 		},
 		StringData: map[string]string{
@@ -89,10 +90,26 @@ func SecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, name, 
 		},
 	}
 
-	if setControllerReference {
-		if err := ctrl.SetControllerReference(unleash, secret, scheme); err != nil {
-			return nil, err
-		}
+	if err := ctrl.SetControllerReference(unleash, secret, scheme); err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
+
+// Creates a secret that is not managed, i.e. without a controllerReference
+func OperatorSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, namespace string, adminKey string) (*corev1.Secret, error) {
+	ls := labelsForUnleash(unleash)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unleash.GetOperatorSecretName(),
+			Namespace: namespace,
+			Labels:    ls,
+		},
+		StringData: map[string]string{
+			unleashv1.UnleashSecretTokenKey: adminKey,
+		},
 	}
 
 	return secret, nil
