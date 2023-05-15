@@ -9,5 +9,13 @@ metadata:
     app.kubernetes.io/created-by: unleasherator
   name: apitoken-sample
 spec:
-  unleashName: unleash-sample
+  unleasshInstance:
+    apiVersion: unleash.nais.io/v1
+    kind: Unleash
+    name: unleash-sample
   secretName: apitoken-sample
+  type: CLIENT
+  environment: development
+  projects:
+    - my-project
+    - my-other-project
