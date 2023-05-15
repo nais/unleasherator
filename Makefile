@@ -17,7 +17,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: generate manifests helm build
+all: fmt lint vet build generate helm
 
 ##@ General
 

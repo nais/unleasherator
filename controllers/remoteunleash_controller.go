@@ -29,7 +29,7 @@ type RemoteUnleashReconciler struct {
 }
 
 var (
-	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
+	// remoteUnleashStatus is a Prometheus metric which will be used to expose the status of the RemoteUnleash instances
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_remoteunleash_status",
@@ -258,7 +258,7 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 	}
 
 	val := promGaugeValueForStatus(status.Status)
-	unleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
 	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
