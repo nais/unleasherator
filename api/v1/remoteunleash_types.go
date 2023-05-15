@@ -25,6 +25,9 @@ type RemoteUnleashList struct {
 // RemoteUnleash defines an RemoteUnleash instance
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.unleashInstance.url`
+// +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
+// +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 type RemoteUnleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -85,14 +88,12 @@ type RemoteUnleashStatus struct {
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 	Reconciled bool `json:"reconciled,omitempty"`
 
 	// Connected is true when the Unleash resource has been connected to the Unleash server
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 	Connected bool `json:"connected,omitempty"`
 }
 

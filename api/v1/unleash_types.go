@@ -27,6 +27,10 @@ type UnleashList struct {
 // Unleash defines an Unleash instance
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="API Ingress",type=string,JSONPath=`.spec.apiIngress.host`
+// +kubebuilder:printcolumn:name="Web Ingress",type=string,JSONPath=`.spec.webIngress.host`
+// +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
+// +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 type Unleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -234,14 +238,12 @@ type UnleashStatus struct {
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 	Reconciled bool `json:"reconciled,omitempty"`
 
 	// Connected is true when the Unleash resource has been connected to the Unleash server
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
-	// +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 	Connected bool `json:"connected,omitempty"`
 }
 

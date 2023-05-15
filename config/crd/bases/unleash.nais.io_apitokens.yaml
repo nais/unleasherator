@@ -14,7 +14,23 @@ spec:
     singular: apitoken
   scope: Namespaced
   versions:
-  - name: v1
+  - additionalPrinterColumns:
+    - jsonPath: .status.created
+      name: Created
+      type: boolean
+    - jsonPath: .spec.secretName
+      name: Secret
+      type: string
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.environment
+      name: Environment
+      type: string
+    - jsonPath: .status.failed
+      name: Failed
+      type: boolean
+    name: v1
     schema:
       openAPIV3Schema:
         properties:
