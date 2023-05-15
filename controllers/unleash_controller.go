@@ -275,10 +275,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Set the connection status of the Unleash instance to available
-	if err = r.updateStatusConnectionSuccess(ctx, unleash); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{}, nil
+	err = r.updateStatusConnectionSuccess(ctx, unleash)
+	return ctrl.Result{}, err
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.

@@ -187,16 +187,20 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, err
 	}
 
+	// Check Unleash health
 	if health.Health != "GOOD" {
-		err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
-		return ctrl.Result{}, err
+		err := fmt.Errorf("unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health)
+
+		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, err.Error()); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, err
 	}
 
-	if err := r.updateStatusConnectionSuccess(ctx, remoteUnleash); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	// Set RemoteUnleash status to connected
+	err = r.updateStatusConnectionSuccess(ctx, remoteUnleash)
+	return ctrl.Result{}, err
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {
