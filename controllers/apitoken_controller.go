@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/nais/unleasherator/pkg/unleash"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -67,6 +69,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
+
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
@@ -127,7 +130,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, err
 			}
 
-			r.doFinalizerOperationsForToken(token)
+			r.doFinalizerOperationsForToken(ctx, token)
 
 			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
 				log.Error(err, "Failed to get ApiToken")
@@ -350,6 +353,13 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken) {
 
+	tokens, err := unleashClient.GetAllAPITokens()
+	if err != nil {
+		log.Error(err, "could not get api tokens")
+	}
+	for _, token := range tokens.Tokens {
+		unleashClient.DeleteApiToken(token.Name)
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.
