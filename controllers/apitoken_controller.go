@@ -70,6 +70,49 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
 
+	// Get Unleash instance
+	unleash, err := r.getUnleashInstance(ctx, token)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
+			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+
+		log.Error(err, "Failed to get Unleash resource")
+		return ctrl.Result{}, err
+	}
+
+	// Check if Unleash instance is ready
+	if !unleash.IsReady() {
+		if err := r.updateStatusFailed(ctx, token, nil, "UnleashNotReady", "Unleash instance not ready"); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Get Unleash API client
+	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		reason := "UnleashClientFailed"
+		message := "Failed to create Unleash client"
+
+		if apierrors.IsNotFound(err) {
+			reason = "UnleashSecretNotFound"
+			message = "Unleash secret not found"
+		}
+
+		if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
+	}
+
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
@@ -130,7 +173,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, err
 			}
 
-			r.doFinalizerOperationsForToken(ctx, token)
+			r.doFinalizerOperationsForToken(token, apiClient, log)
 
 			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
 				log.Error(err, "Failed to get ApiToken")
@@ -161,49 +204,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 		}
 		return ctrl.Result{}, nil
-	}
-
-	// Get Unleash instance
-	unleash, err := r.getUnleashInstance(ctx, token)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
-			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-		}
-
-		log.Error(err, "Failed to get Unleash resource")
-		return ctrl.Result{}, err
-	}
-
-	// Check if Unleash instance is ready
-	if !unleash.IsReady() {
-		if err := r.updateStatusFailed(ctx, token, nil, "UnleashNotReady", "Unleash instance not ready"); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	// Get Unleash API client
-	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
-	if err != nil {
-		reason := "UnleashClientFailed"
-		message := "Failed to create Unleash client"
-
-		if apierrors.IsNotFound(err) {
-			reason = "UnleashSecretNotFound"
-			message = "Unleash secret not found"
-		}
-
-		if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
 	}
 
 	// Check if token exists
@@ -351,15 +351,8 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 	return nil
 }
 
-func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken) {
-
-	tokens, err := unleashClient.GetAllAPITokens()
-	if err != nil {
-		log.Error(err, "could not get api tokens")
-	}
-	for _, token := range tokens.Tokens {
-		unleashClient.DeleteApiToken(token.Name)
-	}
+func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleash.Client, log logr.Logger) {
+	unleashClient.DeleteApiToken(token.UnleashClientName(r.ApiTokenNameSuffix))
 }
 
 // SetupWithManager sets up the controller with the Manager.
