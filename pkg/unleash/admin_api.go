@@ -40,6 +40,17 @@ func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 	return health, res, nil
 }
 
+func (c *Client) DeleteApiToken(tokenString string) error {
+	err := c.HTTPDelete("api/admin/api-tokens", tokenString)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 // GetInstanceAdminStats returns instance admin stats (admin only endpoint - requires admin token).
 func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Response, error) {
 	adminStats := &InstanceAdminStatsResult{}
