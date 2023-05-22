@@ -69,7 +69,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
-
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	// Get Unleash instance
 	unleash, err := r.getUnleashInstance(ctx, token)
 	if err != nil {
