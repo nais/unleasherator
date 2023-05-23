@@ -31,10 +31,17 @@
         };
         unleash = pkgs.buildGoModule {
           name = "unleasherator";
-          nativeBuildInputs = [ pkgs.kubebuilder kubetools-1_27_1 ];
+          nativeBuildInputs = [
+            pkgs.kubebuilder
+            kubetools-1_27_1
+            pkgs.kubernetes-controller-tools
+            helmify
+            pkgs.kustomize
+          ];
+          preBuild = "make manifests && make generate && make helm";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
-          vendorSha256 = "sha256-upyBbE5gMeoO6jUIIu+/cXmDZ/hd7FnH6MV7sZfGZKc=";
+          vendorSha256 = "sha256-Isnm/DHn54ql51V2EGSMGHeyVYdIeq/q/bmkEH8Ia0A=";
         };
         helmify = pkgs.buildGoModule {
           name = "helmify";
@@ -63,9 +70,10 @@
             kustomize
             helmify
             kubernetes-controller-tools
+            kubetools-1_27_1
           ];
           shellHook = ''
-            export KUBE_ASSETS=${kubetools-1_27_1}/bin
+            export KUBEBUILDER_ASSETS=${kubetools-1_27_1}/bin
           '';
         };
         kubetools = kubetools-1_27_1;
