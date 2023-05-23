@@ -45,7 +45,7 @@ jobs:
           args: --timeout=5m
       - name: Test and build binary
         uses: cachix/install-nix-action@v20
-          with:
+        with:
             nix_path: nixpkgs=channel:nixos-unstable
         run: nix build
       - name: Cache installed binaries
