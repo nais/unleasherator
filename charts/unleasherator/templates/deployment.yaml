@@ -49,7 +49,8 @@ spec:
                 values:
                 - linux
       containers:
-      - args: {{- toYaml .Values.controllerManager.manager.args | nindent 8 }}
+      - args:
+        - --config=controller_manager_config.yaml
         command:
         - /manager
         env:
@@ -85,7 +86,11 @@ spec:
         - mountPath: /controller_manager_config.yaml
           name: manager-config
           subPath: controller_manager_config.yaml
-      - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
+      - args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --logtostderr=true
+        - --v=0
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
