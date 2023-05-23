@@ -35,9 +35,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - uses: cachix/install-nix-action@v20
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
       - name: Restore cached binaries
         uses: actions/cache/restore@v3
         with:
@@ -47,6 +44,9 @@ jobs:
           version: latest
           args: --timeout=5m
       - name: Test and build binary
+        uses: cachix/install-nix-action@v20
+          with:
+            nix_path: nixpkgs=channel:nixos-unstable
         run: nix build
       - name: Cache installed binaries
         uses: actions/cache@v3
