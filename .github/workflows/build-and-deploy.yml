@@ -35,63 +35,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Restore cached binaries
         uses: actions/cache/restore@v3
         with:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
-      - name: Set up Go environment
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.20"
-          cache: false
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
         with:
           version: latest
           args: --timeout=5m
-      - name: Install make
-        run: sudo apt-get update && sudo apt-get install make
-      - name: Generate code
-        run: |
-          make generate
-          #if git diff-index --quiet HEAD --; then
-          #  echo "Code generated successfully."
-          #else
-          #  echo "Code has generation issues."
-          #  echo $(git diff HEAD --)
-          #  echo $(git diff-index --quiet HEAD --)
-          #  ls api/v1
-          #  cat api/v1/zz_generated.deepcopy.go
-          #  echo "Please run 'make generate' and commit the changes."
-          #  exit 1
-          #fi
-      - name: Generate manifests
-        run: |
-          make manifests
-          #if git diff-index --quiet HEAD --; then
-          #  echo "Manifests generated successfully."
-          #else
-          #  echo "Manifests have generation issues."
-          #  echo "Please run 'make manifests' and commit the changes."
-          #  exit 1
-          #fi
-      - name: Generate helm chart
-        run: |
-          make helm
-          #if git diff-index --quiet HEAD --; then
-          #  echo "Helm chart generated successfully."
-          #else
-          #  echo "Helm chart has generation issues."
-          #  echo "Please run 'make helm' and commit the changes."
-          #  exit 1
-          #fi
-      - name: Vet code
-        run: make vet
-      - name: Test code
-        run: make test
-      - name: Build binary
-        run: make build
+      - name: Test and build binary
+        run: nix build
       - name: Cache installed binaries
         uses: actions/cache@v3
         with:
