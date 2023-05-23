@@ -51,17 +51,16 @@ fmt: ## Run go fmt against code.
 	go fmt ./...
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint against code.
-	$(GOLANGCI_LINT) run
+lint:  ## Run golangci-lint against code.
+	golangci-lint run
 
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet ## Run tests.
+test: manifests generate fmt vet lint ## Run tests.
 	go test ./... -coverprofile cover.out
-
 ##@ Build
 
 .PHONY: build
@@ -73,7 +72,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: helm
-helm: manifests kustomize helmify ## Generate Helm chart.
+helm: manifests ## Generate Helm chart.
 	kustomize build config/default | helmify charts/unleasherator
 	kustomize build config/crd | helmify charts/unleasherator-crds
 	rm charts/unleasherator/templates/*-crd.yaml # delete superflous crds from the file tree
@@ -131,10 +130,9 @@ restart: manifests kustomize ## Restart controller in the K8s cluster specified 
 	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
 
 .PHONY: logs
-logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
+logs: manifests ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
 	kubectl logs deployment/unleasherator-controller-manager -n unleasherator-system -f
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 	kustomize build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
