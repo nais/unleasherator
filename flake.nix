@@ -26,7 +26,6 @@
           in builtins.getAttr system platformMapping;
         in pkgs.fetchzip {
           url =
-            #this needs a per-system mapping to google names
             "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-${nixToKubebuilderTools}.tar.gz";
           sha256 = "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
         };
@@ -35,7 +34,7 @@
           nativeBuildInputs = [ pkgs.kubebuilder kubetools-1_27_1 ];
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
-          vendorSha256 = "sha256-XrwMUAjsGCIJQt2wu53VD7F3XUR8Gq7GEtxH4EJnXcM=";
+          vendorSha256 = "sha256-upyBbE5gMeoO6jUIIu+/cXmDZ/hd7FnH6MV7sZfGZKc=";
         };
         helmify = pkgs.buildGoModule {
           name = "helmify";
