@@ -59,6 +59,29 @@
           contents = [ unleash ];
           config = { Entrypoint = [ "${unleash}/bin/unleasherator" ]; };
         };
+        scripts = with pkgs; [
+          (writeScriptBin "unleasherator-restart" ''
+            kubectl rollout restart deployment/unleasherator-controller-manager -n unleasherator-system
+            kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
+          '')
+
+          (writeScriptBin "unleasherator-logs" ''
+            kubectl logs deployment/unleasherator-controller-manager -n unleasherator-system -f
+          '')
+
+          (writeScriptBin "unleasherator-undeploy" ''
+            kustomize build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+          '')
+
+          (writeScriptBin "unleasherator-uninstall" ''
+            kustomize build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+
+          '')
+          (writeScriptBin "unleasherator-install" ''
+            kubectl logs deployment/unleasherator-controller-manager -n unleasherator-system -f
+          '')
+
+        ];
       in {
         defaultPackage = unleash;
         docker = dockerImage;
@@ -71,6 +94,7 @@
             helmify
             kubernetes-controller-tools
             kubetools-1_27_1
+            scripts
           ];
           shellHook = ''
             export KUBEBUILDER_ASSETS=${kubetools-1_27_1}/bin
