@@ -33,9 +33,7 @@ jobs:
     name: Build and Test code
     runs-on: ubuntu-latest
     steps:
-      - uses: cachix/install-nix-action@v20
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: DeterminateSystems/nix-installer-action@main
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Restore cached binaries
