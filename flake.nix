@@ -2,7 +2,8 @@
   description = "Unleasherator";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs";
+    nixpkgs.url = # Pick a some commit
+      "nixpkgs/583402b28da67550092dd40c55d8cec002443428";
     flake-utils.url = "github:numtide/flake-utils";
     gitignore = {
       url = "github:hercules-ci/gitignore.nix";
