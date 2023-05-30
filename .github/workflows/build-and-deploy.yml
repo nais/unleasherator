@@ -44,7 +44,7 @@ jobs:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
       - name: Test and build binary
-        run: nix log
+        run: nix build; nix log
       - name: Cache installed binaries
         uses: actions/cache@v3
         with:
