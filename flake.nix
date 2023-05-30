@@ -57,7 +57,11 @@
         dockerImage = pkgs.dockerTools.buildLayeredImage {
           name = "unleasherator";
           contents = [ unleash ];
-          config = { Entrypoint = [ "${unleash}/bin/unleasherator" ]; };
+          config = {
+            Entrypoint = [ "${unleash}/bin/unleasherator" ];
+            User = "65532:65532";
+          };
+
         };
         scripts = with pkgs; [
           (writeScriptBin "unleasherator-restart" ''
