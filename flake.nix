@@ -47,6 +47,7 @@
             pkgs.kubernetes-controller-tools
             helmify
             pkgs.kustomize
+            pkgs.coreutils
           ];
           #  preBuild = "make manifests && make generate && make helm";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
