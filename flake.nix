@@ -49,7 +49,7 @@
             pkgs.kustomize
             pkgs.coreutils
           ];
-          #  preBuild = "make manifests && make generate && make helm";
+          preBuild = "make manifests && make generate && make helm";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 = "sha256-Isnm/DHn54ql51V2EGSMGHeyVYdIeq/q/bmkEH8Ia0A=";
