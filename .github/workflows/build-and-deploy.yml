@@ -36,18 +36,8 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: Restore cached binaries
-        uses: actions/cache/restore@v3
-        with:
-          path: ${{ github.workspace }}/bin
-          key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
       - name: Test and build binary
         run: nix build --option log-lines 500
-      - name: Cache installed binaries
-        uses: actions/cache@v3
-        with:
-          path: ${{ github.workspace }}/bin
-          key: ${{ runner.os }}-makefile-bin-${{ hashFiles('Makefile') }}
   docker:
     name: Build and Push Docker image
     runs-on: ubuntu-latest
