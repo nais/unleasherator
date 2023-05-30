@@ -25,6 +25,8 @@
               aarch64-darwin = "darwin-arm64";
             };
             shaMapping = {
+              aarch64-linux =
+                "sha256-M9CgiHugLh7t7ulWGp4psRCtihBDxmBxqmSw5UHxKj4=";
               aarch64-darwin =
                 "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
               x86_64-linux =
