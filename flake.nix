@@ -24,11 +24,20 @@
               x86_64-darwin = "darwin-amd64";
               aarch64-darwin = "darwin-arm64";
             };
-          in builtins.getAttr system platformMapping;
+            shaMapping = {
+              aarch64-darwin =
+                "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
+              x86_64-linux =
+                "sha256-gJ/BvTbzKa8Wx2Hleyy2GEe+EOnlKvqT/6xuPu1nvB0=";
+            };
+          in {
+            sha = builtins.getAttr system shaMapping;
+            path = builtins.getAttr system platformMapping;
+          };
         in pkgs.fetchzip {
           url =
-            "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-${nixToKubebuilderTools}.tar.gz";
-          sha256 = "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
+            "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-${nixToKubebuilderTools.path}.tar.gz";
+          sha256 = nixToKubebuilderTools.sha;
         };
         unleash = pkgs.buildGoModule {
           name = "unleasherator";
