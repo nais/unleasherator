@@ -39,7 +39,7 @@
             "https://storage.googleapis.com/kubebuilder-tools/kubebuilder-tools-1.27.1-${nixToKubebuilderTools.path}.tar.gz";
           sha256 = nixToKubebuilderTools.sha;
         };
-        unleash = pkgs.buildGoModule {
+        unleasherator = pkgs.buildGoModule {
           name = "unleasherator";
           nativeBuildInputs = [
             pkgs.kubebuilder
@@ -47,6 +47,7 @@
             pkgs.kubernetes-controller-tools
             helmify
             pkgs.kustomize
+            pkgs.coreutils
           ];
           # preBuild = "make manifests && make generate && make helm";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
@@ -66,9 +67,9 @@
         };
         dockerImage = pkgs.dockerTools.buildLayeredImage {
           name = "unleasherator";
-          contents = [ unleash ];
+          contents = [ unleasherator ];
           config = {
-            Entrypoint = [ "${unleash}/bin/unleasherator" ];
+            Entrypoint = [ "${unleasherator}/bin/unleasherator" ];
             User = "65532:65532";
           };
 
@@ -97,7 +98,8 @@
 
         ];
       in {
-        defaultPackage = unleash;
+        defaultPackage = unleasherator;
+        unleasherator = unleasherator;
         docker = dockerImage;
         devShell = pkgs.mkShell {
           packages = with pkgs; [
