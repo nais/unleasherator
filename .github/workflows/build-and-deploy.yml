@@ -36,14 +36,15 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           nix-installer-tag: "v0.9.1"
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Sane?
         run: |
           nix develop
           which kube-apiserver
           which env
           which controller-gen
-      - name: Checkout code
-        uses: actions/checkout@v3
+
       - name: Test and build binary
         run: nix build . --option log-lines 500
   docker:
