@@ -33,10 +33,9 @@ jobs:
     name: Build and Test code
     runs-on: ubuntu-latest
     steps:
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: cachix/install-nix-action@v20
         with:
-          nix-installer-tag: "v0.9.1"
-          nix-package-url: "nixpkgs/583402b28da67550092dd40c55d8cec002443428"
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Test and build binary
