@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = # Pick a some commit
-      "nixpkgs/583402b28da67550092dd40c55d8cec002443428";
+      "github:NixOS/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
     gitignore = {
       url = "github:hercules-ci/gitignore.nix";
@@ -42,7 +42,6 @@
           sha256 = nixToKubebuilderTools.sha;
         };
         unleasherator = pkgs.buildGoModule {
-          doCheck = false;
           name = "unleasherator";
           nativeBuildInputs = [
             pkgs.kubebuilder
@@ -52,7 +51,6 @@
             pkgs.kustomize
             pkgs.coreutils
           ];
-          preBuild = "which kube-apiserver; which controller-gen";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 = "sha256-Isnm/DHn54ql51V2EGSMGHeyVYdIeq/q/bmkEH8Ia0A=";

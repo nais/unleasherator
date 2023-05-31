@@ -36,7 +36,7 @@ jobs:
       - uses: cachix/install-nix-action@v20
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          nix_path: nixpkgs=channel:nixos-unstable
+          nix_path: nixpkgs=channel:nixos
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Test and build binary
