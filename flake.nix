@@ -70,7 +70,7 @@
           name = "unleasherator";
           contents = [ unleasherator ];
           config = {
-            Entrypoint = [ "${unleasherator}/bin/unleasherator" ];
+            Entrypoint = [ "${unleasherator}/bin/cmd" ];
             User = "65532:65532";
           };
 
