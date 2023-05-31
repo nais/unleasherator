@@ -9,7 +9,6 @@
       url = "github:hercules-ci/gitignore.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
   };
 
   outputs = { self, nixpkgs, flake-utils, gitignore }:
@@ -43,13 +42,14 @@
         };
         unleasherator = pkgs.buildGoModule {
           name = "unleasherator";
-          nativeBuildInputs = [
-            pkgs.kubebuilder
+          nativeBuildInputs = with pkgs; [
+            kubebuilder
             kubetools-1_27_1
-            pkgs.kubernetes-controller-tools
+            golangci-lint
+            kubernetes-controller-tools
             helmify
-            pkgs.kustomize
-            pkgs.coreutils
+            kustomize
+            coreutils
           ];
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
@@ -73,7 +73,6 @@
             Entrypoint = [ "${unleasherator}/bin/cmd" ];
             User = "65532:65532";
           };
-
         };
         scripts = with pkgs; [
           (writeScriptBin "unleasherator-restart" ''
@@ -106,6 +105,7 @@
             go_1_20
             gotools
             gopls
+            golangci-lint
             kustomize
             helmify
             kubernetes-controller-tools
