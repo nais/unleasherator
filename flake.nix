@@ -42,6 +42,7 @@
           sha256 = nixToKubebuilderTools.sha;
         };
         unleasherator = pkgs.buildGoModule {
+          doCheck = false;
           name = "unleasherator";
           nativeBuildInputs = [
             pkgs.kubebuilder
@@ -51,7 +52,7 @@
             pkgs.kustomize
             pkgs.coreutils
           ];
-          ##      preBuild = "make manifests && make generate && make helm";
+          preBuild = "which kube-apiserver; which controller-gen"
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 = "sha256-Isnm/DHn54ql51V2EGSMGHeyVYdIeq/q/bmkEH8Ia0A=";
@@ -101,7 +102,6 @@
         ];
       in {
         defaultPackage = unleasherator;
-        unleasherator = unleasherator;
         docker = dockerImage;
         devShell = pkgs.mkShell {
           packages = with pkgs; [
