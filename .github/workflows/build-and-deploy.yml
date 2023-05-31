@@ -39,7 +39,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Test and build binary
-        run: nix build . --option log-lines 500
+        run: sudo nix build . --option log-lines 500
   docker:
     name: Build and Push Docker image
     runs-on: ubuntu-latest
