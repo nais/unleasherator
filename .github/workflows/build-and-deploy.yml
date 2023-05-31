@@ -36,6 +36,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
         with:
           nix-installer-tag: "v0.9.1"
+          nix-package-url: "nixpkgs/583402b28da67550092dd40c55d8cec002443428"
       - name: Checkout code
         uses: actions/checkout@v3
       - name: Test and build binary
