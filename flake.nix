@@ -52,7 +52,7 @@
             pkgs.kustomize
             pkgs.coreutils
           ];
-          preBuild = "which kube-apiserver; which controller-gen"
+          preBuild = "which kube-apiserver; which controller-gen";
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 = "sha256-Isnm/DHn54ql51V2EGSMGHeyVYdIeq/q/bmkEH8Ia0A=";
