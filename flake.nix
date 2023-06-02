@@ -43,13 +43,12 @@
         unleasherator = pkgs.buildGoModule {
           name = "unleasherator";
           nativeBuildInputs = with pkgs; [
-            kubebuilder
-            kubetools-1_27_1
             golangci-lint
-            kubernetes-controller-tools
             helmify
+            kubebuilder
+            kubernetes-controller-tools
+            kubetools-1_27_1
             kustomize
-            coreutils
           ];
           KUBEBUILDER_ASSETS = "${kubetools-1_27_1}/bin";
           src = gitignore.lib.gitignoreSource ./.;
@@ -67,7 +66,9 @@
 
         };
         dockerImage = pkgs.dockerTools.buildLayeredImage {
-          name = "unleasherator";
+          name =
+            "europe-north1-docker.pkg.dev/nais-io/nais/images/unleasherator";
+          tag = "latest";
           contents = [ unleasherator ];
           config = {
             Entrypoint = [ "${unleasherator}/bin/cmd" ];
@@ -103,13 +104,13 @@
         devShell = pkgs.mkShell {
           packages = with pkgs; [
             go_1_20
-            gotools
-            gopls
             golangci-lint
-            kustomize
+            gopls
+            gotools
             helmify
             kubernetes-controller-tools
             kubetools-1_27_1
+            kustomize
             scripts
           ];
           shellHook = ''
