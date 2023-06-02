@@ -48,6 +48,10 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      - uses: cachix/install-nix-action@v20
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          nix_path: nixpkgs=channel:nixos #todo be more specific.
       - uses: actions/checkout@v3
       - uses: docker/login-action@v2
         with:
