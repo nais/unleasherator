@@ -85,15 +85,6 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: docker push -a
 
-      - uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
   rollout:
     permissions:
       id-token: write
