@@ -61,7 +61,7 @@ jobs:
       - id: version
         run: echo "version=$(date +'%Y%m%d-%H%M%S')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
       - name: Build Image
-        run: "nix build --no-sandobx #.docker.x86_64-linux"
+        run: "nix build --no-sandbox #.docker.x86_64-linux"
 
       - uses: docker/metadata-action@v4
         id: metadata
