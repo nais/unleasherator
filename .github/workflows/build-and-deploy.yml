@@ -81,7 +81,6 @@ jobs:
       - name: Load and tag
         run: |
           docker load < result
-          docker tag unleasherator:latest ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
       - name: Push image to registry
         if: github.ref == 'refs/heads/main'
         run: docker push -a
