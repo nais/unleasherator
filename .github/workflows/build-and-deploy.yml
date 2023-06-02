@@ -61,7 +61,7 @@ jobs:
       - id: version
         run: echo "version=$(date +'%Y%m%d-%H%M%S')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
       - name: Build Image
-        run: "nix build --no-sandbox #.docker.x86_64-linux"
+        run: "nix build --no-sandbox #.docker.x86_64-linux && docker load < result"
 
       - uses: docker/metadata-action@v4
         id: metadata
@@ -80,7 +80,7 @@ jobs:
 
       - name: Load and tag
         run: |
-          docker load < result
+          docker image ls
       - name: Push image to registry
         if: github.ref == 'refs/heads/main'
         run: docker push -a
