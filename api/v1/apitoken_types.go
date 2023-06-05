@@ -100,7 +100,6 @@ type ApiTokenList struct {
 // Unleash instance.
 func (t *ApiToken) UnleashClientName(suffix string) string {
 	return t.Name + "-" + suffix
-
 }
 
 func init() {
