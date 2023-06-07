@@ -122,7 +122,7 @@ func (c *Client) CheckAPITokenExists(userName string) (bool, error) {
 }
 
 func (c *Client) DeleteApiToken(tokenString string) error {
-	err := c.HTTPDelete("api/admin/api-tokens", tokenString)
+	err := c.HTTPDelete("/api/admin/api-tokens", tokenString)
 
 	if err != nil {
 		return err

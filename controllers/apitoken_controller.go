@@ -162,6 +162,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if token.GetDeletionTimestamp() != nil {
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
 			log.Info("Performing Finalizer Operations for ApiToken before deletion")
+			r.doFinalizerOperationsForToken(token, apiClient, log)
 
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
@@ -174,8 +175,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				log.Error(err, "Failed to update ApiToken status")
 				return ctrl.Result{}, err
 			}
-
-			r.doFinalizerOperationsForToken(token, apiClient, log)
 
 			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
 				log.Error(err, "Failed to get ApiToken")
@@ -354,9 +353,11 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 }
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleash.Client, log logr.Logger) {
-	err := unleashClient.DeleteApiToken(token.UnleashClientName(r.ApiTokenNameSuffix))
-	if err != nil {
-		log.Error(err, "Could not delete ApiToken")
+	if r.ApiTokenNameSuffix != "" {
+		err := unleashClient.DeleteApiToken("foo") //token.UnleashClientName(r.ApiTokenNameSuffix))
+		if err != nil {
+			log.Error(err, "Could not delete ApiToken")
+		}
 	}
 }
 
