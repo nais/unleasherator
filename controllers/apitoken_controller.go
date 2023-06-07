@@ -354,7 +354,7 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleash.Client, log logr.Logger) {
 	if r.ApiTokenNameSuffix != "" {
-		err := unleashClient.DeleteApiToken("foo") //token.UnleashClientName(r.ApiTokenNameSuffix))
+		err := unleashClient.DeleteApiToken(token.UnleashClientName(r.ApiTokenNameSuffix))
 		if err != nil {
 			log.Error(err, "Could not delete ApiToken")
 		}
