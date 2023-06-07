@@ -282,7 +282,6 @@ var _ = Describe("ApiToken controller", func() {
 
 			By("Cleaning up the ApiToken")
 			Eventually(func() int {
-
 				info := httpmock.GetCallCountInfo()
 				return info["DELETE =~http://unleash.nais.io/api/admin/api-tokens/.*"]
 			}, timeout, interval).ShouldNot(BeZero())
