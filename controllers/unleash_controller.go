@@ -507,7 +507,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, false)
+		operatorSecret, err = resources.OperatorSecretForUnleash(unleash, r.Scheme, r.OperatorNamespace, adminKey)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -532,7 +532,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 	instanceSecret := &corev1.Secret{}
 	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), instanceSecret)
 	if err != nil && apierrors.IsNotFound(err) {
-		instanceSecret, err = resources.SecretForUnleash(unleash, r.Scheme, unleash.GetInstanceSecretName(), unleash.Namespace, adminKey, true)
+		instanceSecret, err = resources.InstanceSecretForUnleash(unleash, r.Scheme, adminKey)
 		if err != nil {
 			return ctrl.Result{}, err
 		}

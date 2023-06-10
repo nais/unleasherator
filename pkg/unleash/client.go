@@ -44,6 +44,7 @@ func (c *Client) requestURL(requestPath string) *url.URL {
 
 	return req
 }
+
 func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
@@ -77,6 +78,28 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	}
 
 	return res, nil
+}
+
+func (c *Client) HTTPDelete(requestPath string, item string) error {
+	requestURL := c.requestURL(fmt.Sprintf("%s/%s", requestPath, item)).String()
+	requestMethod := "DELETE"
+
+	req, err := http.NewRequest(requestMethod, requestURL, nil)
+
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Authorization", c.ApiToken)
+
+	res, err := c.HttpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected http status code %d", res.StatusCode)
+	}
+	return nil
 }
 
 func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) {

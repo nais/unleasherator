@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
-
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"net/http"
+	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleash"
@@ -279,7 +278,12 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
 			By("Cleaning up the ApiToken")
+			httpmock.RegisterResponder("DELETE", "=~http://unleash.nais.io/api/admin/api-tokens/.*", httpmock.NewStringResponder(200, ""))
 			Expect(k8sClient.Delete(ctx, &createdApiToken)).Should(Succeed())
+			Eventually(func() int {
+				info := httpmock.GetCallCountInfo()
+				return info["DELETE =~http://unleash.nais.io/api/admin/api-tokens/.*"]
+			}, timeout, interval).ShouldNot(BeZero())
 		})
 	})
 })
