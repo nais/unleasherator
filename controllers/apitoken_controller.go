@@ -69,51 +69,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	// Get Unleash instance
-	unleash, err := r.getUnleashInstance(ctx, token)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
-			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
-		}
-
-		log.Error(err, "Failed to get Unleash resource")
-		return ctrl.Result{}, err
-	}
-
-	// Check if Unleash instance is ready
-	if !unleash.IsReady() {
-		if err := r.updateStatusFailed(ctx, token, nil, "UnleashNotReady", "Unleash instance not ready"); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	// Get Unleash API client
-	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
-	if err != nil {
-		reason := "UnleashClientFailed"
-		message := "Failed to create Unleash client"
-
-		if apierrors.IsNotFound(err) {
-			reason = "UnleashSecretNotFound"
-			message = "Unleash secret not found"
-		}
-
-		if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
-	}
 
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -156,6 +111,49 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Error(err, "Failed to update ApiToken to add finalizer")
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Get Unleash instance for ApiToken
+	unleash, err := r.getUnleashInstance(ctx, token)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
+			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+		}
+
+		log.Error(err, "Failed to get Unleash resource")
+		return ctrl.Result{}, err
+	}
+
+	// Check if Unleash instance is ready
+	if !unleash.IsReady() {
+		if err := r.updateStatusFailed(ctx, token, nil, "UnleashNotReady", "Unleash instance not ready"); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Get Unleash API client
+	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		reason := "UnleashClientFailed"
+		message := "Failed to create Unleash client"
+
+		if apierrors.IsNotFound(err) {
+			reason = "UnleashSecretNotFound"
+			message = "Unleash secret not found"
+		}
+
+		if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// Check if marked for deletion
@@ -207,7 +205,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// Check if token exists
+	// Check if token exists in Unleash
 	exists, err := apiClient.CheckAPITokenExists(token.UnleashClientName(r.ApiTokenNameSuffix))
 	if err != nil {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists"); err != nil {
@@ -232,7 +230,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 
-		// Token secret
+		// Kubernetes secret with token
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      token.Spec.SecretName,
@@ -257,7 +255,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 
-		// Create new token secret
+		// Create new token secret in Kubernetes
 		if err := r.Create(ctx, secret); err != nil {
 			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
 				return ctrl.Result{}, err
@@ -271,6 +269,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, err
 }
 
+// getUnleashInstance returns the Unleash instance that the ApiToken belongs to
 func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unleashv1.ApiToken) (UnleashInstance, error) {
 	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
 		return nil, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
@@ -352,12 +351,12 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 	return nil
 }
 
+// doFinalizerOperationsForToken will delete the ApiToken from Unleash
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleash.Client, log logr.Logger) {
-	if r.ApiTokenNameSuffix != "" {
-		err := unleashClient.DeleteApiToken(token.UnleashClientName(r.ApiTokenNameSuffix))
-		if err != nil {
-			log.Error(err, "Could not delete ApiToken")
-		}
+	tokenName := token.UnleashClientName(r.ApiTokenNameSuffix)
+	err := unleashClient.DeleteApiToken(tokenName)
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", tokenName))
 	}
 }
 
