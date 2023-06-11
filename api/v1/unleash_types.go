@@ -283,11 +283,11 @@ func (u *Unleash) GetOperatorSecretName() string {
 	return fmt.Sprintf("%s-%s-%s-admin-key", UnleashSecretNamePrefix, u.Namespace, u.Name)
 }
 
-func (u *Unleash) GetURL() string {
+func (u *Unleash) URL() string {
 	return fmt.Sprintf("http://%s.%s", u.Name, u.Namespace)
 }
 
-func (u *Unleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
+func (u *Unleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
 	secret := &corev1.Secret{}
 
 	err := client.Get(ctx, u.NamespacedOperatorSecretName(operatorNamespace), secret)
@@ -298,13 +298,13 @@ func (u *Unleash) GetAdminToken(ctx context.Context, client client.Client, opera
 	return secret.Data[UnleashSecretTokenKey], nil
 }
 
-func (u *Unleash) GetApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
-	token, err := u.GetAdminToken(ctx, client, operatorNamespace)
+func (u *Unleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
+	token, err := u.AdminToken(ctx, client, operatorNamespace)
 	if err != nil {
 		return nil, err
 	}
 
-	return unleashclient.NewClient(u.GetURL(), string(token))
+	return unleashclient.NewClient(u.URL(), string(token))
 }
 
 // IsReady returns true if the Unleash instance is ready.

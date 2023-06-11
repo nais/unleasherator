@@ -97,13 +97,13 @@ type RemoteUnleashStatus struct {
 	Connected bool `json:"connected,omitempty"`
 }
 
-// GetURL returns the URL of the Unleash instance.
-func (u *RemoteUnleash) GetURL() string {
+// URL returns the URL of the Unleash instance.
+func (u *RemoteUnleash) URL() string {
 	return u.Spec.Server.URL
 }
 
-// GetAdminSecretNamespacedName returns the namespaced name of the secret containing the Unleash instance's API token.
-func (u *RemoteUnleash) GetAdminSecretNamespacedName() types.NamespacedName {
+// AdminSecretNamespacedName returns the namespaced name of the secret containing the Unleash instance's API token.
+func (u *RemoteUnleash) AdminSecretNamespacedName() types.NamespacedName {
 	namespacedName := types.NamespacedName{
 		Name:      u.Spec.AdminSecret.Name,
 		Namespace: u.Spec.AdminSecret.Namespace,
@@ -116,27 +116,27 @@ func (u *RemoteUnleash) GetAdminSecretNamespacedName() types.NamespacedName {
 	return namespacedName
 }
 
-// GetAdminToken returns the admin API token for the Unleash instance.
-func (u *RemoteUnleash) GetAdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
+// AdminToken returns the admin API token for the Unleash instance.
+func (u *RemoteUnleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
 	// operatorNamespace is not used, and is only here to satisfy the interface of UnleashInstance.
 	_ = operatorNamespace
 
 	secret := &v1.Secret{}
-	if err := client.Get(ctx, u.GetAdminSecretNamespacedName(), secret); err != nil {
+	if err := client.Get(ctx, u.AdminSecretNamespacedName(), secret); err != nil {
 		return nil, err
 	}
 
 	return secret.Data[u.Spec.AdminSecret.Key], nil
 }
 
-// GetApiClient returns an Unleash API client for the Unleash instance.
-func (u *RemoteUnleash) GetApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleash.Client, error) {
-	token, err := u.GetAdminToken(ctx, client, operatorNamespace)
+// ApiClient returns an Unleash API client for the Unleash instance.
+func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleash.Client, error) {
+	token, err := u.AdminToken(ctx, client, operatorNamespace)
 	if err != nil {
 		return nil, err
 	}
 
-	return unleash.NewClient(u.GetURL(), string(token))
+	return unleash.NewClient(u.URL(), string(token))
 }
 
 // IsReady returns true if the Unleash instance is ready.

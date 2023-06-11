@@ -141,7 +141,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Get admin token from secret
-	adminToken, err := remoteUnleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
+	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, err, "Failed to get admin token secret"); err != nil {
 			return ctrl.Result{}, err

@@ -139,7 +139,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Get Unleash API client
-	apiClient, err := unleash.GetApiClient(ctx, r.Client, r.OperatorNamespace)
+	apiClient, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		reason := "UnleashClientFailed"
 		message := "Failed to create Unleash client"
@@ -238,7 +238,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			},
 			Data: map[string][]byte{
 				unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
-				unleashv1.ApiTokenSecretServerEnv: []byte(unleash.GetURL()),
+				unleashv1.ApiTokenSecretServerEnv: []byte(unleash.URL()),
 			},
 		}
 
@@ -304,6 +304,11 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 
 	apiToken.Status.Created = true
 	apiToken.Status.Failed = false
+
+	if err := r.Get(ctx, types.NamespacedName{Name: apiToken.Spec.UnleashInstance.Name, Namespace: apiToken.Namespace}, apiToken); err != nil {
+		log.Error(err, "Failed to get ApiToken")
+		return err
+	}
 
 	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
 		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
