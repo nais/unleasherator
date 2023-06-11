@@ -305,7 +305,7 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 	apiToken.Status.Created = true
 	apiToken.Status.Failed = false
 
-	if err := r.Get(ctx, types.NamespacedName{Name: apiToken.Spec.UnleashInstance.Name, Namespace: apiToken.Namespace}, apiToken); err != nil {
+	if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
 		log.Error(err, "Failed to get ApiToken")
 		return err
 	}
