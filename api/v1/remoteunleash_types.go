@@ -102,6 +102,14 @@ func (u *RemoteUnleash) URL() string {
 	return u.Spec.Server.URL
 }
 
+// NamespacedName returns the namespaced name of the Unleash instance.
+func (u *RemoteUnleash) NamespacedName() types.NamespacedName {
+	return types.NamespacedName{
+		Name:      u.Name,
+		Namespace: u.Namespace,
+	}
+}
+
 // AdminSecretNamespacedName returns the namespaced name of the secret containing the Unleash instance's API token.
 func (u *RemoteUnleash) AdminSecretNamespacedName() types.NamespacedName {
 	namespacedName := types.NamespacedName{

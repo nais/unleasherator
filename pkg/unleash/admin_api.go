@@ -92,7 +92,7 @@ func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
 	return res, nil
 }
 
-// GetAllAPITokens returns all API tokens (admin only endpoint - requires admin token).
+// GetAllAPITokens returns all API tokens.
 // https://docs.getunleash.io/reference/api/unleash/get-all-api-tokens
 func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
 	res := &ApiTokenResult{}
@@ -105,20 +105,28 @@ func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
 	return res, nil
 }
 
-// CheckAPITokenExists checks if an API token with the given username exists.
-func (c *Client) CheckAPITokenExists(userName string) (bool, error) {
+// GetAPIToken returns an API token with the given username.
+func (c *Client) GetAPIToken(userName string) (*ApiToken, error) {
 	tokens, err := c.GetAllAPITokens()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	for _, t := range tokens.Tokens {
 		if t.Username == userName {
-			return true, nil
+			return &t, nil
 		}
 	}
 
-	return false, nil
+	return nil, nil
+}
+
+// CheckAPITokenExists checks if an API token with the given username exists.
+func (c *Client) CheckAPITokenExists(userName string) (bool, error) {
+	token, err := c.GetAPIToken(userName)
+	exists := token != nil
+
+	return exists, err
 }
 
 func (c *Client) DeleteApiToken(tokenString string) error {

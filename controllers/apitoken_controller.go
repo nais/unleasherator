@@ -206,7 +206,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Check if token exists in Unleash
-	exists, err := apiClient.CheckAPITokenExists(token.UnleashClientName(r.ApiTokenNameSuffix))
+	apiToken, err := apiClient.GetAPIToken(token.UnleashClientName(r.ApiTokenNameSuffix))
 	if err != nil {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists"); err != nil {
 			return ctrl.Result{}, err
@@ -214,10 +214,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Create token if it does not exist
-	// This operation is not atomic, and there exists no other checks if the token secret has been created. This is an edge-case but should be handled.
-	if !exists {
-		apiToken, err := apiClient.CreateAPIToken(unleashclient.ApiTokenRequest{
+	// Create token if it does not exist in Unleash
+	if apiToken == nil {
+		apiToken, err = apiClient.CreateAPIToken(unleashclient.ApiTokenRequest{
 			Username:    token.UnleashClientName(r.ApiTokenNameSuffix),
 			Type:        token.Spec.Type,
 			Environment: token.Spec.Environment,
@@ -229,39 +228,39 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 			return ctrl.Result{}, err
 		}
+	}
 
-		// Kubernetes secret with token
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      token.Spec.SecretName,
-				Namespace: token.GetObjectMeta().GetNamespace(),
-			},
-			Data: map[string][]byte{
-				unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
-				unleashv1.ApiTokenSecretServerEnv: []byte(unleash.URL()),
-			},
-		}
+	// Kubernetes secret with token
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      token.Spec.SecretName,
+			Namespace: token.GetObjectMeta().GetNamespace(),
+		},
+		Data: map[string][]byte{
+			unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
+			unleashv1.ApiTokenSecretServerEnv: []byte(unleash.URL()),
+		},
+	}
 
-		if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
-			log.Error(err, "Failed to set controller reference on secret for ApiToken")
+	if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
+		log.Error(err, "Failed to set controller reference on secret for ApiToken")
+		return ctrl.Result{}, err
+	}
+
+	// Delete existing token secret if it exists
+	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
 			return ctrl.Result{}, err
 		}
+		return ctrl.Result{}, err
+	}
 
-		// Delete existing token secret if it exists
-		if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
-				return ctrl.Result{}, err
-			}
+	// Create new token secret in Kubernetes
+	if err := r.Create(ctx, secret); err != nil {
+		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
 			return ctrl.Result{}, err
 		}
-
-		// Create new token secret in Kubernetes
-		if err := r.Create(ctx, secret); err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
+		return ctrl.Result{}, err
 	}
 
 	// Set ApiToken status to success

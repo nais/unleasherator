@@ -254,6 +254,11 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
+	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
+		log.Error(err, "Failed to get RemoteUnleash")
+		return err
+	}
+
 	switch status.Type {
 	case unleashv1.UnleashStatusConditionTypeReconciled:
 		remoteUnleash.Status.Reconciled = status.Status == metav1.ConditionTrue
