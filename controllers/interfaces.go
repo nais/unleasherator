@@ -9,7 +9,7 @@ import (
 
 type UnleashInstance interface {
 	IsReady() bool
-	GetURL() string
-	GetAdminToken(context.Context, client.Client, string) ([]byte, error)
-	GetApiClient(context.Context, client.Client, string) (*unleash.Client, error)
+	URL() string
+	AdminToken(context.Context, client.Client, string) ([]byte, error)
+	ApiClient(context.Context, client.Client, string) (*unleash.Client, error)
 }

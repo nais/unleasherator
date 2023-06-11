@@ -2,6 +2,7 @@ package unleash_nais_io_v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ApiTokenUnleashInstance defines the Unleash instance this token is for.
@@ -100,6 +101,13 @@ type ApiTokenList struct {
 // Unleash instance.
 func (t *ApiToken) UnleashClientName(suffix string) string {
 	return t.Name + "-" + suffix
+}
+
+func (t *ApiToken) NamespacedName() types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: t.Namespace,
+		Name:      t.Name,
+	}
 }
 
 func init() {

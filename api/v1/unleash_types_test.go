@@ -18,8 +18,8 @@ func TestUnleashURL(t *testing.T) {
 		},
 	}
 
-	if unleash.GetURL() != "http://test.test" {
-		t.Errorf("Expected URL to be http://test.test, got %s", unleash.GetURL())
+	if unleash.URL() != "http://test.test" {
+		t.Errorf("Expected URL to be http://test.test, got %s", unleash.URL())
 	}
 }
 

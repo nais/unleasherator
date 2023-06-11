@@ -141,7 +141,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Get admin token from secret
-	adminToken, err := remoteUnleash.GetAdminToken(ctx, r.Client, r.OperatorNamespace)
+	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, err, "Failed to get admin token secret"); err != nil {
 			return ctrl.Result{}, err
@@ -253,6 +253,11 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, status metav1.Condition) error {
 	log := log.FromContext(ctx)
+
+	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
+		log.Error(err, "Failed to get RemoteUnleash")
+		return err
+	}
 
 	switch status.Type {
 	case unleashv1.UnleashStatusConditionTypeReconciled:
