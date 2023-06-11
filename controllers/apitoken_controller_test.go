@@ -175,40 +175,10 @@ var _ = Describe("ApiToken controller", func() {
 				})
 
 			By("By creating a new RemoteUnleash")
-			createdRemoteUnleashSecret := &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Secret",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("unleasherator-%s", apiTokenName),
-					Namespace: ApiTokenNamespace,
-				},
-				Data: map[string][]byte{
-					"token": []byte(ApiTokenToken),
-				},
-			}
+			createdRemoteUnleashSecret := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, apiTokenSecret)
 			Expect(k8sClient.Create(ctx, createdRemoteUnleashSecret)).Should(Succeed())
 
-			remoteUnleashLookupKey := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
-			createdRemoteUnleash := &unleashv1.RemoteUnleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "RemoteUnleash",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      remoteUnleashLookupKey.Name,
-					Namespace: remoteUnleashLookupKey.Namespace,
-				},
-				Spec: unleashv1.RemoteUnleashSpec{
-					Server: unleashv1.RemoteUnleashServer{
-						URL: ApiTokenServerURL,
-					},
-					AdminSecret: unleashv1.RemoteUnleashSecret{
-						Name: createdRemoteUnleashSecret.Name,
-					},
-				},
-			}
+			remoteUnleashLookupKey, createdRemoteUnleash := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, createdRemoteUnleashSecret)
 			Expect(k8sClient.Create(ctx, createdRemoteUnleash)).Should(Succeed())
 
 			Eventually(func() ([]metav1.Condition, error) {
@@ -229,28 +199,11 @@ var _ = Describe("ApiToken controller", func() {
 			}))
 
 			By("By creating a new ApiToken")
-			createdApiToken := unleashv1.ApiToken{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "ApiToken",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      apiTokenName,
-					Namespace: ApiTokenNamespace,
-				},
-				Spec: unleashv1.ApiTokenSpec{
-					UnleashInstance: unleashv1.ApiTokenUnleashInstance{
-						ApiVersion: "unleash.nais.io/v1",
-						Kind:       "RemoteUnleash",
-						Name:       createdRemoteUnleash.Name,
-					},
-					SecretName: apiTokenName,
-				},
-			}
-			Expect(k8sClient.Create(ctx, &createdApiToken)).Should(Succeed())
+			createdApiToken := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, createdRemoteUnleash)
+			Expect(k8sClient.Create(ctx, createdApiToken)).Should(Succeed())
 
 			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, apiTokenLookupKey, &createdApiToken)
+				err := k8sClient.Get(ctx, apiTokenLookupKey, createdApiToken)
 				if err != nil {
 					return nil, err
 				}
@@ -278,9 +231,9 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
-			By("Cleaning up the ApiToken")
+			By("By cleaning up the ApiToken")
 			httpmock.RegisterResponder("DELETE", "=~http://unleash.nais.io/api/admin/api-tokens/.*", httpmock.NewStringResponder(200, ""))
-			Expect(k8sClient.Delete(ctx, &createdApiToken)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 			Eventually(func() int {
 				info := httpmock.GetCallCountInfo()
 				return info["DELETE =~http://unleash.nais.io/api/admin/api-tokens/.*"]
