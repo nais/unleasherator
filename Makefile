@@ -39,29 +39,28 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+manifests: ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+	controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+generate: ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint against code.
-	$(GOLANGCI_LINT) run
+lint:  ## Run golangci-lint against code.
+	golangci-lint run
 
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet lint envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
-
+test: manifests generate fmt vet lint ## Run tests.
+	go test ./... -coverprofile cover.out
 ##@ Build
 
 .PHONY: build
@@ -73,9 +72,9 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: helm
-helm: manifests kustomize helmify ## Generate Helm chart.
-	$(KUSTOMIZE) build config/default | $(HELMIFY) charts/unleasherator
-	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
+helm: manifests ## Generate Helm chart.
+	kustomize build config/default | helmify charts/unleasherator
+	kustomize build config/crd | helmify charts/unleasherator-crds
 	rm charts/unleasherator/templates/*-crd.yaml # delete superflous crds from the file tree
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
@@ -114,16 +113,11 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | kubectl apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
-
+	kustomize build config/crd | kubectl apply -f -
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/localhost | kubectl apply -f -
+	cd config/manager && kustomize edit set image controller=${IMG}
+	kustomize build config/localhost | kubectl apply -f -
 
 .PHONY: restart
 restart: manifests kustomize ## Restart controller in the K8s cluster specified in ~/.kube/config.
@@ -131,54 +125,13 @@ restart: manifests kustomize ## Restart controller in the K8s cluster specified 
 	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
 
 .PHONY: logs
-logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
+logs: manifests ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
 	kubectl logs deployment/unleasherator-controller-manager -n unleasherator-system -f
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	kustomize build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
-##@ Build Dependencies
-
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
-$(LOCALBIN):
-	mkdir -p $(LOCALBIN)
-
-## Tool Binaries
-KUSTOMIZE ?= $(LOCALBIN)/kustomize
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest
-HELMIFY ?= $(LOCALBIN)/helmify
-GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
-
-## Tool Versions
-KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.12.0
-HELMIFY_VERSION ?= v0.4.3
-
-KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
-.PHONY: kustomize
-kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
-$(KUSTOMIZE): $(LOCALBIN)
-	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
-
-.PHONY: controller-gen
-controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
-$(CONTROLLER_GEN): $(LOCALBIN)
-	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
-
-.PHONY: envtest
-envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
-$(ENVTEST): $(LOCALBIN)
-	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest
-
-.PHONY: helmify
-helmify: $(HELMIFY) ## Download helmify locally if necessary.
-$(HELMIFY): $(LOCALBIN)
-	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@$(HELMIFY_VERSION)
-
-.PHONY: golangci-lint
-golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
-$(GOLANGCI_LINT): $(LOCALBIN)
-	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
+.PHONY: uninstall
+uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	kustomize build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
