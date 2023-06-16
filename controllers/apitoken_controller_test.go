@@ -76,6 +76,9 @@ var _ = Describe("ApiToken controller", func() {
 				Message: "Unleash resource with name test-unleash-not-exist not found in namespace default",
 			}))
 
+			Expect(createdApiToken.Status.Created).Should(Equal(false))
+			Expect(createdApiToken.Status.Failed).Should(Equal(true))
+
 			By("Cleaning up the ApiToken")
 			Expect(k8sClient.Delete(ctx, &createdApiToken)).Should(Succeed())
 		})
@@ -218,6 +221,9 @@ var _ = Describe("ApiToken controller", func() {
 				Reason:  "Reconciling",
 				Message: "API token successfully created",
 			}))
+
+			Expect(createdApiToken.Status.Created).Should(Equal(true))
+			Expect(createdApiToken.Status.Failed).Should(Equal(false))
 
 			By("By checking that the ApiToken secret has been created")
 			createdApiTokenSecret := &corev1.Secret{}
