@@ -301,13 +301,12 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeCreated).Set(1.0)
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(0.0)
 
-	apiToken.Status.Created = true
-	apiToken.Status.Failed = false
-
 	if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
 		log.Error(err, "Failed to get ApiToken")
 		return err
 	}
+
+	meta.RemoveStatusCondition(&apiToken.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
 
 	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
 		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
@@ -316,7 +315,8 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 		Message: "API token successfully created",
 	})
 
-	meta.RemoveStatusCondition(&apiToken.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
+	apiToken.Status.Created = true
+	apiToken.Status.Failed = false
 
 	if err := r.Status().Update(ctx, apiToken); err != nil {
 		log.Error(err, "Failed to update status for ApiToken")
