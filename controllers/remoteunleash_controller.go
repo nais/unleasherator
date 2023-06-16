@@ -248,10 +248,12 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 		return err
 	}
 
-	if stats.VersionEnterprise != "" {
-		remoteUnleash.Version = stats.VersionEnterprise
-	} else {
-		remoteUnleash.Version = stats.VersionOSS
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			remoteUnleash.Version = stats.VersionEnterprise
+		} else {
+			remoteUnleash.Version = stats.VersionOSS
+		}
 	}
 
 	switch status.Type {
