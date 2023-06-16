@@ -3,10 +3,8 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleash"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
@@ -284,28 +282,4 @@ func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.RemoteUnleash{}).
 		Complete(r)
-}
-
-// TODO: This should be broken out into an extension function on a generic thing that hasFields OperatorNamespace & Client
-func (r *RemoteUnleashReconciler) testConnection(unleash UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
-	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
-	if err != nil {
-		log.Error(err, "Failed to set up client for Unleash")
-		return nil, err
-	}
-
-	stats, res, err := client.GetInstanceAdminStats()
-
-	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
-		return nil, err
-	}
-
-	if res.StatusCode != http.StatusOK {
-		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
-		return nil, err
-	}
-
-	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "version", stats.VersionOSS)
-	return stats, nil
 }
