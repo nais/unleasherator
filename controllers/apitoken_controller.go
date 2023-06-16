@@ -330,6 +330,11 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, err error, reason, message string) error {
 	log := log.FromContext(ctx)
 
+	if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
+		log.Error(err, "Failed to get ApiToken")
+		return err
+	}
+
 	if err != nil {
 		log.Error(err, fmt.Sprintf("%s for ApiToken", message))
 	} else {
