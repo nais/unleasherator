@@ -3,8 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/go-logr/logr"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/unleash"
+	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,10 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/unleash"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
@@ -39,11 +41,10 @@ var (
 	)
 )
 
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/finalizers,verbs=update
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
-
+// +kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -177,8 +178,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Check Unleash connectivity
-	health, res, err := unleashClient.GetHealth()
+	stats, res, err := unleashClient.GetInstanceAdminStats()
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, "Failed to connect to Unleash instance health endpoint"); err != nil {
 			return ctrl.Result{}, err
@@ -187,27 +187,16 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{Requeue: true}, err
 	}
 
-	// Check Unleash health
-	if health.Health != "GOOD" {
-		err := fmt.Errorf("unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health)
-
-		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, err, err.Error()); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{Requeue: true}, err
-	}
-
 	// Set RemoteUnleash status to connected
-	err = r.updateStatusConnectionSuccess(ctx, remoteUnleash)
+	err = r.updateStatusConnectionSuccess(ctx, stats, remoteUnleash)
 	return ctrl.Result{}, err
 }
 
-func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {
+func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
 	log := log.FromContext(ctx)
 
 	log.Info("Successfully connected to Unleash")
-	return r.updateStatus(ctx, remoteUnleash, metav1.Condition{
+	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
@@ -251,12 +240,20 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 	})
 }
 
-func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, status metav1.Condition) error {
+func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
 	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
 		log.Error(err, "Failed to get RemoteUnleash")
 		return err
+	}
+
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			remoteUnleash.Version = stats.VersionEnterprise
+		} else {
+			remoteUnleash.Version = stats.VersionOSS
+		}
 	}
 
 	switch status.Type {
@@ -287,4 +284,28 @@ func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.RemoteUnleash{}).
 		Complete(r)
+}
+
+// TODO: This should be broken out into an extension function on a generic thing that hasFields OperatorNamespace & Client
+func (r *RemoteUnleashReconciler) testConnection(unleash UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
+	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		log.Error(err, "Failed to set up client for Unleash")
+		return nil, err
+	}
+
+	stats, res, err := client.GetInstanceAdminStats()
+
+	if err != nil {
+		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
+		return nil, err
+	}
+
+	if res.StatusCode != http.StatusOK {
+		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+		return nil, err
+	}
+
+	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "version", stats.VersionOSS)
+	return stats, nil
 }

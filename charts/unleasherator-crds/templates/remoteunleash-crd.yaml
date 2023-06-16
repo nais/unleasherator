@@ -19,6 +19,9 @@ spec:
     - jsonPath: .spec.unleashInstance.url
       name: URL
       type: string
+    - jsonPath: .status.version
+      name: Version
+      type: string
     - jsonPath: .status.reconciled
       name: Reconciled
       type: boolean

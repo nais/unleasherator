@@ -26,14 +26,16 @@ type RemoteUnleashList struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.unleashInstance.url`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 // +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 type RemoteUnleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   RemoteUnleashSpec   `json:"spec,omitempty"`
-	Status RemoteUnleashStatus `json:"status,omitempty"`
+	Spec    RemoteUnleashSpec   `json:"spec,omitempty"`
+	Status  RemoteUnleashStatus `json:"status,omitempty"`
+	Version string              `json:"version,omitempty"`
 }
 
 // RemoteUnleashSpec defines the desired state of RemoteUnleash
