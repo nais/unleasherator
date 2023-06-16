@@ -219,6 +219,9 @@ var _ = Describe("ApiToken controller", func() {
 				Message: "API token successfully created",
 			}))
 
+			Expect(createdApiToken.Status.Created).Should(Equal(true))
+			Expect(createdApiToken.Status.Failed).Should(Equal(false))
+
 			By("By checking that the ApiToken secret has been created")
 			createdApiTokenSecret := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, apiTokenLookupKey, createdApiTokenSecret)).Should(Succeed())
