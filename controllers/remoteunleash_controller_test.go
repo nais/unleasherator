@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -91,12 +92,10 @@ var _ = Describe("RemoteUnleash controller", func() {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				defer GinkgoRecover()
 
-				if r.URL.Path != "/health" {
-					w.WriteHeader(http.StatusNotFound)
-				}
+				fmt.Printf("WTFWTFWTF %s", r.URL.Path)
 
 				w.WriteHeader(http.StatusOK)
-				_, err := w.Write([]byte(`{"health": "GOOD"}`))
+				_, err := w.Write([]byte(`{"versionOSS": "v4.0.0"}`))
 				Expect(err).ToNot(HaveOccurred())
 			}))
 			defer srv.Close()
