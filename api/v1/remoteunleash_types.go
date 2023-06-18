@@ -33,9 +33,8 @@ type RemoteUnleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec    RemoteUnleashSpec   `json:"spec,omitempty"`
-	Status  RemoteUnleashStatus `json:"status,omitempty"`
-	Version string              `json:"version,omitempty"`
+	Spec   RemoteUnleashSpec   `json:"spec,omitempty"`
+	Status RemoteUnleashStatus `json:"status,omitempty"`
 }
 
 // RemoteUnleashSpec defines the desired state of RemoteUnleash
@@ -99,6 +98,10 @@ type RemoteUnleashStatus struct {
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
 	Connected bool `json:"connected,omitempty"`
+
+	// Version is the reported version of the Unleash server
+	// +kubebuilder:default="unknown"
+	Version string `json:"version,omitempty"`
 }
 
 // URL returns the URL of the Unleash instance.

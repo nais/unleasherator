@@ -154,6 +154,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			}))
 
 			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
+			Expect(createdRemoteUnleash.Status.Version).To(Equal("v4.0.0"))
+			Expect(createdRemoteUnleash.Status.Reconciled).To(BeTrue())
+			Expect(createdRemoteUnleash.Status.Connected).To(BeTrue())
 		})
 	})
 })

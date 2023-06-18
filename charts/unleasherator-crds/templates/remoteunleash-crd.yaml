@@ -177,9 +177,11 @@ spec:
                   reconciled successfully. This is used for kubectl printing purposes.
                   Rather than relying on this value, check the conditions instead.
                 type: boolean
+              version:
+                default: unknown
+                description: Version is the reported version of the Unleash server
+                type: string
             type: object
-          version:
-            type: string
         type: object
     served: true
     storage: true

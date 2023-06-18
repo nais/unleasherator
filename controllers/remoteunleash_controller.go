@@ -251,9 +251,9 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 
 	if stats != nil {
 		if stats.VersionEnterprise != "" {
-			remoteUnleash.Version = stats.VersionEnterprise
+			remoteUnleash.Status.Version = stats.VersionEnterprise
 		} else {
-			remoteUnleash.Version = stats.VersionOSS
+			remoteUnleash.Status.Version = stats.VersionOSS
 		}
 	}
 
