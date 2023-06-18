@@ -72,7 +72,10 @@ spec:
                 description: Server is the Unleash instance this token is for.
                 properties:
                   url:
-                    description: URL is the URL of the Unleash instance.
+                    description: URL is the URL of the Unleash instance. The URL must
+                      be a valid URL, and must start with either http:// or https://.
+                      The URL must be to the root of the Unleash instance, and must
+                      not contain any path.
                     pattern: ^https?://
                     type: string
                 required:

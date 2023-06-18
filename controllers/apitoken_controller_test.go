@@ -23,7 +23,7 @@ var _ = Describe("ApiToken controller", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
 	const (
 		ApiTokenNamespace = "default"
-		ApiTokenServerURL = "http://unleash.nais.io"
+		ApiTokenServerURL = "http://api-token-unleash.nais.io"
 		ApiTokenToken     = "test"
 
 		timeout  = time.Second * 10
@@ -145,8 +145,8 @@ var _ = Describe("ApiToken controller", func() {
 			By("Mocking RemoteUnleash endpoints")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/health", ApiTokenServerURL),
-				httpmock.NewStringResponder(200, `{"health": "GOOD"}`))
+			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", ApiTokenServerURL),
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
 				httpmock.NewStringResponder(200, `{"tokens": []}`))
 			httpmock.RegisterResponder("POST", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
@@ -237,12 +237,13 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
-			By("By cleaning up the ApiToken")
-			httpmock.RegisterResponder("DELETE", "=~http://unleash.nais.io/api/admin/api-tokens/.*", httpmock.NewStringResponder(200, ""))
+			By("By deleting the ApiToken")
+			deletePath := fmt.Sprintf("=~%s/api/admin/api-tokens/.*", ApiTokenServerURL)
+			httpmock.RegisterResponder("DELETE", deletePath, httpmock.NewStringResponder(200, ""))
 			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 			Eventually(func() int {
 				info := httpmock.GetCallCountInfo()
-				return info["DELETE =~http://unleash.nais.io/api/admin/api-tokens/.*"]
+				return info[fmt.Sprintf("DELETE %s", deletePath)]
 			}, timeout, interval).ShouldNot(BeZero())
 		})
 
@@ -256,8 +257,8 @@ var _ = Describe("ApiToken controller", func() {
 			By("Mocking RemoteUnleash endpoints")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/health", ApiTokenServerURL),
-				httpmock.NewStringResponder(200, `{"health": "GOOD"}`))
+			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", ApiTokenServerURL),
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
 				func(req *http.Request) (*http.Response, error) {
 					resp, err := httpmock.NewJsonResponse(200, unleash.ApiTokenResult{

@@ -69,6 +69,8 @@ type RemoteUnleashSecret struct {
 // RemoteUnleashServer defines the Unleash instance this token is for.
 type RemoteUnleashServer struct {
 	// URL is the URL of the Unleash instance.
+	// The URL must be a valid URL, and must start with either http:// or https://.
+	// The URL must be to the root of the Unleash instance, and must not contain any path.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?://`
 	URL string `json:"url"`
