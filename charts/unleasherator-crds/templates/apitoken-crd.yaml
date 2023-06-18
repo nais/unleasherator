@@ -179,12 +179,13 @@ spec:
               created:
                 default: false
                 description: Created is true when the Unleash API token has been created
-                  successfully This is used for kubectl printing purposes. Rather than
-                  relying on this value, check the conditions instead.
+                  successfully in the Unleash instance. This is used for kubectl printing
+                  purposes. Rather than relying on this value, check the conditions
+                  instead.
                 type: boolean
               failed:
                 default: false
-                description: Failed is true when the Unleash API token creation has
+                description: Failed is true when the Unleash API token reconcile has
                   failed This is used for kubectl printing purposes. Rather than relying
                   on this value, check the conditions instead.
                 type: boolean

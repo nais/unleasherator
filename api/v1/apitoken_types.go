@@ -61,12 +61,13 @@ type ApiTokenStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Created is true when the Unleash API token has been created successfully
+	// in the Unleash instance.
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
 	Created bool `json:"created,omitempty"`
 
-	// Failed is true when the Unleash API token creation has failed
+	// Failed is true when the Unleash API token reconcile has failed
 	// This is used for kubectl printing purposes. Rather than relying on this
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
