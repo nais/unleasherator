@@ -83,8 +83,8 @@ var _ = Describe("Unleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/health",
-				httpmock.NewStringResponder(200, `{"health": "GOOD"}`))
+			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/api/admin/instance-admin/statistics",
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")
 			unleash := &unleashv1.Unleash{
@@ -125,6 +125,9 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
+			Expect(createdUnleash.Status.Version).To(Equal("v4.0.0"))
+			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
+			Expect(createdUnleash.Status.Connected).To(BeTrue())
 
 			deployment := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, unleashLookupKey, deployment)).Should(Succeed())

@@ -2,10 +2,10 @@ package controllers
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	dto "github.com/prometheus/client_model/go"
@@ -21,7 +21,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 	// Define utility constants for object names and testing timeouts/durations and intervals.
 	const (
 		RemoteUnleashNamespace = "default"
-		RemoteUnleashServerURL = "http://unleash.nais.io"
+		RemoteUnleashServerURL = "http://remoteunleash.nais.io"
 		RemoteUnleashToken     = "test"
 
 		timeout  = time.Second * 10
@@ -87,22 +87,14 @@ var _ = Describe("RemoteUnleash controller", func() {
 		})
 
 		It("Should succeed when it can connect to Unleash", func() {
-			// Mock Unleash server with a health endpoint
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				defer GinkgoRecover()
-
-				if r.URL.Path != "/health" {
-					w.WriteHeader(http.StatusNotFound)
-				}
-
-				w.WriteHeader(http.StatusOK)
-				_, err := w.Write([]byte(`{"health": "GOOD"}`))
-				Expect(err).ToNot(HaveOccurred())
-			}))
-			defer srv.Close()
-
 			ctx := context.Background()
 			RemoteUnleashName := "test-unleash-success"
+
+			By("By mocking Unleash API")
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", RemoteUnleashServerURL),
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash secret")
 			secret := &corev1.Secret{
@@ -132,7 +124,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 				},
 				Spec: unleashv1.RemoteUnleashSpec{
 					Server: unleashv1.RemoteUnleashServer{
-						URL: srv.URL,
+						URL: RemoteUnleashServerURL,
 					},
 					AdminSecret: unleashv1.RemoteUnleashSecret{
 						Name: secret.GetName(),
@@ -162,6 +154,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			}))
 
 			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
+			Expect(createdRemoteUnleash.Status.Version).To(Equal("v4.0.0"))
+			Expect(createdRemoteUnleash.Status.Reconciled).To(BeTrue())
+			Expect(createdRemoteUnleash.Status.Connected).To(BeTrue())
 		})
 	})
 })

@@ -18,6 +18,9 @@ spec:
     - jsonPath: .spec.unleashInstance.url
       name: URL
       type: string
+    - jsonPath: .status.version
+      name: Version
+      type: string
     - jsonPath: .status.reconciled
       name: Reconciled
       type: boolean
@@ -69,7 +72,10 @@ spec:
                 description: Server is the Unleash instance this token is for.
                 properties:
                   url:
-                    description: URL is the URL of the Unleash instance.
+                    description: URL is the URL of the Unleash instance. The URL must
+                      be a valid URL, and must start with either http:// or https://.
+                      The URL must be to the root of the Unleash instance, and must
+                      not contain any path.
                     pattern: ^https?://
                     type: string
                 required:
@@ -171,6 +177,10 @@ spec:
                   reconciled successfully. This is used for kubectl printing purposes.
                   Rather than relying on this value, check the conditions instead.
                 type: boolean
+              version:
+                default: unknown
+                description: Version is the reported version of the Unleash server
+                type: string
             type: object
         type: object
     served: true

@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/resources"
+	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
@@ -265,7 +266,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Test connection to Unleash instance
-	err = r.testConnection(unleash, ctx, log)
+	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); err != nil {
 			return ctrl.Result{}, err
@@ -275,7 +276,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Set the connection status of the Unleash instance to available
-	err = r.updateStatusConnectionSuccess(ctx, unleash)
+	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
 	return ctrl.Result{}, err
 }
 
@@ -625,34 +626,34 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 }
 
 // testConnection will test the connection to the Unleash instance
-func (r *UnleashReconciler) testConnection(unleash *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
+func (r *UnleashReconciler) testConnection(unleash UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		log.Error(err, "Failed to set up client for Unleash")
-		return err
+		return nil, err
 	}
 
-	health, res, err := client.GetHealth()
+	stats, res, err := client.GetInstanceAdminStats()
 
 	if err != nil {
-		log.Error(err, "Failed to connect to Unleash instance health endpoint")
-		return err
+		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
+		return nil, err
 	}
 
 	if res.StatusCode != http.StatusOK {
-		log.Error(err, fmt.Sprintf("Unleash health check failed with status code %d (health: %s)", res.StatusCode, health.Health))
-		return err
+		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+		return nil, err
 	}
 
-	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "health", health)
-	return nil
+	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "version", stats.VersionOSS)
+	return stats, nil
 }
 
 func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
 	log := log.FromContext(ctx)
 
 	log.Info("Successfully reconciled Unleash")
-	return r.updateStatus(ctx, unleash, metav1.Condition{
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
@@ -668,7 +669,7 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 	}
 
 	log.Error(err, message)
-	return r.updateStatus(ctx, unleash, metav1.Condition{
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
@@ -676,11 +677,11 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 	})
 }
 
-func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
+func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult) error {
 	log := log.FromContext(ctx)
 
 	log.Info("Successfully connected to Unleash")
-	return r.updateStatus(ctx, unleash, metav1.Condition{
+	return r.updateStatus(ctx, unleash, stats, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
@@ -692,7 +693,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 	log := log.FromContext(ctx)
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
-	return r.updateStatus(ctx, unleash, metav1.Condition{
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
@@ -700,7 +701,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 	})
 }
 
-func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, status metav1.Condition) error {
+func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
 	switch status.Type {
@@ -708,6 +709,14 @@ func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.
 		unleash.Status.Reconciled = status.Status == metav1.ConditionTrue
 	case unleashv1.UnleashStatusConditionTypeConnected:
 		unleash.Status.Connected = status.Status == metav1.ConditionTrue
+	}
+
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			unleash.Status.Version = stats.VersionEnterprise
+		} else {
+			unleash.Status.Version = stats.VersionOSS
+		}
 	}
 
 	val := promGaugeValueForStatus(status.Status)

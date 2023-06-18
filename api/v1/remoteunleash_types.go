@@ -26,6 +26,7 @@ type RemoteUnleashList struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.unleashInstance.url`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 // +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 type RemoteUnleash struct {
@@ -67,6 +68,8 @@ type RemoteUnleashSecret struct {
 // RemoteUnleashServer defines the Unleash instance this token is for.
 type RemoteUnleashServer struct {
 	// URL is the URL of the Unleash instance.
+	// The URL must be a valid URL, and must start with either http:// or https://.
+	// The URL must be to the root of the Unleash instance, and must not contain any path.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?://`
 	URL string `json:"url"`
@@ -95,6 +98,10 @@ type RemoteUnleashStatus struct {
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
 	Connected bool `json:"connected,omitempty"`
+
+	// Version is the reported version of the Unleash server
+	// +kubebuilder:default="unknown"
+	Version string `json:"version,omitempty"`
 }
 
 // URL returns the URL of the Unleash instance.

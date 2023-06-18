@@ -29,6 +29,7 @@ type UnleashList struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="API Ingress",type=string,JSONPath=`.spec.apiIngress.host`
 // +kubebuilder:printcolumn:name="Web Ingress",type=string,JSONPath=`.spec.webIngress.host`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
 // +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 // +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
 type Unleash struct {
@@ -245,6 +246,10 @@ type UnleashStatus struct {
 	// value, check the conditions instead.
 	// +kubebuilder:default=false
 	Connected bool `json:"connected,omitempty"`
+
+	// Version is the reported version of the Unleash server
+	// +kubebuilder:default="unknown"
+	Version string `json:"version,omitempty"`
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {

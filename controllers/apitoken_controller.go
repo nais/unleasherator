@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/nais/unleasherator/pkg/unleash"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -162,6 +161,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("Performing Finalizer Operations for ApiToken before deletion")
 			r.doFinalizerOperationsForToken(token, apiClient, log)
 
+			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+				log.Error(err, "Failed to get ApiToken")
+				return ctrl.Result{}, err
+			}
+
 			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
 				Status:  metav1.ConditionUnknown,
@@ -170,23 +174,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			})
 
 			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{}, err
-			}
-
-			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-				log.Error(err, "Failed to get ApiToken")
-				return ctrl.Result{}, err
-			}
-
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
-				Status:  metav1.ConditionTrue,
-				Reason:  "Finalizing",
-				Message: "Finalizer operations completed",
-			})
-
-			if err := r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "Failed to update ApiToken status")
 				return ctrl.Result{}, err
 			}
@@ -361,7 +348,7 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 }
 
 // doFinalizerOperationsForToken will delete the ApiToken from Unleash
-func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleash.Client, log logr.Logger) {
+func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
 	tokenName := token.UnleashClientName(r.ApiTokenNameSuffix)
 	err := unleashClient.DeleteApiToken(tokenName)
 	if err != nil {
