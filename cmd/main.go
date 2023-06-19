@@ -171,7 +171,7 @@ func main() {
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {
-		er := remoteUnleashReconciler.EatSubscriptions(ctx)
+		er := remoteUnleashReconciler.ConsumePubSubMessages(ctx)
 		if er != nil {
 			setupLog.Error(err, "pubsub subscriber stopped working")
 			cancel()
@@ -201,4 +201,18 @@ func pubsubClient(ctx context.Context, projectID string, target, configured PubS
 		return nil, nil
 	}
 	return pubsub.NewClient(ctx, projectID)
+}
+
+func pubsubSubscription(ctx context.Context, client *pubsub.Client, topic, subscriptionID string) (*pubsub.Subscription, error) {
+	if client == nil {
+		return nil, nil
+	}
+	return client.CreateSubscription(
+		ctx,
+		subscriptionID,
+		pubsub.SubscriptionConfig{
+			Topic:                 client.Topic(topic),
+			EnableMessageOrdering: true,
+		},
+	)
 }

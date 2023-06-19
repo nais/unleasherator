@@ -293,7 +293,7 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 
 }
 
-func (r *RemoteUnleashReconciler) EatSubscriptions(ctx context.Context) error {
+func (r *RemoteUnleashReconciler) ConsumePubSubMessages(ctx context.Context) error {
 	if r.PubSubSubscription == nil {
 		return nil
 	}
@@ -313,8 +313,6 @@ func (r *RemoteUnleashReconciler) EatSubscriptions(ctx context.Context) error {
 				pubsubMessages.WithLabelValues("success").Inc()
 			} else {
 				pubsubMessages.WithLabelValues("error").Inc()
-				message.Ack()
-				return
 			}
 
 			res := resources.RemoteUnleasheratorResources(instance, r.OperatorNamespace)
