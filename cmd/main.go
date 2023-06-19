@@ -120,14 +120,11 @@ func main() {
 	}
 	defer subscriber.Close()
 
-	subscription, err := subscriber.CreateSubscription(
-		ctx,
-		cfg.PubSubSubscriptionID,
-		pubsub.SubscriptionConfig{
-			Topic:                 subscriber.Topic(cfg.PubSubTopic),
-			EnableMessageOrdering: true,
-		},
-	)
+	subscription, err := pubsubSubscription(ctx, subscriber, cfg.PubSubTopic, cfg.PubSubSubscriptionID)
+	if err != nil {
+		setupLog.Error(err, "create pubsub subscription: %s", err)
+		os.Exit(1)
+	}
 
 	publisher, err := pubsubClient(ctx, cfg.ProjectID, pubsubModePublish, cfg.PubSubMode)
 	if err != nil {

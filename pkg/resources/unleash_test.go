@@ -4,6 +4,9 @@ import (
 	"testing"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/stretchr/testify/assert"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -79,4 +82,36 @@ func TestNetworkPolicyForUnleash(t *testing.T) {
 	if np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "some-namespace" {
 		t.Error("expected namespace selector to be set, got", np.Spec.Ingress[0].From[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
 	}
+}
+
+func TestRemoteUnleasheratorResources(t *testing.T) {
+	const secretToken = "secrettoken"
+	const url = "url"
+	const name = "name"
+	const secretNamespace = "secretnamespace"
+
+	msg := &pb.Instance{
+		Version:     pb.Version,
+		Status:      pb.Status_Provisioned,
+		Name:        name,
+		Url:         url,
+		SecretToken: secretToken,
+		Namespaces:  []string{"foo", "bar"},
+	}
+
+	resources := RemoteUnleasheratorResources(msg, secretNamespace)
+
+	assertPair := func(remoteUnleash *unleashv1.RemoteUnleash, secret *corev1.Secret, namespace string) {
+		assert.Equal(t, name, remoteUnleash.GetName())
+		assert.Equal(t, namespace, remoteUnleash.GetNamespace())
+		assert.Equal(t, url, remoteUnleash.Spec.Server.URL)
+		assert.Equal(t, secretNamespace, remoteUnleash.Spec.AdminSecret.Namespace)
+		assert.Equal(t, unleashv1.UnleashSecretTokenKey, remoteUnleash.Spec.AdminSecret.Key)
+
+		assert.Equal(t, secretToken, secret.StringData[unleashv1.UnleashSecretTokenKey])
+		assert.Equal(t, secretNamespace, secret.GetNamespace())
+	}
+
+	assertPair(resources[0].(*unleashv1.RemoteUnleash), resources[1].(*corev1.Secret), msg.Namespaces[0])
+	assertPair(resources[2].(*unleashv1.RemoteUnleash), resources[3].(*corev1.Secret), msg.Namespaces[1])
 }
