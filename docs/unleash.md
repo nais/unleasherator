@@ -6,7 +6,8 @@ Implementation status: `beta`
 
 ## Implementation
 
-The operator will create a deployment with the Unleash server and a service to expose it. It will also create a network policy to allow traffic from operator namespace.
+The operator will create a deployment with the Unleash server and a service to expose it.
+It will also create a network policy to allow traffic from operator namespace.
 
 ## Features
 

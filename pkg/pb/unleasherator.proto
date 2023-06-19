@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "github.com/nais/unleasherator/pkg/pb";
+
+message Instance {
+  // v1
+  int32 version = 1;
+  Status status = 2;
+  string name = 3;
+  string url = 4;
+  string secretToken = 5;
+  repeated string namespaces = 6;
+}
+
+enum Status {
+  Unknown = 0;
+  Provisioned = 1;
+  Removed = 2;
+}

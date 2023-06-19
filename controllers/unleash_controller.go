@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/nais/unleasherator/pkg/pb"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -277,7 +278,31 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set the connection status of the Unleash instance to available
 	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
+
+	token, err := GetApiToken(ctx, r, unleash.GetName(), unleash.GetNamespace())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("fetch secret api token: %w", err)
+	}
+
+	msg := UnleasheratorInstance(unleash, token)
+
+	//err = SendMessage(pubsubserver, msg)
+	_ = msg
+
+	// TODO: notify
+
 	return ctrl.Result{}, err
+}
+
+func UnleasheratorInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {
+	return &pb.Instance{
+		Version:     pb.Version,
+		Status:      pb.Status_Provisioned,
+		Name:        unleash.GetName(),
+		Url:         unleash.PublicSecureURL(),
+		SecretToken: token,
+		Namespaces:  []string{unleash.GetName()},
+	}
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.

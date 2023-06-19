@@ -3,6 +3,8 @@
 IMG ?= ghcr.io/nais/unleasherator:main
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.25.0
+# Protobuf compiler
+PROTOC = $(shell which protoc)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -181,4 +183,16 @@ $(HELMIFY): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
+<<<<<<< HEAD
 	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
+||||||| parent of 45310d6 (Prepare a Protobuf type for communication between controllers)
+	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
+=======
+	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
+
+install-protobuf-go:
+	go install google.golang.org/protobuf/cmd/protoc-gen-go
+
+proto:
+	$(PROTOC) --go_opt=paths=source_relative --go_out=. pkg/pb/unleasherator.proto
+>>>>>>> 45310d6 (Prepare a Protobuf type for communication between controllers)
