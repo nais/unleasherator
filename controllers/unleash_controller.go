@@ -9,7 +9,6 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
-	"github.com/nais/unleasherator/pkg/pb"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,6 +34,7 @@ import (
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
+const pubsubOrderingKey = "order"
 
 var (
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
@@ -305,7 +305,7 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 		return fmt.Errorf("fetch secret api token: %w", err)
 	}
 
-	instance := UnleasheratorInstance(unleash, token)
+	instance := resources.UnleasheratorInstance(unleash, token)
 	payload, err := proto.Marshal(instance)
 	if err != nil {
 		return fmt.Errorf("marshal protobuf message: %w", err)
@@ -315,6 +315,7 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
+		OrderingKey: pubsubOrderingKey,
 	}
 	result := r.PubSubClient.Topic(r.TopicName).Publish(ctx, msg)
 	_, err = result.Get(ctx)
@@ -323,17 +324,6 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 	}
 
 	return nil
-}
-
-func UnleasheratorInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {
-	return &pb.Instance{
-		Version:     pb.Version,
-		Status:      pb.Status_Provisioned,
-		Name:        unleash.GetName(),
-		Url:         unleash.PublicSecureURL(),
-		SecretToken: token,
-		Namespaces:  []string{unleash.GetName()},
-	}
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
@@ -564,10 +554,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret, err = resources.OperatorSecretForUnleash(unleash, r.Scheme, r.OperatorNamespace, adminKey)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {

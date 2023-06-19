@@ -46,11 +46,12 @@ func (p *PubSubMode) Set(value string) error {
 }
 
 type Config struct {
-	ApiTokenNameSuffix string     `envconfig:"API_TOKEN_NAME_SUFFIX"`
-	OperatorNamespace  string     `envconfig:"OPERATOR_NAMESPACE"`
-	ProjectID          string     `envconfig:"GCP_PROJECT_ID"`
-	PubSubTopic        string     `envconfig:"PUBSUB_TOPIC"`
-	PubSubMode         PubSubMode `envconfig:"PUBSUB_MODE"`
+	ApiTokenNameSuffix   string     `envconfig:"API_TOKEN_NAME_SUFFIX"`
+	OperatorNamespace    string     `envconfig:"OPERATOR_NAMESPACE"`
+	ProjectID            string     `envconfig:"GCP_PROJECT_ID"`
+	PubSubTopic          string     `envconfig:"PUBSUB_TOPIC"`
+	PubSubMode           PubSubMode `envconfig:"PUBSUB_MODE"`
+	PubSubSubscriptionID string     `envconfig:"PUBSUB_SUBSCRIPTION_ID"`
 }
 
 func init() {
@@ -86,7 +87,9 @@ func main() {
 	}
 
 	// Global parent context for program
-	ctx := ctrl.SetupSignalHandler()
+	signalHandlerContext := ctrl.SetupSignalHandler()
+	ctx, cancel := context.WithCancel(signalHandlerContext)
+	defer cancel()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
@@ -115,12 +118,23 @@ func main() {
 		setupLog.Error(err, "create pubsub subscriber: %s", err)
 		os.Exit(1)
 	}
+	defer subscriber.Close()
+
+	subscription, err := subscriber.CreateSubscription(
+		ctx,
+		cfg.PubSubSubscriptionID,
+		pubsub.SubscriptionConfig{
+			Topic:                 subscriber.Topic(cfg.PubSubTopic),
+			EnableMessageOrdering: true,
+		},
+	)
 
 	publisher, err := pubsubClient(ctx, cfg.ProjectID, pubsubModePublish, cfg.PubSubMode)
 	if err != nil {
 		setupLog.Error(err, "create pubsub publisher: %s", err)
 		os.Exit(1)
 	}
+	defer publisher.Close()
 
 	if err = (&controllers.UnleashReconciler{
 		Client:            mgr.GetClient(),
@@ -133,14 +147,14 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
-	if err = (&controllers.RemoteUnleashReconciler{
-		Client:            mgr.GetClient(),
-		Scheme:            mgr.GetScheme(),
-		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
-		OperatorNamespace: cfg.OperatorNamespace,
-		PubSubClient:      subscriber,
-		TopicName:         cfg.PubSubTopic,
-	}).SetupWithManager(mgr); err != nil {
+	remoteUnleashReconciler := &controllers.RemoteUnleashReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		Recorder:           mgr.GetEventRecorderFor("remote-unleash-controller"),
+		OperatorNamespace:  cfg.OperatorNamespace,
+		PubSubSubscription: subscription,
+	}
+	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
 	}
@@ -155,6 +169,14 @@ func main() {
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
+
+	go func(ctx context.Context) {
+		er := remoteUnleashReconciler.EatSubscriptions(ctx)
+		if er != nil {
+			setupLog.Error(err, "pubsub subscriber stopped working")
+			cancel()
+		}
+	}(ctx)
 
 	// @TODO add webhooks here
 

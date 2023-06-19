@@ -7,9 +7,12 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleash"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,11 +27,10 @@ import (
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	OperatorNamespace string
-	PubSubClient      *pubsub.Client
-	TopicName         string
+	Scheme             *runtime.Scheme
+	Recorder           record.EventRecorder
+	OperatorNamespace  string
+	PubSubSubscription *pubsub.Subscription
 }
 
 var (
@@ -39,6 +41,14 @@ var (
 			Help: "Status of remote Unleash instances",
 		},
 		[]string{"namespace", "name", "status"},
+	)
+
+	pubsubMessages = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_messages",
+			Help: "Number of PubSub messages received",
+		},
+		[]string{"status"},
 	)
 )
 
@@ -281,6 +291,83 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 
 func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *unleashv1.RemoteUnleash) {
 
+}
+
+func (r *RemoteUnleashReconciler) EatSubscriptions(ctx context.Context) error {
+	if r.PubSubSubscription == nil {
+		return nil
+	}
+
+	var permanentError error
+
+	for ctx.Err() == nil && permanentError == nil {
+		err := r.PubSubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
+			const kubernetesWriteTimeout = time.Second * 5
+			timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
+			defer cancel()
+
+			instance := &pb.Instance{}
+			err := proto.Unmarshal(message.Data, instance)
+
+			if err == nil {
+				pubsubMessages.WithLabelValues("success").Inc()
+			} else {
+				pubsubMessages.WithLabelValues("error").Inc()
+				message.Ack()
+				return
+			}
+
+			res := resources.RemoteUnleasheratorResources(instance, r.OperatorNamespace)
+			err = r.PersistAll(timeoutContext, res)
+			if err != nil {
+				message.Nack()
+				if !retryableError(err) {
+					permanentError = err
+				}
+				return
+			}
+
+			message.Ack()
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return permanentError
+}
+
+func retryableError(err error) bool {
+	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+func (r *RemoteUnleashReconciler) CreateOrUpdate(ctx context.Context, resource client.Object) error {
+	objectKey := client.ObjectKeyFromObject(resource)
+	existing := &unleashv1.RemoteUnleash{}
+	err := r.Get(ctx, objectKey, existing)
+
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, resource)
+	} else if err != nil {
+		return err
+	}
+
+	resource.SetResourceVersion(existing.GetResourceVersion())
+	resource.SetUID(existing.GetUID())
+	resource.SetSelfLink(existing.GetSelfLink())
+
+	return r.Update(ctx, resource)
+}
+
+func (r *RemoteUnleashReconciler) PersistAll(ctx context.Context, resources []client.Object) error {
+	for _, resource := range resources {
+		err := r.CreateOrUpdate(ctx, resource)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
