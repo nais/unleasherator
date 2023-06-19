@@ -287,7 +287,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
+	err = r.PublishUnleasheratorMessage(ctx, unleash)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -296,6 +296,10 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unleash *unleashv1.Unleash) error {
+	if r.PubSubClient == nil {
+		return nil
+	}
+
 	token, err := GetApiToken(ctx, r, unleash.GetName(), unleash.GetNamespace())
 	if err != nil {
 		return fmt.Errorf("fetch secret api token: %w", err)

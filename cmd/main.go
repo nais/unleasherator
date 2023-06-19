@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"cloud.google.com/go/pubsub"
@@ -29,11 +31,26 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+type PubSubMode string
+
+func (p *PubSubMode) Set(value string) error {
+	switch value {
+	case pubsubModeDisabled:
+	case pubsubModePublish:
+	case pubsubModeSubscribe:
+	default:
+		return fmt.Errorf("unsupported pubsub mode %q", value)
+	}
+	*p = PubSubMode(value)
+	return nil
+}
+
 type Config struct {
-	ApiTokenNameSuffix string `envconfig:"API_TOKEN_NAME_SUFFIX"`
-	OperatorNamespace  string `envconfig:"OPERATOR_NAMESPACE"`
-	ProjectID          string `envconfig:"GCP_PROJECT_ID"`
-	PubSubTopic        string `envconfig:"PUBSUB_TOPIC"`
+	ApiTokenNameSuffix string     `envconfig:"API_TOKEN_NAME_SUFFIX"`
+	OperatorNamespace  string     `envconfig:"OPERATOR_NAMESPACE"`
+	ProjectID          string     `envconfig:"GCP_PROJECT_ID"`
+	PubSubTopic        string     `envconfig:"PUBSUB_TOPIC"`
+	PubSubMode         PubSubMode `envconfig:"PUBSUB_MODE"`
 }
 
 func init() {
@@ -44,6 +61,9 @@ func init() {
 }
 
 const envVarPrefix = ""
+const pubsubModeDisabled = ""
+const pubsubModePublish = "publish"
+const pubsubModeSubscribe = "subscribe"
 
 func main() {
 	var configFile string
@@ -90,9 +110,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	pubsubClient, err := pubsub.NewClient(ctx, cfg.ProjectID)
+	subscriber, err := pubsubClient(ctx, cfg.ProjectID, pubsubModeSubscribe, cfg.PubSubMode)
 	if err != nil {
-		setupLog.Error(err, "create pubsub client: %s", err)
+		setupLog.Error(err, "create pubsub subscriber: %s", err)
+		os.Exit(1)
+	}
+
+	publisher, err := pubsubClient(ctx, cfg.ProjectID, pubsubModePublish, cfg.PubSubMode)
+	if err != nil {
+		setupLog.Error(err, "create pubsub publisher: %s", err)
 		os.Exit(1)
 	}
 
@@ -101,7 +127,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
-		PubSubClient:      pubsubClient,
+		PubSubClient:      publisher,
 		TopicName:         cfg.PubSubTopic,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
@@ -112,6 +138,8 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
+		PubSubClient:      subscriber,
+		TopicName:         cfg.PubSubTopic,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
@@ -144,4 +172,11 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func pubsubClient(ctx context.Context, projectID string, target, configured PubSubMode) (*pubsub.Client, error) {
+	if target != configured {
+		return nil, nil
+	}
+	return pubsub.NewClient(ctx, projectID)
 }

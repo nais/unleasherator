@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"cloud.google.com/go/pubsub"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleash"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
@@ -26,6 +27,8 @@ type RemoteUnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	PubSubClient      *pubsub.Client
+	TopicName         string
 }
 
 var (
