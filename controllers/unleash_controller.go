@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"cloud.google.com/go/pubsub"
+	"github.com/golang/protobuf/proto"
+	"github.com/google/uuid"
 	"github.com/nais/unleasherator/pkg/pb"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -54,6 +57,8 @@ type UnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	PubSubClient      *pubsub.Client
+	TopicName         string
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -278,20 +283,42 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set the connection status of the Unleash instance to available
 	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
-
-	token, err := GetApiToken(ctx, r, unleash.GetName(), unleash.GetNamespace())
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("fetch secret api token: %w", err)
+		return ctrl.Result{}, err
 	}
 
-	msg := UnleasheratorInstance(unleash, token)
-
-	//err = SendMessage(pubsubserver, msg)
-	_ = msg
-
-	// TODO: notify
+	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, err
+}
+
+func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unleash *unleashv1.Unleash) error {
+	token, err := GetApiToken(ctx, r, unleash.GetName(), unleash.GetNamespace())
+	if err != nil {
+		return fmt.Errorf("fetch secret api token: %w", err)
+	}
+
+	instance := UnleasheratorInstance(unleash, token)
+	payload, err := proto.Marshal(instance)
+	if err != nil {
+		return fmt.Errorf("marshal protobuf message: %w", err)
+	}
+
+	msg := &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+	}
+	result := r.PubSubClient.Topic(r.TopicName).Publish(ctx, msg)
+	_, err = result.Get(ctx)
+	if err != nil {
+		return fmt.Errorf("publish protobuf message: %w", err)
+	}
+
+	return nil
 }
 
 func UnleasheratorInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {
@@ -726,7 +753,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 	})
 }
 
-func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
+func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
 	switch status.Type {
