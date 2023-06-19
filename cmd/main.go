@@ -48,7 +48,7 @@ func (p *PubSubMode) Set(value string) error {
 type Config struct {
 	ApiTokenNameSuffix   string     `envconfig:"API_TOKEN_NAME_SUFFIX"`
 	OperatorNamespace    string     `envconfig:"OPERATOR_NAMESPACE"`
-	ProjectID            string     `envconfig:"GCP_PROJECT_ID"`
+	PubSubProjectID      string     `envconfig:"PUBSUB_GCP_PROJECT_ID"`
 	PubSubTopic          string     `envconfig:"PUBSUB_TOPIC"`
 	PubSubMode           PubSubMode `envconfig:"PUBSUB_MODE"`
 	PubSubSubscriptionID string     `envconfig:"PUBSUB_SUBSCRIPTION_ID"`
@@ -113,7 +113,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	subscriber, err := pubsubClient(ctx, cfg.ProjectID, pubsubModeSubscribe, cfg.PubSubMode)
+	subscriber, err := pubsubClient(ctx, cfg.PubSubProjectID, pubsubModeSubscribe, cfg.PubSubMode)
 	if err != nil {
 		setupLog.Error(err, "create pubsub subscriber: %s", err)
 		os.Exit(1)
@@ -126,7 +126,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	publisher, err := pubsubClient(ctx, cfg.ProjectID, pubsubModePublish, cfg.PubSubMode)
+	publisher, err := pubsubClient(ctx, cfg.PubSubProjectID, pubsubModePublish, cfg.PubSubMode)
 	if err != nil {
 		setupLog.Error(err, "create pubsub publisher: %s", err)
 		os.Exit(1)
