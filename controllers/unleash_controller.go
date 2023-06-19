@@ -300,7 +300,7 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 		return nil
 	}
 
-	token, err := GetApiToken(ctx, r, unleash.GetName(), unleash.GetNamespace())
+	token, err := r.GetApiToken(ctx, unleash.GetName(), unleash.GetNamespace())
 	if err != nil {
 		return fmt.Errorf("fetch secret api token: %w", err)
 	}
@@ -797,7 +797,7 @@ func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // GetApiToken will return the API token for the Unleash instance
-func GetApiToken(ctx context.Context, r client.Client, unleashName, operatorNamespace string) (string, error) {
+func (r *UnleashReconciler) GetApiToken(ctx context.Context, unleashName, operatorNamespace string) (string, error) {
 	secret := &corev1.Secret{}
 	err := r.Get(ctx, types.NamespacedName{Name: unleashName, Namespace: operatorNamespace}, secret)
 	if err != nil {
