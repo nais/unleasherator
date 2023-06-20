@@ -45,6 +45,8 @@ controllerManager:
         cpu: 50m
         memory: 256Mi
   replicas: 1
+  serviceaccount:
+    annotations: {}
 kubernetesClusterDomain: cluster.local
 managerConfig:
   controllerManagerConfigYaml: |-
