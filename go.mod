@@ -13,9 +13,9 @@ require (
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/stretchr/testify v1.8.2
-	k8s.io/api v0.26.4
-	k8s.io/apimachinery v0.26.4
-	k8s.io/client-go v0.26.4
+	k8s.io/api v0.26.6
+	k8s.io/apimachinery v0.26.6
+	k8s.io/client-go v0.26.6
 	sigs.k8s.io/controller-runtime v0.14.6
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20230513180526-af986b86bcca
 	sigs.k8s.io/controller-tools v0.11.4
