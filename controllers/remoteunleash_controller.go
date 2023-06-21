@@ -30,7 +30,7 @@ type RemoteUnleashReconciler struct {
 	Scheme             *runtime.Scheme
 	Recorder           record.EventRecorder
 	OperatorNamespace  string
-	PubSubSubscription *pubsub.Subscription
+	PubsubSubscription *pubsub.Subscription
 }
 
 var (
@@ -46,7 +46,7 @@ var (
 	pubsubMessages = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_messages",
-			Help: "Number of PubSub messages received",
+			Help: "Number of Pubsub messages received",
 		},
 		[]string{"status"},
 	)
@@ -293,15 +293,15 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 
 }
 
-func (r *RemoteUnleashReconciler) ConsumePubSubMessages(ctx context.Context) error {
-	if r.PubSubSubscription == nil {
+func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) error {
+	if r.PubsubSubscription == nil {
 		return nil
 	}
 
 	var permanentError error
 
 	for ctx.Err() == nil && permanentError == nil {
-		err := r.PubSubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
+		err := r.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
 			const kubernetesWriteTimeout = time.Second * 5
 			timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
 			defer cancel()

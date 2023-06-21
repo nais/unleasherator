@@ -3,11 +3,7 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
-
-	"cloud.google.com/go/pubsub"
-	"github.com/kelseyhightower/envconfig"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -23,6 +19,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/controllers"
+	"github.com/nais/unleasherator/pkg/config"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -31,40 +28,12 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-type PubSubMode string
-
-func (p *PubSubMode) Set(value string) error {
-	switch value {
-	case pubsubModeDisabled:
-	case pubsubModePublish:
-	case pubsubModeSubscribe:
-	default:
-		return fmt.Errorf("unsupported pubsub mode %q", value)
-	}
-	*p = PubSubMode(value)
-	return nil
-}
-
-type Config struct {
-	ApiTokenNameSuffix   string     `envconfig:"API_TOKEN_NAME_SUFFIX"`
-	OperatorNamespace    string     `envconfig:"OPERATOR_NAMESPACE"`
-	PubSubProjectID      string     `envconfig:"PUBSUB_GCP_PROJECT_ID"`
-	PubSubTopic          string     `envconfig:"PUBSUB_TOPIC"`
-	PubSubMode           PubSubMode `envconfig:"PUBSUB_MODE"`
-	PubSubSubscriptionID string     `envconfig:"PUBSUB_SUBSCRIPTION_ID"`
-}
-
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(unleashv1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
-
-const envVarPrefix = ""
-const pubsubModeDisabled = ""
-const pubsubModePublish = "publish"
-const pubsubModeSubscribe = "subscribe"
 
 func main() {
 	var configFile string
@@ -78,11 +47,10 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	// Environment variables
-	cfg := &Config{}
-	err := envconfig.Process(envVarPrefix, cfg)
+	// Load configuration from environment
+	cfg, err := config.LoadFromEnv()
 	if err != nil {
-		setupLog.Error(err, "parse configuration: %s", err)
+		setupLog.Error(err, "unable to load configuration from environment")
 		os.Exit(1)
 	}
 
@@ -113,20 +81,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	subscriber, err := pubsubClient(ctx, cfg.PubSubProjectID, pubsubModeSubscribe, cfg.PubSubMode)
+	subscriber, err := cfg.PubsubSubscriber(ctx)
 	if err != nil {
 		setupLog.Error(err, "create pubsub subscriber: %s", err)
 		os.Exit(1)
 	}
 	defer subscriber.Close()
 
-	subscription, err := pubsubSubscription(ctx, subscriber, cfg.PubSubTopic, cfg.PubSubSubscriptionID)
+	subscription, err := cfg.PubsubSubscription(ctx, subscriber)
 	if err != nil {
 		setupLog.Error(err, "create pubsub subscription: %s", err)
 		os.Exit(1)
 	}
 
-	publisher, err := pubsubClient(ctx, cfg.PubSubProjectID, pubsubModePublish, cfg.PubSubMode)
+	publisher, err := cfg.PubsubPublisher(ctx)
 	if err != nil {
 		setupLog.Error(err, "create pubsub publisher: %s", err)
 		os.Exit(1)
@@ -138,8 +106,8 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
-		PubSubClient:      publisher,
-		TopicName:         cfg.PubSubTopic,
+		PubsubClient:      publisher,
+		TopicName:         cfg.Federation.PubsubTopic,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
@@ -149,7 +117,7 @@ func main() {
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace:  cfg.OperatorNamespace,
-		PubSubSubscription: subscription,
+		PubsubSubscription: subscription,
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
@@ -168,7 +136,7 @@ func main() {
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {
-		er := remoteUnleashReconciler.ConsumePubSubMessages(ctx)
+		er := remoteUnleashReconciler.ConsumePubsubMessages(ctx)
 		if er != nil {
 			setupLog.Error(err, "pubsub subscriber stopped working")
 			cancel()
@@ -191,25 +159,4 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-func pubsubClient(ctx context.Context, projectID string, target, configured PubSubMode) (*pubsub.Client, error) {
-	if target != configured {
-		return nil, nil
-	}
-	return pubsub.NewClient(ctx, projectID)
-}
-
-func pubsubSubscription(ctx context.Context, client *pubsub.Client, topic, subscriptionID string) (*pubsub.Subscription, error) {
-	if client == nil {
-		return nil, nil
-	}
-	return client.CreateSubscription(
-		ctx,
-		subscriptionID,
-		pubsub.SubscriptionConfig{
-			Topic:                 client.Topic(topic),
-			EnableMessageOrdering: true,
-		},
-	)
 }
