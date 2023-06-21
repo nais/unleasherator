@@ -183,11 +183,6 @@ $(HELMIFY): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-<<<<<<< HEAD
-	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
-||||||| parent of 45310d6 (Prepare a Protobuf type for communication between controllers)
-	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
-=======
 	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
 
 install-protobuf-go:
@@ -195,4 +190,3 @@ install-protobuf-go:
 
 proto:
 	$(PROTOC) --go_opt=paths=source_relative --go_out=. pkg/pb/unleasherator.proto
->>>>>>> 45310d6 (Prepare a Protobuf type for communication between controllers)
