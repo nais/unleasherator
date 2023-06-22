@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/protobuf/proto"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
