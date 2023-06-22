@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/jarcoal/httpmock v1.3.0
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/nais/helmify v0.4.4-alpha2
+	github.com/nais/helmify v0.4.4-alpha6
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.8
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.64.1
