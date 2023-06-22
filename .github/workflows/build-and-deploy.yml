@@ -55,7 +55,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install make
       - name: Generate code
         run: |
-          make generate
+          make generate proto
           #if git diff-index --quiet HEAD --; then
           #  echo "Code generated successfully."
           #else
