@@ -106,18 +106,24 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
-		PubsubClient:      publisher,
-		TopicName:         cfg.Federation.PubsubTopic,
+		Federation: controllers.UnleashFederation{
+			Enabled:      cfg.Federation.Enabled,
+			PubsubClient: publisher,
+			TopicName:    cfg.Federation.PubsubTopic,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
 	remoteUnleashReconciler := &controllers.RemoteUnleashReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("remote-unleash-controller"),
-		OperatorNamespace:  cfg.OperatorNamespace,
-		PubsubSubscription: subscription,
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
+		OperatorNamespace: cfg.OperatorNamespace,
+		Federation: controllers.RemoteUnleashFederation{
+			Enabled:            cfg.Federation.Enabled,
+			PubsubSubscription: subscription,
+		},
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")

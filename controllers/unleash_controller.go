@@ -57,8 +57,13 @@ type UnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
-	PubsubClient      *pubsub.Client
-	TopicName         string
+	Federation        UnleashFederation
+}
+
+type UnleashFederation struct {
+	Enabled      bool
+	PubsubClient *pubsub.Client
+	TopicName    string
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -296,7 +301,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unleash *unleashv1.Unleash) error {
-	if r.PubsubClient == nil {
+	if !r.Federation.Enabled {
 		return nil
 	}
 
@@ -317,7 +322,7 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 		PublishTime: time.Now(),
 		OrderingKey: pubsubOrderingKey,
 	}
-	result := r.PubsubClient.Topic(r.TopicName).Publish(ctx, msg)
+	result := r.Federation.PubsubClient.Topic(r.Federation.TopicName).Publish(ctx, msg)
 	_, err = result.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("publish protobuf message: %w", err)

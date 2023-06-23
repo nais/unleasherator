@@ -27,9 +27,14 @@ import (
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	Recorder           record.EventRecorder
-	OperatorNamespace  string
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	OperatorNamespace string
+	Federation        RemoteUnleashFederation
+}
+
+type RemoteUnleashFederation struct {
+	Enabled            bool
 	PubsubSubscription *pubsub.Subscription
 }
 
@@ -294,14 +299,14 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 }
 
 func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) error {
-	if r.PubsubSubscription == nil {
+	if !r.Federation.Enabled {
 		return nil
 	}
 
 	var permanentError error
 
 	for ctx.Err() == nil && permanentError == nil {
-		err := r.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
+		err := r.Federation.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
 			const kubernetesWriteTimeout = time.Second * 5
 			timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
 			defer cancel()

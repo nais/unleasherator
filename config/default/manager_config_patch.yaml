@@ -13,13 +13,15 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: "unleasherator"
-        - name: PUBSUB_GCP_PROJECT_ID
+        - name: FEDERATION_ENABLED
+          value: "false"
+        - name: FEDERATION_PUBSUB_GCP_PROJECT_ID
           value: ""
-        - name: PUBSUB_TOPIC
+        - name: FEDERATION_PUBSUB_MODE
           value: ""
-        - name: PUBSUB_MODE
+        - name: FEDERATION_PUBSUB_TOPIC
           value: ""
-        - name: PUBSUB_SUBSCRIPTION_ID
+        - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID
           value: ""
         - name: OPERATOR_NAMESPACE
           valueFrom:
