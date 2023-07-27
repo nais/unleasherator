@@ -30,7 +30,7 @@ sequenceDiagram
 The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains two keys:
 
 - `UNLEASH_SERVER_API_TOKEN` - the token itself
-- `UNLEASH_SERVER_API_URL` - the URL of the Unleash instance
+- `UNLEASH_SERVER_API_URL` - the URL of the Unleash instance (remember to add `/api` to the end when authenticating to the Unleash API)
 
 ## Spec
 
