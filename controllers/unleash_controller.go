@@ -6,11 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"cloud.google.com/go/pubsub"
-	"github.com/google/uuid"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -29,12 +26,12 @@ import (
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/resources"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
-const pubsubOrderingKey = "order"
 
 var (
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
@@ -61,9 +58,8 @@ type UnleashReconciler struct {
 }
 
 type UnleashFederation struct {
-	Enabled      bool
-	PubsubClient *pubsub.Client
-	TopicName    string
+	Enabled   bool
+	Publisher federation.Publisher
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -310,25 +306,7 @@ func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unl
 		return fmt.Errorf("fetch secret api token: %w", err)
 	}
 
-	instance := resources.UnleasheratorInstance(unleash, token)
-	payload, err := proto.Marshal(instance)
-	if err != nil {
-		return fmt.Errorf("marshal protobuf message: %w", err)
-	}
-
-	msg := &pubsub.Message{
-		ID:          uuid.New().String(),
-		Data:        payload,
-		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
-	}
-	result := r.Federation.PubsubClient.Topic(r.Federation.TopicName).Publish(ctx, msg)
-	_, err = result.Get(ctx)
-	if err != nil {
-		return fmt.Errorf("publish protobuf message: %w", err)
-	}
-
-	return nil
+	return r.Federation.Publisher.Publish(ctx, unleash, token)
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.

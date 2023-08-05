@@ -95,6 +95,25 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Federation is the configuration for Unleash federation
+	// +kubebuilder:validation:Optional
+	Federation UnleashFederationConfig `json:"federation,omitempty"`
+}
+
+// UnleashFederationConfig defines the configuration for Unleash federation
+type UnleashFederationConfig struct {
+	// Enable enables Unleash federation
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Clusters are the clusters to federate to
+	// +kubebuilder:validation:Optional
+	Clusters []string `json:"clusters,omitempty"`
+
+	// Namespaces are the namespaces to federate to
+	// +kubebuilder:validation:Optional
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // UnleashPrometheusConfig defines the prometheus configuration

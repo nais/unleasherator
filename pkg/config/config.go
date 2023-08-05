@@ -6,6 +6,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/nais/unleasherator/pkg/federation"
 )
 
 const (
@@ -49,30 +50,55 @@ func LoadFromEnv() (*Config, error) {
 	return cfg, err
 }
 
-func (c *Config) PubsubSubscriber(ctx context.Context) (*pubsub.Client, error) {
-	return c.pubsubClient(ctx, FederationModeSubscribe)
-}
-
-func (c *Config) PubsubPublisher(ctx context.Context) (*pubsub.Client, error) {
-	return c.pubsubClient(ctx, FederationModePublish)
-}
-
-func (c *Config) pubsubClient(ctx context.Context, target FederationMode) (*pubsub.Client, error) {
-	if target != c.Federation.Mode {
+func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, error) {
+	if c.Federation.Mode != FederationModeSubscribe {
 		return nil, nil
 	}
+
+	client, err := c.pubsubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	subscription, err := c.pubsubSubscription(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+
+	return federation.NewSubscriber(client, subscription, c.OperatorNamespace), nil
+}
+
+func (c *Config) PubsubPublisher(ctx context.Context) (federation.Publisher, error) {
+	if c.Federation.Mode != FederationModePublish {
+		return nil, nil
+	}
+
+	client, err := c.pubsubClient(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	topic := c.pubsubTopic(client)
+
+	return federation.NewPublisher(client, topic), nil
+}
+
+func (c *Config) pubsubClient(ctx context.Context) (*pubsub.Client, error) {
 	return pubsub.NewClient(ctx, c.Federation.PubsubProjectID)
 }
 
-func (c *Config) PubsubSubscription(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error) {
-	if client == nil {
-		return nil, nil
-	}
+func (c *Config) pubsubTopic(client *pubsub.Client) *pubsub.Topic {
+	return client.Topic(c.Federation.PubsubTopic)
+}
+
+func (c *Config) pubsubSubscription(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error) {
+	topic := c.pubsubTopic(client)
+
 	return client.CreateSubscription(
 		ctx,
 		c.Federation.PubsubSubscriptionID,
 		pubsub.SubscriptionConfig{
-			Topic:                 client.Topic(c.Federation.PubsubTopic),
+			Topic:                 topic,
 			EnableMessageOrdering: true,
 		},
 	)

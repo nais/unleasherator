@@ -3121,6 +3121,24 @@ spec:
                   - name
                   type: object
                 type: array
+              federation:
+                description: Federation is the configuration for Unleash federation
+                properties:
+                  clusters:
+                    description: Clusters are the clusters to federate to
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    default: false
+                    description: Enable enables Unleash federation
+                    type: boolean
+                  namespaces:
+                    description: Namespaces are the namespaces to federate to
+                    items:
+                      type: string
+                    type: array
+                type: object
               networkPolicy:
                 description: NetworkPolicy defines the network policy configuration
                 properties:

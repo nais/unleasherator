@@ -5,7 +5,6 @@ import (
 	"os"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -15,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Defaults for the Unleash custom resource
@@ -582,53 +580,4 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	}
 
 	return envVars, nil
-}
-
-func UnleasheratorInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {
-	return &pb.Instance{
-		Version:     pb.Version,
-		Status:      pb.Status_Provisioned,
-		Name:        unleash.GetName(),
-		Url:         unleash.PublicSecureURL(),
-		SecretToken: token,
-		Namespaces:  []string{unleash.GetName()},
-	}
-}
-
-func RemoteUnleasheratorResource(instance *pb.Instance, namespace, secretName, secretNamespace string) client.Object {
-	return &unleashv1.RemoteUnleash{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "RemoteUnleash",
-			APIVersion: "unleash.nais.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.GetName(),
-			Namespace: namespace,
-		},
-		Spec: unleashv1.RemoteUnleashSpec{
-			Server: unleashv1.RemoteUnleashServer{
-				URL: instance.GetUrl(),
-			},
-			AdminSecret: unleashv1.RemoteUnleashSecret{
-				Name:      secretName,
-				Key:       unleashv1.UnleashSecretTokenKey,
-				Namespace: secretNamespace,
-			},
-		},
-	}
-}
-
-func RemoteUnleasheratorResources(instance *pb.Instance, secretNamespace string) []client.Object {
-	secretName := "unleasherator-" + instance.GetName() // fixme: might be too long, use namegen.* from liberator
-	resources := make([]client.Object, 0, len(instance.GetNamespaces())*2)
-	for _, namespace := range instance.GetNamespaces() {
-		resources = append(resources, RemoteUnleasheratorResource(instance, namespace, secretName, secretNamespace))
-		resources = append(resources, OperatorSecretForUnleash(
-			instance.GetName(),
-			secretName,
-			secretNamespace,
-			instance.GetSecretToken(),
-		))
-	}
-	return resources
 }

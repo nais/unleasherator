@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"cloud.google.com/go/pubsub"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
-	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleash"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,8 +33,8 @@ type RemoteUnleashReconciler struct {
 }
 
 type RemoteUnleashFederation struct {
-	Enabled            bool
-	PubsubSubscription *pubsub.Subscription
+	Enabled    bool
+	Subscriber federation.Subscriber
 }
 
 var (
@@ -299,39 +298,77 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 }
 
 func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) error {
+	log := log.FromContext(ctx, "method", "ConsumePubsubMessages")
+
 	if !r.Federation.Enabled {
+		log.Info("Federation is disabled, not consuming pubsub messages")
 		return nil
 	}
 
 	var permanentError error
 
 	for ctx.Err() == nil && permanentError == nil {
-		err := r.Federation.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
-			const kubernetesWriteTimeout = time.Second * 5
-			timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
-			defer cancel()
+		log.Info("Waiting for pubsub messages")
+		err := r.Federation.Subscriber.Subscribe(ctx, func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
+			log.Info("Received pubsub message", "status", status)
+			// TODO: prometheus metrics for pubsub message status
 
-			instance := &pb.Instance{}
-			err := proto.Unmarshal(message.Data, instance)
+			switch status {
+			case pb.Status_Removed:
+				log.Info("Received Status_Removed, not implemented yet")
+				return nil
 
-			if err == nil {
-				pubsubMessages.WithLabelValues("success").Inc()
-			} else {
-				pubsubMessages.WithLabelValues("error").Inc()
-			}
+			case pb.Status_Provisioned:
+				log.Info("Received Status_Provisioned, not implemented yet")
 
-			res := resources.RemoteUnleasheratorResources(instance, r.OperatorNamespace)
-			err = r.PersistAll(timeoutContext, res)
-			if err != nil {
-				message.Nack()
-				if !retryableError(err) {
-					permanentError = err
+				const kubernetesWriteTimeout = time.Second * 5
+				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
+				defer cancel()
+
+				// TODO: prometheus metrics for created status
+				err := r.PersistAll(timeoutContext, append(remoteUnleashes, adminSecret))
+				if err != nil {
+					pubsubMessages.WithLabelValues("error").Inc()
+					if !retryableError(err) {
+						permanentError = err
+					}
+					return err
 				}
-				return
-			}
 
-			message.Ack()
+				pubsubMessages.WithLabelValues("success").Inc()
+				return nil
+			default:
+				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
+				return nil
+			}
 		})
+
+		//err := r.Federation.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
+		//	const kubernetesWriteTimeout = time.Second * 5
+		//	timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
+		//	defer cancel()
+
+		//	instance := &pb.Instance{}
+		//	err := proto.Unmarshal(message.Data, instance)
+
+		//	if err == nil {
+		//		pubsubMessages.WithLabelValues("success").Inc()
+		//	} else {
+		//		pubsubMessages.WithLabelValues("error").Inc()
+		//	}
+
+		//	res := resources.RemoteunleashInstances(instance, r.OperatorNamespace)
+		//	err = r.PersistAll(timeoutContext, res)
+		//	if err != nil {
+		//		message.Nack()
+		//		if !retryableError(err) {
+		//			permanentError = err
+		//		}
+		//		return
+		//	}
+
+		//	message.Ack()
+		//})
 
 		if err != nil {
 			return err

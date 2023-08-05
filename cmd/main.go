@@ -88,12 +88,6 @@ func main() {
 	}
 	defer subscriber.Close()
 
-	subscription, err := cfg.PubsubSubscription(ctx, subscriber)
-	if err != nil {
-		setupLog.Error(err, "create pubsub subscription: %s", err)
-		os.Exit(1)
-	}
-
 	publisher, err := cfg.PubsubPublisher(ctx)
 	if err != nil {
 		setupLog.Error(err, "create pubsub publisher: %s", err)
@@ -107,9 +101,8 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.UnleashFederation{
-			Enabled:      cfg.Federation.Enabled,
-			PubsubClient: publisher,
-			TopicName:    cfg.Federation.PubsubTopic,
+			Enabled:   cfg.Federation.Enabled,
+			Publisher: publisher,
 		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
@@ -121,8 +114,8 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.RemoteUnleashFederation{
-			Enabled:            cfg.Federation.Enabled,
-			PubsubSubscription: subscription,
+			Enabled:    cfg.Federation.Enabled,
+			Subscriber: subscriber,
 		},
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
@@ -144,7 +137,7 @@ func main() {
 	go func(ctx context.Context) {
 		er := remoteUnleashReconciler.ConsumePubsubMessages(ctx)
 		if er != nil {
-			setupLog.Error(err, "pubsub subscriber stopped working")
+			setupLog.Error(err, "PubSub subscriber error, shutting down")
 			cancel()
 		}
 	}(ctx)
