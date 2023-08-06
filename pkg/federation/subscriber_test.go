@@ -21,24 +21,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func newPubSub(ctx context.Context, topicName string) (c *pubsub.Client, topic *pubsub.Topic, sub *pubsub.Subscription, err error) {
+func newPubSub(ctx context.Context, topicName string) (srv *pstest.Server, conn *grpc.ClientConn, c *pubsub.Client, topic *pubsub.Topic, sub *pubsub.Subscription, err error) {
 	// Start a fake server running locally.
-	srv := pstest.NewServer()
-	defer srv.Close()
+	srv = pstest.NewServer()
 
 	// Connect to the server without using TLS.
-	conn, err := grpc.Dial(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err = grpc.Dial(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return
 	}
-	defer conn.Close()
 
 	// Use the connection when creating a pubsub client.
 	c, err = pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
 	if err != nil {
 		return
 	}
-	defer c.Close()
 
 	// Create a new topic.
 	topic, err = c.CreateTopic(ctx, topicName)
@@ -50,8 +47,9 @@ func newPubSub(ctx context.Context, topicName string) (c *pubsub.Client, topic *
 	topic.EnableMessageOrdering = true
 
 	// Create a new subscription.
-	sub, err = c.CreateSubscription(ctx, "test", pubsub.SubscriptionConfig{
-		Topic: topic,
+	sub, err = c.CreateSubscription(ctx, "test-sub", pubsub.SubscriptionConfig{
+		EnableMessageOrdering: true,
+		Topic:                 topic,
 	})
 	if err != nil {
 		return
@@ -66,8 +64,13 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	apiToken := "test"
 	unleashName := "test"
 
-	c, topic, subscription, err := newPubSub(ctx, "test")
-	assert.NoError(t, err)
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "test-topic")
+	if err != nil {
+		t.Fatal("Fatal", err)
+	}
+	defer srv.Close()
+	defer conn.Close()
+	defer c.Close()
 
 	// Create a new subscriber.
 	subscriber := NewSubscriber(c, subscription, operatorNamespace)
@@ -78,6 +81,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
 		started <- true
+
 		err = subscriber.Subscribe(ctx, func(remoteUnleash []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-random", adminSecret.GetName())

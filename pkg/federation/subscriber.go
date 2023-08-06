@@ -36,15 +36,18 @@ func (s *subscriber) Close() error {
 // nil. To nack a message, the handler function must return an error.
 // To stop receiving messages, cancel the context.
 func (s *subscriber) Subscribe(ctx context.Context, handler Handler) error {
+	log := log.FromContext(ctx)
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	fmt.Println("waiting for subscription to receive messages")
+	log.Info("pubsub: waiting for subscription to receive messages")
 	return s.subscription.Receive(cctx, func(ctx context.Context, msg *pubsub.Message) {
-		fmt.Println("received message")
+		log.Info("pubsub: received message", "message", msg)
 		if err := s.handleMessage(ctx, msg, handler); err != nil {
+			log.Error(err, "pubsub: nack message")
 			msg.Nack()
 		} else {
+			log.Info("pubsub: ack message")
 			msg.Ack()
 		}
 	})
