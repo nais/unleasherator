@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func newPubSub(ctx context.Context, topicName string) (srv *pstest.Server, conn *grpc.ClientConn, c *pubsub.Client, topic *pubsub.Topic, sub *pubsub.Subscription, err error) {
+func newPubSub(ctx context.Context, namePrefix string) (srv *pstest.Server, conn *grpc.ClientConn, c *pubsub.Client, topic *pubsub.Topic, sub *pubsub.Subscription, err error) {
+	projectName := fmt.Sprintf("%s-project", namePrefix)
+	topicName := fmt.Sprintf("%s-topic", namePrefix)
+	subName := fmt.Sprintf("%s-sub", namePrefix)
+
 	// Start a fake server running locally.
 	srv = pstest.NewServer()
 
@@ -32,7 +37,7 @@ func newPubSub(ctx context.Context, topicName string) (srv *pstest.Server, conn 
 	}
 
 	// Use the connection when creating a pubsub client.
-	c, err = pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
+	c, err = pubsub.NewClient(ctx, projectName, option.WithGRPCConn(conn))
 	if err != nil {
 		return
 	}
@@ -47,7 +52,7 @@ func newPubSub(ctx context.Context, topicName string) (srv *pstest.Server, conn 
 	topic.EnableMessageOrdering = true
 
 	// Create a new subscription.
-	sub, err = c.CreateSubscription(ctx, "test-sub", pubsub.SubscriptionConfig{
+	sub, err = c.CreateSubscription(ctx, subName, pubsub.SubscriptionConfig{
 		EnableMessageOrdering: true,
 		Topic:                 topic,
 	})
@@ -64,7 +69,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	apiToken := "test"
 	unleashName := "test"
 
-	srv, conn, c, topic, subscription, err := newPubSub(ctx, "test-topic")
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "subscriber-test-topic")
 	if err != nil {
 		t.Fatal("Fatal", err)
 	}
@@ -77,6 +82,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	started := make(chan bool)
 	received := make(chan bool)
+	done := false
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
@@ -93,7 +99,12 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 			return nil
 		})
-		assert.NoError(t, err)
+
+		// Don't assert error after the test is done.
+		// This is because the subscriber will return an error when the test is done due to the subscription being closed.
+		if !done {
+			assert.NoError(t, err)
+		}
 	}()
 
 	<-started
@@ -127,6 +138,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Wait for the message to be received.
 	<-received
+	done = true
 }
 
 func TestSubscriber_handleMessage(t *testing.T) {
