@@ -10,7 +10,7 @@ func UnleashFederationInstance(unleash *unleashv1.Unleash, token string) *pb.Ins
 		Version:     pb.Version,
 		Status:      pb.Status_Provisioned,
 		Name:        unleash.GetName(),
-		Url:         unleash.PublicSecureURL(),
+		Url:         unleash.PublicApiURL(),
 		SecretToken: token,
 		Namespaces:  []string{unleash.GetName()},
 	}

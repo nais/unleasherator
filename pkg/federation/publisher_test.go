@@ -60,7 +60,7 @@ func TestPublisherPublish(t *testing.T) {
 			assert.Equal(t, pb.Version, int(instance.Version))
 			assert.Equal(t, pb.Status_Provisioned, instance.Status)
 			assert.Equal(t, unleashName, instance.Name)
-			assert.Equal(t, unleash.PublicSecureURL(), instance.Url)
+			assert.Equal(t, unleash.PublicApiURL(), instance.Url)
 			assert.Equal(t, apiToken, instance.SecretToken)
 			assert.Equal(t, []string{unleashName}, instance.Namespaces)
 

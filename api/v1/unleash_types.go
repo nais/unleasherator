@@ -311,8 +311,12 @@ func (u *Unleash) URL() string {
 	return fmt.Sprintf("http://%s.%s", u.Name, u.Namespace)
 }
 
-func (u *Unleash) PublicSecureURL() string {
+func (u *Unleash) PublicApiURL() string {
 	return fmt.Sprintf("https://%s", u.Spec.ApiIngress.Host)
+}
+
+func (u *Unleash) PublicWebURL() string {
+	return fmt.Sprintf("https://%s", u.Spec.WebIngress.Host)
 }
 
 func (u *Unleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {

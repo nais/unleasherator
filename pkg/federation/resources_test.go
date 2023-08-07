@@ -30,7 +30,7 @@ func TestUnleashFederationInstance(t *testing.T) {
 	assert.Equal(t, int32(pb.Version), instance.Version, "unexpected version")
 	assert.Equal(t, pb.Status_Provisioned, instance.Status, "unexpected status")
 	assert.Equal(t, unleash.GetName(), instance.Name, "unexpected name")
-	assert.Equal(t, unleash.PublicSecureURL(), instance.Url, "unexpected URL")
+	assert.Equal(t, unleash.PublicApiURL(), instance.Url, "unexpected URL")
 	assert.Equal(t, token, instance.SecretToken, "unexpected token")
 	assert.Equal(t, []string{unleash.GetName()}, instance.Namespaces, "unexpected namespaces")
 }
