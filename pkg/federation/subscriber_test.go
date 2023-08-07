@@ -18,7 +18,7 @@ import (
 )
 
 func TestSubscriber_Subscribe(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
 	operatorNamespace := "my-ns"
 	apiToken := "test"
 	unleashName := "test"
@@ -34,14 +34,35 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	// Create a new subscriber.
 	subscriber := NewSubscriber(c, subscription, operatorNamespace)
 
-	started := make(chan bool)
 	received := make(chan bool)
-	done := false
+	finished := false
+
+	unleash := unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: unleashName,
+		},
+		Spec: unleashv1.UnleashSpec{
+			Size: 1,
+		},
+	}
+
+	instance := UnleashFederationInstance(&unleash, apiToken)
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+
+	msg := &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: pubsubOrderingKey,
+	}
+
+	res := topic.Publish(ctx, msg)
+	_, err = res.Get(ctx)
+	assert.NoError(t, err)
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		started <- true
-
 		err = subscriber.Subscribe(ctx, func(remoteUnleash []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-random", adminSecret.GetName())
@@ -54,45 +75,17 @@ func TestSubscriber_Subscribe(t *testing.T) {
 			return nil
 		})
 
-		// Don't assert error after the test is done.
-		// This is because the subscriber will return an error when the test is done due to the subscription being closed.
-		if !done {
+		// Don't assert error after the test is finished.
+		// This is because the subscriber will return an error when the test is finished due to the subscription being closed.
+		if !finished {
 			assert.NoError(t, err)
 		}
 	}()
 
-	<-started
-
-	// Publish a message to the topic.
-	go func() {
-		unleash := unleashv1.Unleash{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: unleashName,
-			},
-			Spec: unleashv1.UnleashSpec{
-				Size: 1,
-			},
-		}
-
-		instance := UnleashFederationInstance(&unleash, apiToken)
-		payload, err := proto.Marshal(instance)
-		assert.NoError(t, err)
-
-		msg := &pubsub.Message{
-			ID:          uuid.New().String(),
-			Data:        payload,
-			PublishTime: time.Now(),
-			OrderingKey: pubsubOrderingKey,
-		}
-
-		res := topic.Publish(ctx, msg)
-		_, err = res.Get(ctx)
-		assert.NoError(t, err)
-	}()
-
 	// Wait for the message to be received.
 	<-received
-	done = true
+	finished = true
+	cancel()
 }
 
 func TestSubscriber_handleMessage(t *testing.T) {
