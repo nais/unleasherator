@@ -42,6 +42,14 @@ var (
 		},
 		[]string{"namespace", "name", "status"},
 	)
+
+	unleashPublished = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_federation_published",
+			Help: "Number of PubSub messages published",
+		},
+		[]string{"status"},
+	)
 )
 
 func init() {
@@ -288,7 +296,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	err = r.PublishUnleasheratorMessage(ctx, unleash)
+	err = r.federationPublish(ctx, unleash)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -296,16 +304,18 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, err
 }
 
-func (r *UnleashReconciler) PublishUnleasheratorMessage(ctx context.Context, unleash *unleashv1.Unleash) error {
+func (r *UnleashReconciler) federationPublish(ctx context.Context, unleash *unleashv1.Unleash) error {
 	if !r.Federation.Enabled {
 		return nil
 	}
 
 	token, err := r.GetApiToken(ctx, unleash.GetName(), unleash.GetNamespace())
 	if err != nil {
+		unleashPublished.WithLabelValues(unleash.GetName(), unleash.GetNamespace(), "failed").Inc()
 		return fmt.Errorf("fetch secret api token: %w", err)
 	}
 
+	unleashPublished.WithLabelValues(unleash.GetName(), unleash.GetNamespace(), "success").Inc()
 	return r.Federation.Publisher.Publish(ctx, unleash, token)
 }
 

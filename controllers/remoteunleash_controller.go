@@ -47,10 +47,10 @@ var (
 		[]string{"namespace", "name", "status"},
 	)
 
-	pubsubMessages = prometheus.NewCounterVec(
+	remoteUnleashReceived = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unleasherator_messages",
-			Help: "Number of Pubsub messages received",
+			Name: "unleasherator_federation_received",
+			Help: "Number of PubSub messages received",
 		},
 		[]string{"status"},
 	)
@@ -297,8 +297,8 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 
 }
 
-func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) error {
-	log := log.FromContext(ctx, "method", "ConsumePubsubMessages")
+func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error {
+	log := log.FromContext(ctx, "method", "FederationSubscribe")
 
 	if !r.Federation.Enabled {
 		log.Info("Federation is disabled, not consuming pubsub messages")
@@ -326,16 +326,16 @@ func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) err
 				defer cancel()
 
 				// TODO: prometheus metrics for created status
-				err := r.PersistAll(timeoutContext, append(remoteUnleashes, adminSecret))
+				err := r.persistAll(timeoutContext, append(remoteUnleashes, adminSecret))
 				if err != nil {
-					pubsubMessages.WithLabelValues("error").Inc()
-					if !retryableError(err) {
+					remoteUnleashReceived.WithLabelValues("error").Inc()
+					if !retirableError(err) {
 						permanentError = err
 					}
 					return err
 				}
 
-				pubsubMessages.WithLabelValues("success").Inc()
+				remoteUnleashReceived.WithLabelValues("success").Inc()
 				return nil
 			default:
 				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
@@ -352,9 +352,9 @@ func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) err
 		//	err := proto.Unmarshal(message.Data, instance)
 
 		//	if err == nil {
-		//		pubsubMessages.WithLabelValues("success").Inc()
+		//		remoteUnleashPublish.WithLabelValues("success").Inc()
 		//	} else {
-		//		pubsubMessages.WithLabelValues("error").Inc()
+		//		remoteUnleashPublish.WithLabelValues("error").Inc()
 		//	}
 
 		//	res := resources.RemoteunleashInstances(instance, r.OperatorNamespace)
@@ -378,11 +378,11 @@ func (r *RemoteUnleashReconciler) ConsumePubsubMessages(ctx context.Context) err
 	return permanentError
 }
 
-func retryableError(err error) bool {
+func retirableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
 }
 
-func (r *RemoteUnleashReconciler) CreateOrUpdate(ctx context.Context, resource client.Object) error {
+func (r *RemoteUnleashReconciler) createOrUpdate(ctx context.Context, resource client.Object) error {
 	objectKey := client.ObjectKeyFromObject(resource)
 	existing := &unleashv1.RemoteUnleash{}
 	err := r.Get(ctx, objectKey, existing)
@@ -400,9 +400,9 @@ func (r *RemoteUnleashReconciler) CreateOrUpdate(ctx context.Context, resource c
 	return r.Update(ctx, resource)
 }
 
-func (r *RemoteUnleashReconciler) PersistAll(ctx context.Context, resources []client.Object) error {
+func (r *RemoteUnleashReconciler) persistAll(ctx context.Context, resources []client.Object) error {
 	for _, resource := range resources {
-		err := r.CreateOrUpdate(ctx, resource)
+		err := r.createOrUpdate(ctx, resource)
 		if err != nil {
 			return err
 		}
