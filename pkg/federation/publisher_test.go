@@ -18,6 +18,7 @@ func TestPublisherPublish(t *testing.T) {
 	unleashName := "test"
 	unleashNamespace := "my-ns"
 
+	finished := false
 	received := make(chan bool)
 
 	srv, conn, c, topic, subscription, err := newPubSub(ctx, "publisher-test")
@@ -65,9 +66,14 @@ func TestPublisherPublish(t *testing.T) {
 
 			received <- true
 		})
-		assert.NoError(t, err)
+
+		// Prevent asserts from running after the test has finished
+		if !finished {
+			assert.NoError(t, err)
+		}
 	}()
 
 	<-received
+	finished = true
 	cancel()
 }
