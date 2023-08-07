@@ -2,82 +2,72 @@ package federation
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"cloud.google.com/go/pubsub"
-	"cloud.google.com/go/pubsub/pstest"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestPublisherPublish(t *testing.T) {
-	ctx := context.Background()
-	// Start a fake server running locally.
-	srv := pstest.NewServer()
+	ctx, cancel := context.WithCancel(context.Background())
+	apiToken := "test"
+	unleashName := "test"
+	unleashNamespace := "my-ns"
+
+	received := make(chan bool)
+
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "publisher-test")
+	if err != nil {
+		t.Fatal("Fatal", err)
+	}
 	defer srv.Close()
-
-	// Connect to the server without using TLS.
-	conn, err := grpc.Dial(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
-	if err != nil {
-		t.Fatal("Fatal", err)
-	}
 	defer conn.Close()
+	defer c.Close()
 
-	// Use the connection when creating a pubsub client.
-	client, err := pubsub.NewClient(ctx, "project", option.WithGRPCConn(conn))
-	if err != nil {
-		t.Fatal("Fatal", err)
-	}
-	defer client.Close()
-
-	topic, err := client.CreateTopic(ctx, "test-topic")
-	if err != nil {
-		t.Fatal("Fatal", err)
-	}
-
-	topic.EnableMessageOrdering = true
-
-	sub, err := client.CreateSubscription(ctx, "test-sub", pubsub.SubscriptionConfig{
-		Topic:                 topic,
-		EnableMessageOrdering: true,
-	})
-	if err != nil {
-		t.Fatal("Fatal", err)
+	publisher := NewPublisher(c, topic)
+	unleash := unleashv1.Unleash{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Unleash",
+			APIVersion: "unleash.nais.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unleashName,
+			Namespace: unleashNamespace,
+		},
+		Spec: unleashv1.UnleashSpec{
+			Size: 1,
+			ApiIngress: unleashv1.UnleashIngressConfig{
+				Host: "test",
+			},
+		},
 	}
 
-	fmt.Println("Publishing message")
-	res := topic.Publish(ctx, &pubsub.Message{
-		Data:        []byte("test"),
-		OrderingKey: "test",
-	})
-	_, err = res.Get(ctx)
-	if err != nil {
-		t.Fatal("Fatal", err)
-	}
+	err = publisher.Publish(ctx, &unleash, apiToken)
+	assert.NoError(t, err)
 
-	done := false
-	recieved := make(chan bool)
-
-	fmt.Println("Receiving message")
+	// This needs to be run in a separate goroutine, otherwise the channel will block
 	go func() {
-		fmt.Println("Starting subscriber, listening for messages")
-		err = sub.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
-			fmt.Printf("Got message: %q\n", string(msg.Data))
-			msg.Ack()
-			recieved <- true
-		})
+		err = subscription.Receive(ctx, func(ctx context.Context, msg *pubsub.Message) {
+			instance := &pb.Instance{}
+			err := proto.Unmarshal(msg.Data, instance)
+			assert.NoError(t, err)
 
-		if err != nil && !done {
-			fmt.Printf("Error: %v\n", err)
-			t.Error("Error", err)
-		}
+			assert.Equal(t, pb.Version, int(instance.Version))
+			assert.Equal(t, pb.Status_Provisioned, instance.Status)
+			assert.Equal(t, unleashName, instance.Name)
+			assert.Equal(t, unleash.PublicSecureURL(), instance.Url)
+			assert.Equal(t, apiToken, instance.SecretToken)
+			assert.Equal(t, []string{unleashName}, instance.Namespaces)
+
+			received <- true
+		})
+		assert.NoError(t, err)
 	}()
 
-	fmt.Println("Waiting for message")
-	<-recieved
-
-	fmt.Print("Done")
-	done = true
+	<-received
+	cancel()
 }
