@@ -42,6 +42,7 @@ You'll find the documentation for various Unleash resources in the [docs](./docs
 * [Unleash](./docs/unleash.md)
 * [ApiToken](./docs/apitoken.md)
 * [RemoteUnleash](./docs/remoteunleash.md)
+* [Federation](./docs/federation.md)
 
 ### Creating an Unleash instance
 
@@ -182,7 +183,7 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 There's prometheus metrics covering <https://book.kubebuilder.io/reference/metrics-reference.html> the default set of kubebuilder provided performance gauges as well as additional metrics for deployment status.
 
 | Metric                             | Type  | Description                        |
-|------------------------------------|-------|------------------------------------|
+| ---------------------------------- | ----- | ---------------------------------- |
 | unleasherator_unleash_status       | Gauge | Status of Unleash instance         |
 | unleasherator_remoteunleash_status | Gauge | Status of remote Unleash instances |
 
