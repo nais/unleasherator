@@ -18,6 +18,20 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
 
+func unleashWithSpec(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
+	return &unleashv1.Unleash{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "unleash.nais.io/v1",
+			Kind:       "Unleash",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: spec,
+	}
+}
+
 var _ = Describe("Unleash controller", func() {
 
 	// Define utility constants for object names and testing timeouts/durations and intervals.
@@ -36,19 +50,9 @@ var _ = Describe("Unleash controller", func() {
 			UnleashName := "test-unleash-fail"
 
 			By("By creating a new Unleash")
-			unleash := &unleashv1.Unleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "Unleash",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      UnleashName,
-					Namespace: UnleashNamespace,
-				},
-				Spec: unleashv1.UnleashSpec{
-					Database: unleashv1.UnleashDatabaseConfig{},
-				},
-			}
+			unleash := unleashWithSpec(UnleashName, UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{},
+			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			unleashLookupKey := unleash.NamespacedName()
@@ -88,21 +92,11 @@ var _ = Describe("Unleash controller", func() {
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")
-			unleash := &unleashv1.Unleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "Unleash",
+			unleash := unleashWithSpec("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-unleash-success",
-					Namespace: UnleashNamespace,
-				},
-				Spec: unleashv1.UnleashSpec{
-					Database: unleashv1.UnleashDatabaseConfig{
-						URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
-					},
-				},
-			}
+			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			unleashLookupKey := unleash.NamespacedName()
@@ -173,26 +167,16 @@ var _ = Describe("Unleash controller", func() {
 			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
-			unleash := &unleashv1.Unleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "Unleash",
+			unleash := unleashWithSpec("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-unleash-federate",
-					Namespace: UnleashNamespace,
+				Federation: unleashv1.UnleashFederationConfig{
+					Enabled:    true,
+					Namespaces: []string{"namespace1", "namespace2"},
+					Clusters:   []string{"cluster1", "cluster2"},
 				},
-				Spec: unleashv1.UnleashSpec{
-					Database: unleashv1.UnleashDatabaseConfig{
-						URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
-					},
-					Federation: unleashv1.UnleashFederationConfig{
-						Enabled:    true,
-						Namespaces: []string{"namespace1", "namespace2"},
-						Clusters:   []string{"cluster1", "cluster2"},
-					},
-				},
-			}
+			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			unleashLookupKey := unleash.NamespacedName()
