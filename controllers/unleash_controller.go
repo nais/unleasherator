@@ -308,7 +308,10 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // It fetches the API token and publishes the instance using the federation publisher.
 // If the API token cannot be fetched, it returns an error.
 func (r *UnleashReconciler) federationPublish(ctx context.Context, unleash *unleashv1.Unleash) error {
+	log := log.FromContext(ctx)
+
 	if !r.Federation.Enabled && !unleash.Spec.Federation.Enabled {
+		log.Info("Federation is disabled, skipping publishing")
 		return nil
 	}
 
