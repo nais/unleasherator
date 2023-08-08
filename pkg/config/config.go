@@ -37,11 +37,15 @@ type Config struct {
 }
 
 type FederationConfig struct {
-	Enabled              bool           `envconfig:"FEDERATION_ENABLED"`
+	ClusterName          string         `envconfig:"FEDERATION_CLUSTER_NAME"`
 	Mode                 FederationMode `envconfig:"FEDERATION_PUBSUB_MODE"`
 	PubsubProjectID      string         `envconfig:"FEDERATION_PUBSUB_GCP_PROJECT_ID"`
 	PubsubTopic          string         `envconfig:"FEDERATION_PUBSUB_TOPIC"`
 	PubsubSubscriptionID string         `envconfig:"FEDERATION_PUBSUB_SUBSCRIPTION_ID"`
+}
+
+func (f *FederationConfig) IsEnabled() bool {
+	return f.Mode != FederationModeDisabled
 }
 
 func LoadFromEnv() (*Config, error) {

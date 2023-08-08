@@ -101,7 +101,7 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.UnleashFederation{
-			Enabled:   cfg.Federation.Enabled,
+			Enabled:   cfg.Federation.IsEnabled(),
 			Publisher: publisher,
 		},
 	}).SetupWithManager(mgr); err != nil {
@@ -114,8 +114,9 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.RemoteUnleashFederation{
-			Enabled:    cfg.Federation.Enabled,
-			Subscriber: subscriber,
+			Enabled:     cfg.Federation.IsEnabled(),
+			ClusterName: cfg.Federation.ClusterName,
+			Subscriber:  subscriber,
 		},
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {

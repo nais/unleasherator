@@ -304,8 +304,11 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, err
 }
 
+// federationPublish publishes the Unleash instance to pubsub if federation is enabled.
+// It fetches the API token and publishes the instance using the federation publisher.
+// If the API token cannot be fetched, it returns an error.
 func (r *UnleashReconciler) federationPublish(ctx context.Context, unleash *unleashv1.Unleash) error {
-	if !r.Federation.Enabled {
+	if !r.Federation.Enabled && !unleash.Spec.Federation.Enabled {
 		return nil
 	}
 

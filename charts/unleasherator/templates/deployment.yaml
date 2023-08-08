@@ -47,11 +47,13 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
         - name: FEDERATION_ENABLED
           value: {{ quote .Values.controllerManager.manager.env.federationEnabled }}
+        - name: FEDERATION_CLUSTER_NAME
+          value: {{ quote .Values.controllerManager.manager.env.federationClusterName }}
+        - name: FEDERATION_PUBSUB_MODE
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubMode }}
         - name: FEDERATION_PUBSUB_GCP_PROJECT_ID
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubGcpProjectId
             }}
-        - name: FEDERATION_PUBSUB_MODE
-          value: {{ quote .Values.controllerManager.manager.env.federationPubsubMode }}
         - name: FEDERATION_PUBSUB_TOPIC
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubTopic }}
         - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID

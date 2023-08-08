@@ -44,6 +44,10 @@ func TestPublisherPublish(t *testing.T) {
 			ApiIngress: unleashv1.UnleashIngressConfig{
 				Host: "test",
 			},
+			Federation: unleashv1.UnleashFederationConfig{
+				Namespaces: []string{"namespace-1", "namespace-2"},
+				Clusters:   []string{"cluster-1", "cluster-2"},
+			},
 		},
 	}
 
@@ -62,7 +66,8 @@ func TestPublisherPublish(t *testing.T) {
 			assert.Equal(t, unleashName, instance.Name)
 			assert.Equal(t, unleash.PublicApiURL(), instance.Url)
 			assert.Equal(t, apiToken, instance.SecretToken)
-			assert.Equal(t, []string{unleashName}, instance.Namespaces)
+			assert.Equal(t, []string{"namespace-1", "namespace-2"}, instance.Namespaces)
+			assert.Equal(t, []string{"cluster-1", "cluster-2"}, instance.Clusters)
 
 			received <- true
 		})

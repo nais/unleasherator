@@ -33,8 +33,9 @@ type RemoteUnleashReconciler struct {
 }
 
 type RemoteUnleashFederation struct {
-	Enabled    bool
-	Subscriber federation.Subscriber
+	Enabled     bool
+	ClusterName string
+	Subscriber  federation.Subscriber
 }
 
 var (
@@ -52,7 +53,7 @@ var (
 			Name: "unleasherator_federation_received",
 			Help: "Number of PubSub messages received",
 		},
-		[]string{"status"},
+		[]string{"state", "status"},
 	)
 )
 
@@ -309,17 +310,22 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 	for ctx.Err() == nil && permanentError == nil {
 		log.Info("Waiting for pubsub messages")
-		err := r.Federation.Subscriber.Subscribe(ctx, func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
+		err := r.Federation.Subscriber.Subscribe(ctx, func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
 			log.Info("Received pubsub message", "status", status)
-			// TODO: prometheus metrics for pubsub message status
+
+			if !hasValue(r.Federation.ClusterName, clusters) {
+				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
+				return nil
+			}
 
 			switch status {
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, not implemented yet")
+				remoteUnleashReceived.WithLabelValues("removed", "error").Inc()
 				return nil
 
 			case pb.Status_Provisioned:
-				log.Info("Received Status_Provisioned, not implemented yet")
+				log.Info("Received Status_Provisioned")
 
 				const kubernetesWriteTimeout = time.Second * 5
 				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
@@ -328,47 +334,21 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				// TODO: prometheus metrics for created status
 				err := r.persistAll(timeoutContext, append(remoteUnleashes, adminSecret))
 				if err != nil {
-					remoteUnleashReceived.WithLabelValues("error").Inc()
+					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
 					if !retirableError(err) {
 						permanentError = err
 					}
 					return err
 				}
 
-				remoteUnleashReceived.WithLabelValues("success").Inc()
+				remoteUnleashReceived.WithLabelValues("provisioned", "success").Inc()
 				return nil
 			default:
+				remoteUnleashReceived.WithLabelValues("unknown", "error").Inc()
 				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
 				return nil
 			}
 		})
-
-		//err := r.Federation.PubsubSubscription.Receive(ctx, func(ctx context.Context, message *pubsub.Message) {
-		//	const kubernetesWriteTimeout = time.Second * 5
-		//	timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
-		//	defer cancel()
-
-		//	instance := &pb.Instance{}
-		//	err := proto.Unmarshal(message.Data, instance)
-
-		//	if err == nil {
-		//		remoteUnleashPublish.WithLabelValues("success").Inc()
-		//	} else {
-		//		remoteUnleashPublish.WithLabelValues("error").Inc()
-		//	}
-
-		//	res := resources.RemoteunleashInstances(instance, r.OperatorNamespace)
-		//	err = r.PersistAll(timeoutContext, res)
-		//	if err != nil {
-		//		message.Nack()
-		//		if !retryableError(err) {
-		//			permanentError = err
-		//		}
-		//		return
-		//	}
-
-		//	message.Ack()
-		//})
 
 		if err != nil {
 			return err
@@ -378,6 +358,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 	return permanentError
 }
 
+// retirableError returns true if the error is not a forbidden or unauthorized error.
 func retirableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
 }
@@ -400,6 +381,11 @@ func (r *RemoteUnleashReconciler) createOrUpdate(ctx context.Context, resource c
 	return r.Update(ctx, resource)
 }
 
+// persistAll persists all resources in the given slice.
+// If any of the resources fail to persist, the error is returned.
+// Be aware that this function does not do any retries and will return
+// immediately if any of the resources fail to persist. Subsequent
+// resources will not be persisted.
 func (r *RemoteUnleashReconciler) persistAll(ctx context.Context, resources []client.Object) error {
 	for _, resource := range resources {
 		err := r.createOrUpdate(ctx, resource)

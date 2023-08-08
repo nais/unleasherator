@@ -12,6 +12,7 @@ message Instance {
   string url = 4;
   string secretToken = 5;
   repeated string namespaces = 6;
+  repeated string clusters = 7;
 }
 
 enum Status {

@@ -20,6 +20,10 @@ func TestUnleashFederationInstance(t *testing.T) {
 		},
 		Spec: unleashv1.UnleashSpec{
 			Size: 1,
+			Federation: unleashv1.UnleashFederationConfig{
+				Namespaces: []string{"namespace-1", "namespace-2"},
+				Clusters:   []string{"cluster-1", "cluster-2"},
+			},
 		},
 	}
 
@@ -32,5 +36,6 @@ func TestUnleashFederationInstance(t *testing.T) {
 	assert.Equal(t, unleash.GetName(), instance.Name, "unexpected name")
 	assert.Equal(t, unleash.PublicApiURL(), instance.Url, "unexpected URL")
 	assert.Equal(t, token, instance.SecretToken, "unexpected token")
-	assert.Equal(t, []string{unleash.GetName()}, instance.Namespaces, "unexpected namespaces")
+	assert.Equal(t, []string{"namespace-1", "namespace-2"}, instance.Namespaces, "unexpected namespaces")
+	assert.Equal(t, []string{"cluster-1", "cluster-2"}, instance.Clusters, "unexpected namespaces")
 }

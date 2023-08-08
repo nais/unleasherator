@@ -43,6 +43,10 @@ func TestSubscriber_Subscribe(t *testing.T) {
 		},
 		Spec: unleashv1.UnleashSpec{
 			Size: 1,
+			Federation: unleashv1.UnleashFederationConfig{
+				Namespaces: []string{"namespace-1", "namespace-2"},
+				Clusters:   []string{"cluster-1", "cluster-2"},
+			},
 		},
 	}
 
@@ -63,10 +67,12 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		err = subscriber.Subscribe(ctx, func(remoteUnleash []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
+		err = subscriber.Subscribe(ctx, func(remoteUnleash []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-random", adminSecret.GetName())
 			assert.Equal(t, apiToken, adminSecret.StringData["token"])
+			assert.Equal(t, namespaces, []string{"namespace-1", "namespace-2"})
+			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
 			// @todo assert remoteUnleash
 
@@ -94,7 +100,8 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	instance := &pb.Instance{
 		Name:       "test-instance",
 		Url:        "https://test-instance.example.com",
-		Namespaces: []string{"test-namespace"},
+		Namespaces: []string{"namespace-a"},
+		Clusters:   []string{"cluster-a"},
 		Status:     pb.Status_Provisioned,
 	}
 	payload, err := proto.Marshal(instance)
@@ -110,12 +117,14 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	var capturedRemoteUnleashes []client.Object
 	var capturedAdminSecret *corev1.Secret
 	var capturedNamespaces []string
+	var capturedClusters []string
 	var capturedStatus pb.Status
 
-	mockHandler := func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, status pb.Status) error {
+	mockHandler := func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
 		capturedRemoteUnleashes = remoteUnleashes
 		capturedAdminSecret = adminSecret
 		capturedNamespaces = namespaces
+		capturedClusters = clusters
 		capturedStatus = status
 		return nil
 	}
@@ -128,6 +137,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.NotNil(t, capturedRemoteUnleashes)
 	assert.Equal(t, len(capturedRemoteUnleashes), len(capturedNamespaces))
 	assert.Equal(t, len(capturedRemoteUnleashes), 1)
+	assert.Equal(t, len(capturedClusters), 1)
 
 	capturedRemoteUnleash := capturedRemoteUnleashes[0].(*unleashv1.RemoteUnleash)
 
@@ -141,6 +151,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.Equal(t, instance.SecretToken, capturedAdminSecret.StringData["admin"])
 
 	assert.Equal(t, instance.Namespaces, capturedNamespaces)
+	assert.Equal(t, instance.Clusters, capturedClusters)
 
 	assert.Equal(t, instance.Status, capturedStatus)
 }
