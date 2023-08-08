@@ -28,7 +28,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/resources"
-	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"

@@ -8,7 +8,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
-	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

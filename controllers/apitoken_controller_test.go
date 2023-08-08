@@ -145,11 +145,11 @@ var _ = Describe("ApiToken controller", func() {
 			By("Mocking RemoteUnleash endpoints")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", ApiTokenServerURL),
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
+			httpmock.RegisterResponder("GET", unleashclient.ApiTokensEndpoint,
 				httpmock.NewStringResponder(200, `{"tokens": []}`))
-			httpmock.RegisterResponder("POST", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
+			httpmock.RegisterResponder("POST", unleashclient.ApiTokensEndpoint,
 				func(req *http.Request) (*http.Response, error) {
 					defer GinkgoRecover()
 
@@ -238,7 +238,7 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
 			By("By deleting the ApiToken")
-			deletePath := fmt.Sprintf("=~%s/api/admin/api-tokens/.*", ApiTokenServerURL)
+			deletePath := fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint)
 			httpmock.RegisterResponder("DELETE", deletePath, httpmock.NewStringResponder(200, ""))
 			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 			Eventually(func() int {
@@ -257,9 +257,9 @@ var _ = Describe("ApiToken controller", func() {
 			By("Mocking RemoteUnleash endpoints")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", ApiTokenServerURL),
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
+			httpmock.RegisterResponder("GET", unleashclient.ApiTokensEndpoint,
 				func(req *http.Request) (*http.Response, error) {
 					resp, err := httpmock.NewJsonResponse(200, unleashclient.ApiTokenResult{
 						Tokens: []unleashclient.ApiToken{

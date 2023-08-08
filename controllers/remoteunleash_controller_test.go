@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 var _ = Describe("RemoteUnleash controller", func() {
@@ -95,7 +95,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/instance-admin/statistics", RemoteUnleashServerURL),
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash secret")

@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 func makeUnleash(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
@@ -90,20 +90,8 @@ var _ = Describe("Unleash controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
-			unleashLookupKey := unleash.NamespacedName()
-			createdUnleash := &unleashv1.Unleash{}
-
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, unleashLookupKey, createdUnleash)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
-
-				return createdUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
@@ -116,10 +104,10 @@ var _ = Describe("Unleash controller", func() {
 			Expect(createdUnleash.Status.Connected).To(BeTrue())
 
 			deployment := &appsv1.Deployment{}
-			Expect(k8sClient.Get(ctx, unleashLookupKey, deployment)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), deployment)).Should(Succeed())
 
 			service := &corev1.Service{}
-			Expect(k8sClient.Get(ctx, unleashLookupKey, service)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), service)).Should(Succeed())
 
 			instanceSecret := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedInstanceSecretName(), instanceSecret)).Should(Succeed())
@@ -128,17 +116,17 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedOperatorSecretName(operatorNamespace), operatorSecret)).Should(Succeed())
 
 			networkPolicy := &networkingv1.NetworkPolicy{}
-			Expect(k8sClient.Get(ctx, unleashLookupKey, networkPolicy)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), networkPolicy)).Should(Succeed())
 
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
-			Expect(k8sClient.Get(ctx, unleashLookupKey, serviceMonitor)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
 			var m1 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeConnected).Write(m1)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Write(m1)).Should(Succeed())
 			Expect(m1.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			var m2 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeReconciled).Write(m2)).Should(Succeed())
+			Expect(unleashStatus.WithLabelValues(createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Write(m2)).Should(Succeed())
 			Expect(m2.GetGauge().GetValue()).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
@@ -151,7 +139,7 @@ var _ = Describe("Unleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", "http://test-unleash-federate.default/api/admin/instance-admin/statistics",
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By mocking Unleash Publisher")
@@ -170,20 +158,8 @@ var _ = Describe("Unleash controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
-			unleashLookupKey := unleash.NamespacedName()
-			createdUnleash := &unleashv1.Unleash{}
-
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, unleashLookupKey, createdUnleash)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
-
-				return createdUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",

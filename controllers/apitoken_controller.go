@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
