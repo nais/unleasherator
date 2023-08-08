@@ -3,12 +3,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -160,3 +162,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 		})
 	})
 })
+
+func TestFoo(t *testing.T) {
+	assert.True(t, true, "true is true")
+}

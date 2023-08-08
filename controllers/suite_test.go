@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	mockfederation "github.com/nais/unleasherator/pkg/federation/mockfediration"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -33,6 +34,8 @@ var (
 	ctx                context.Context
 	cancel             context.CancelFunc
 	ApiTokenNameSuffix = "unleasherator"
+	mockSubscriber     = &mockfederation.MockSubscriber{}
+	mockPublisher      = &mockfederation.MockPublisher{}
 )
 
 func TestAPIs(t *testing.T) {
@@ -84,6 +87,10 @@ var _ = BeforeSuite(func() {
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
 		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
+		Federation: UnleashFederation{
+			Enabled:   true,
+			Publisher: mockPublisher,
+		},
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -91,6 +98,11 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
+		Federation: RemoteUnleashFederation{
+			Enabled:     true,
+			ClusterName: "test-cluster",
+			Subscriber:  mockSubscriber,
+		},
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

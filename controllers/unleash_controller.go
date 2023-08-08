@@ -296,7 +296,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	err = r.federationPublish(ctx, unleash)
+	err = r.publish(ctx, unleash)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -304,25 +304,32 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return ctrl.Result{}, err
 }
 
-// federationPublish publishes the Unleash instance to pubsub if federation is enabled.
+// publish the Unleash instance to pubsub if federation is enabled.
 // It fetches the API token and publishes the instance using the federation publisher.
 // If the API token cannot be fetched, it returns an error.
-func (r *UnleashReconciler) federationPublish(ctx context.Context, unleash *unleashv1.Unleash) error {
-	log := log.FromContext(ctx)
+func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unleash) error {
+	log := log.FromContext(ctx).WithName("publish")
 
-	if !r.Federation.Enabled && !unleash.Spec.Federation.Enabled {
+	if !r.Federation.Enabled || !unleash.Spec.Federation.Enabled {
 		log.Info("Federation is disabled, skipping publishing")
 		return nil
 	}
 
-	token, err := r.GetApiToken(ctx, unleash.GetName(), unleash.GetNamespace())
+	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
-		unleashPublished.WithLabelValues(unleash.GetName(), unleash.GetNamespace(), "provisioned", "failed").Inc()
-		return fmt.Errorf("fetch secret api token: %w", err)
+		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		log.Error(err, "Failed to fetch API token")
+		return fmt.Errorf("publish could not fetch API token: %w", err)
 	}
 
-	unleashPublished.WithLabelValues(unleash.GetName(), unleash.GetNamespace(), "provisioned", "success").Inc()
-	return r.Federation.Publisher.Publish(ctx, unleash, token)
+	err = r.Federation.Publisher.Publish(ctx, unleash, string(token))
+	if err != nil {
+		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		return fmt.Errorf("publish could not publish Unleash instance: %w", err)
+	}
+
+	unleashPublished.WithLabelValues("provisioned", "success").Inc()
+	return nil
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
@@ -780,15 +787,4 @@ func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)
-}
-
-// GetApiToken will return the API token for the Unleash instance
-func (r *UnleashReconciler) GetApiToken(ctx context.Context, unleashName, operatorNamespace string) (string, error) {
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: unleashName, Namespace: operatorNamespace}, secret)
-	if err != nil {
-		return "", err
-	}
-
-	return string(secret.Data[unleashv1.UnleashSecretTokenKey]), nil
 }

@@ -31,7 +31,7 @@ var _ = Describe("ApiToken controller", func() {
 		interval = time.Millisecond * 250
 	)
 
-	Context("When creating a ApiToken", func() {
+	Context("When creating an ApiToken", func() {
 		It("Should fail when Unleash does not exist", func() {
 			ctx := context.Background()
 

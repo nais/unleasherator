@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/mock"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -154,6 +155,68 @@ var _ = Describe("Unleash controller", func() {
 			var m2 = &dto.Metric{}
 			Expect(unleashStatus.WithLabelValues(unleashLookupKey.Namespace, unleashLookupKey.Name, unleashv1.UnleashStatusConditionTypeReconciled).Write(m2)).Should(Succeed())
 			Expect(m2.GetGauge().GetValue()).To(Equal(float64(1)))
+
+			By("By cleaning up the Unleash")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
+
+		It("Should publish Unleash instance when federation is enabled", func() {
+			ctx := context.Background()
+
+			By("By mocking Unleash API")
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", "http://test-unleash-federate.default/api/admin/instance-admin/statistics",
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
+
+			By("By mocking Unleash Publisher")
+			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string")).Return(nil)
+
+			By("By creating a new Unleash")
+			unleash := &unleashv1.Unleash{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "unleash.nais.io/v1",
+					Kind:       "Unleash",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-unleash-federate",
+					Namespace: UnleashNamespace,
+				},
+				Spec: unleashv1.UnleashSpec{
+					Database: unleashv1.UnleashDatabaseConfig{
+						URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+					},
+					Federation: unleashv1.UnleashFederationConfig{
+						Enabled:    true,
+						Namespaces: []string{"namespace1", "namespace2"},
+						Clusters:   []string{"cluster1", "cluster2"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			unleashLookupKey := unleash.NamespacedName()
+			createdUnleash := &unleashv1.Unleash{}
+
+			Eventually(func() ([]metav1.Condition, error) {
+				err := k8sClient.Get(ctx, unleashLookupKey, createdUnleash)
+				if err != nil {
+					return nil, err
+				}
+
+				// unset condition.LastTransitionTime to make comparison easier
+				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
+
+				return createdUnleash.Status.Conditions, nil
+			}, timeout, interval).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash instance",
+			}))
+
+			Expect(createdUnleash.IsReady()).To(BeTrue())
+			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
