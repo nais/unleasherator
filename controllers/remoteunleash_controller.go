@@ -8,7 +8,6 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
-	"github.com/nais/unleasherator/pkg/unleash"
 	unleashclient "github.com/nais/unleasherator/pkg/unleash"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -183,7 +182,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Create Unleash API client
-	unleashClient, err := unleash.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
+	unleashClient, err := unleashclient.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to create Unleash client"); err != nil {
 			return ctrl.Result{}, err
