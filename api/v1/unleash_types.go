@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

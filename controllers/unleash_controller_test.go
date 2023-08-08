@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	unleashclient "github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 func makeUnleash(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
@@ -78,7 +79,7 @@ var _ = Describe("Unleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", "http://test-unleash-success.default/api/admin/instance-admin/statistics",
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")

@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/unleash"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 var _ = Describe("ApiToken controller", func() {
@@ -153,14 +153,14 @@ var _ = Describe("ApiToken controller", func() {
 				func(req *http.Request) (*http.Response, error) {
 					defer GinkgoRecover()
 
-					tokenRequest := unleash.ApiTokenRequest{}
+					tokenRequest := unleashclient.ApiTokenRequest{}
 					if err := json.NewDecoder(req.Body).Decode(&tokenRequest); err != nil {
 						return httpmock.NewStringResponse(400, ""), nil
 					}
 
 					Expect(tokenRequest.Username).Should(Equal(fmt.Sprintf("%s-%s", apiTokenName, ApiTokenNameSuffix)))
 
-					resp, err := httpmock.NewJsonResponse(201, unleash.ApiToken{
+					resp, err := httpmock.NewJsonResponse(201, unleashclient.ApiToken{
 						Secret:      apiTokenSecret,
 						Username:    tokenRequest.Username,
 						Type:        tokenRequest.Type,
@@ -261,8 +261,8 @@ var _ = Describe("ApiToken controller", func() {
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 			httpmock.RegisterResponder("GET", fmt.Sprintf("%s/api/admin/api-tokens", ApiTokenServerURL),
 				func(req *http.Request) (*http.Response, error) {
-					resp, err := httpmock.NewJsonResponse(200, unleash.ApiTokenResult{
-						Tokens: []unleash.ApiToken{
+					resp, err := httpmock.NewJsonResponse(200, unleashclient.ApiTokenResult{
+						Tokens: []unleashclient.ApiToken{
 							{
 								Secret:      apiTokenSecret,
 								Username:    fmt.Sprintf("%s-%s", apiTokenName, ApiTokenNameSuffix),

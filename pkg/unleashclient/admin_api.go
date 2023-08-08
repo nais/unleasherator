@@ -1,4 +1,4 @@
-package unleash
+package unleashclient
 
 import (
 	"net/http"
@@ -30,7 +30,7 @@ type HealthResult struct {
 // GetHealth returns the health of the Unleash instance.
 func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 	health := &HealthResult{}
-	res, err := c.HTTPGet("/health", health)
+	res, err := c.HTTPGet(HealthEndpoint, health)
 
 	if err != nil {
 		return health, res, err
@@ -44,7 +44,7 @@ func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Response, error) {
 	adminStats := &InstanceAdminStatsResult{}
 
-	res, err := c.HTTPGet("/api/admin/instance-admin/statistics", adminStats)
+	res, err := c.HTTPGet(InstanceAdminStatsEndpoint, adminStats)
 	if err != nil {
 		return adminStats, res, err
 	}
@@ -84,7 +84,7 @@ type ApiTokenRequest struct {
 func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
 	res := &ApiToken{}
 
-	_, err := c.HTTPPost("/api/admin/api-tokens", req, res)
+	_, err := c.HTTPPost(ApiTokensEndpoint, req, res)
 	if err != nil {
 		return res, err
 	}
@@ -97,7 +97,7 @@ func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
 func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
 	res := &ApiTokenResult{}
 
-	_, err := c.HTTPGet("/api/admin/api-tokens", &res)
+	_, err := c.HTTPGet(ApiTokensEndpoint, &res)
 	if err != nil {
 		return res, err
 	}
@@ -130,7 +130,7 @@ func (c *Client) CheckAPITokenExists(userName string) (bool, error) {
 }
 
 func (c *Client) DeleteApiToken(tokenString string) error {
-	err := c.HTTPDelete("/api/admin/api-tokens", tokenString)
+	err := c.HTTPDelete(ApiTokensEndpoint, tokenString)
 
 	if err != nil {
 		return err

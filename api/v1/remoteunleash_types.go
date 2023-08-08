@@ -3,7 +3,7 @@ package unleash_nais_io_v1
 import (
 	"context"
 
-	"github.com/nais/unleasherator/pkg/unleash"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -145,13 +145,13 @@ func (u *RemoteUnleash) AdminToken(ctx context.Context, client client.Client, op
 }
 
 // ApiClient returns an Unleash API client for the Unleash instance.
-func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleash.Client, error) {
+func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
 	token, err := u.AdminToken(ctx, client, operatorNamespace)
 	if err != nil {
 		return nil, err
 	}
 
-	return unleash.NewClient(u.URL(), string(token))
+	return unleashclient.NewClient(u.URL(), string(token))
 }
 
 // IsReady returns true if the Unleash instance is ready.
