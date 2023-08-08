@@ -2,25 +2,28 @@ package controllers
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	dto "github.com/prometheus/client_model/go"
-	"github.com/stretchr/testify/assert"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
-var _ = Describe("RemoteUnleash controller", func() {
+func getRemoteUnleash(k8sClient client.Client, ctx context.Context, createdRemoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
+	if err := k8sClient.Get(ctx, createdRemoteUnleash.NamespacedName(), createdRemoteUnleash); err != nil {
+		return nil, err
+	}
 
-	// Define utility constants for object names and testing timeouts/durations and intervals.
+	return unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions), nil
+}
+
+var _ = Describe("RemoteUnleash controller", func() {
 	const (
 		RemoteUnleashNamespace = "default"
 		RemoteUnleashServerURL = "http://remoteunleash.nais.io"
@@ -38,47 +41,19 @@ var _ = Describe("RemoteUnleash controller", func() {
 			RemoteUnleashName := "test-unleash-fail-secret"
 
 			By("By creating a new RemoteUnleash")
-			remoteUnleash := &unleashv1.RemoteUnleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "RemoteUnleash",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      RemoteUnleashName,
-					Namespace: RemoteUnleashNamespace,
-				},
-				Spec: unleashv1.RemoteUnleashSpec{
-					Server: unleashv1.RemoteUnleashServer{
-						URL: RemoteUnleashServerURL,
-					},
-					AdminSecret: unleashv1.RemoteUnleashSecret{
-						Name: "unleasherator-not-exist",
-					},
-				},
-			}
+			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
+			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashServerURL, secret)
 			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
 
-			remoteUnleashLookupKey := types.NamespacedName{Name: RemoteUnleashName, Namespace: RemoteUnleashNamespace}
-			createdRemoteUnleash := &unleashv1.RemoteUnleash{}
-
-			// We'll need to retry getting this newly created RemoteUnleash, given that creation may not immediately happen.
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, remoteUnleashLookupKey, createdRemoteUnleash)
-				if err != nil {
-					return nil, err
-				}
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions)
-
-				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdRemoteUnleash := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdRemoteUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
 				Message: "Failed to get admin token secret",
 			}))
-
 			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
+
 			var m = &dto.Metric{}
 			err := unleashStatus.WithLabelValues(RemoteUnleashNamespace, RemoteUnleashName, "available").Write(m)
 			Expect(err).ToNot(HaveOccurred())
@@ -99,56 +74,15 @@ var _ = Describe("RemoteUnleash controller", func() {
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash secret")
-			secret := &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Secret",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "unleasherator-test",
-					Namespace: "default",
-				},
-				Data: map[string][]byte{
-					"token": []byte(RemoteUnleashToken),
-				},
-			}
+			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
 			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 
 			By("By creating a new RemoteUnleash")
-			remoteUnleash := &unleashv1.RemoteUnleash{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "RemoteUnleash",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      RemoteUnleashName,
-					Namespace: RemoteUnleashNamespace,
-				},
-				Spec: unleashv1.RemoteUnleashSpec{
-					Server: unleashv1.RemoteUnleashServer{
-						URL: RemoteUnleashServerURL,
-					},
-					AdminSecret: unleashv1.RemoteUnleashSecret{
-						Name: secret.GetName(),
-					},
-				},
-			}
+			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashServerURL, secret)
 			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
 
-			remoteUnleashLookupKey := types.NamespacedName{Name: RemoteUnleashName, Namespace: RemoteUnleashNamespace}
-			createdRemoteUnleash := &unleashv1.RemoteUnleash{}
-
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, remoteUnleashLookupKey, createdRemoteUnleash)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions)
-
-				return createdRemoteUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdRemoteUnleash := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdRemoteUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
@@ -162,7 +96,3 @@ var _ = Describe("RemoteUnleash controller", func() {
 		})
 	})
 })
-
-func TestFoo(t *testing.T) {
-	assert.True(t, true, "true is true")
-}
