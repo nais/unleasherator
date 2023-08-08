@@ -13,8 +13,6 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: "unleasherator"
-        - name: FEDERATION_ENABLED
-          value: "false"
         - name: FEDERATION_CLUSTER_NAME
           value: ""
         - name: FEDERATION_PUBSUB_MODE

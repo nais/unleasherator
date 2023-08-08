@@ -35,7 +35,6 @@ controllerManager:
     env:
       apiTokenNameSuffix: unleasherator
       federationClusterName: ""
-      federationEnabled: "false"
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""
       federationPubsubSubscriptionId: ""

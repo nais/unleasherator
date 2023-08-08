@@ -45,8 +45,6 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
-        - name: FEDERATION_ENABLED
-          value: {{ quote .Values.controllerManager.manager.env.federationEnabled }}
         - name: FEDERATION_CLUSTER_NAME
           value: {{ quote .Values.controllerManager.manager.env.federationClusterName }}
         - name: FEDERATION_PUBSUB_MODE
