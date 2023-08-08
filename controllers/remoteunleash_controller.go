@@ -43,15 +43,15 @@ var (
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_remoteunleash_status",
-			Help: "Status of remote Unleash instances",
+			Help: "Status of RemoteUnleash instances",
 		},
 		[]string{"namespace", "name", "status"},
 	)
 
 	remoteUnleashReceived = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "unleasherator_federation_received",
-			Help: "Number of PubSub messages received",
+			Name: "unleasherator_federation_received_total",
+			Help: "Number of Unleash federation messages received with status",
 		},
 		[]string{"state", "status"},
 	)

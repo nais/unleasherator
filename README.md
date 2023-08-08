@@ -182,10 +182,13 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 
 There's prometheus metrics covering <https://book.kubebuilder.io/reference/metrics-reference.html> the default set of kubebuilder provided performance gauges as well as additional metrics for deployment status.
 
-| Metric                             | Type  | Description                        |
-| ---------------------------------- | ----- | ---------------------------------- |
-| unleasherator_unleash_status       | Gauge | Status of Unleash instance         |
-| unleasherator_remoteunleash_status | Gauge | Status of remote Unleash instances |
+| Metric                                   | Type    | Description                                                 |
+| ---------------------------------------- | ------- | ----------------------------------------------------------- |
+| unleasherator_unleash_status             | Gauge   | Status of Unleash instances                                 |
+| unleasherator_remoteunleash_status       | Gauge   | Status of RemoteUnleash instances                           |
+| unleasherator_api_token_status           | Gauge   | Status of ApiToken instances                                |
+| unleasherator_federation_published_total | Counter | Number of Unleash federation messages published with status |
+| unleasherator_federation_received_total  | Counter | Number of Unleash federation messages received with status  |
 
 ## License
 

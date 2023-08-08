@@ -29,8 +29,8 @@ var (
 	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	apiTokenStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "unleasherator_unleash_status",
-			Help: "Status of Unleash instances",
+			Name: "unleasherator_apitoken_status",
+			Help: "Status of ApiToken instances",
 		},
 		[]string{"namespace", "name", "status"},
 	)
