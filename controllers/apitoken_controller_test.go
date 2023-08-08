@@ -13,21 +13,27 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
-var _ = Describe("ApiToken controller", func() {
+func getApiToken(k8sClient client.Client, ctx context.Context, apiToken *unleashv1.ApiToken) ([]metav1.Condition, error) {
+	if err := k8sClient.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
+		return nil, err
+	}
 
-	// Define utility constants for object names and testing timeouts/durations and intervals.
+	return unsetConditionLastTransitionTime(apiToken.Status.Conditions), nil
+}
+
+var _ = Describe("ApiToken controller", func() {
 	const (
 		ApiTokenNamespace = "default"
 		ApiTokenServerURL = "http://api-token-unleash.nais.io"
 		ApiTokenToken     = "test"
 
 		timeout  = time.Second * 10
-		duration = time.Second * 10
 		interval = time.Millisecond * 250
 	)
 
@@ -36,40 +42,14 @@ var _ = Describe("ApiToken controller", func() {
 			ctx := context.Background()
 
 			apiTokenName := "test-apitoken-unleash-fail"
-			apiTokenLookupKey := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
 
 			By("By creating a new ApiToken")
-			createdApiToken := unleashv1.ApiToken{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "ApiToken",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      apiTokenName,
-					Namespace: ApiTokenNamespace,
-				},
-				Spec: unleashv1.ApiTokenSpec{
-					UnleashInstance: unleashv1.ApiTokenUnleashInstance{
-						ApiVersion: "unleash.nais.io/v1",
-						Kind:       "Unleash",
-						Name:       "test-unleash-not-exist",
-					},
-					SecretName: apiTokenName,
-				},
-			}
-			Expect(k8sClient.Create(ctx, &createdApiToken)).Should(Succeed())
+			unleash := unleashResource("test-unleash-not-exist", ApiTokenNamespace, unleashv1.UnleashSpec{})
+			apiToken := unleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleash)
+			Expect(k8sClient.Create(ctx, apiToken)).Should(Succeed())
 
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, apiTokenLookupKey, &createdApiToken)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdApiToken.Status.Conditions)
-
-				return createdApiToken.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdApiToken := &unleashv1.ApiToken{ObjectMeta: apiToken.ObjectMeta}
+			Eventually(getApiToken, timeout, interval).WithArguments(k8sClient, ctx, createdApiToken).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
 				Status:  metav1.ConditionTrue,
 				Reason:  "UnleashNotFound",
@@ -80,47 +60,22 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiToken.Status.Failed).Should(Equal(true))
 
 			By("Cleaning up the ApiToken")
-			Expect(k8sClient.Delete(ctx, &createdApiToken)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 		})
 
 		It("Should fail when RemoteUnleash does not exist", func() {
 			ctx := context.Background()
 
-			apiTokenName := "test-apitoken-remoteunleash-fail"
-			apiTokenLookupKey := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+			resourceName := "test-apitoken-remoteunleash-fail"
 
 			By("By creating a new ApiToken")
-			createdApiToken := unleashv1.ApiToken{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "unleash.nais.io/v1",
-					Kind:       "ApiToken",
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      apiTokenName,
-					Namespace: ApiTokenNamespace,
-				},
-				Spec: unleashv1.ApiTokenSpec{
-					UnleashInstance: unleashv1.ApiTokenUnleashInstance{
-						ApiVersion: "unleash.nais.io/v1",
-						Kind:       "RemoteUnleash",
-						Name:       "test-remoteunleash-not-exist",
-					},
-					SecretName: apiTokenName,
-				},
-			}
-			Expect(k8sClient.Create(ctx, &createdApiToken)).Should(Succeed())
+			secret := remoteUnleashSecretResource(resourceName, ApiTokenNamespace, "test")
+			_, remoteUnleash := remoteUnleashResource("test-remoteunleash-not-exist", ApiTokenNamespace, ApiTokenServerURL, secret)
+			apiToken := remoteUnleashApiTokenResource(resourceName, ApiTokenNamespace, resourceName, remoteUnleash)
+			Expect(k8sClient.Create(ctx, apiToken)).Should(Succeed())
 
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, apiTokenLookupKey, &createdApiToken)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdApiToken.Status.Conditions)
-
-				return createdApiToken.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdApiToken := &unleashv1.ApiToken{ObjectMeta: apiToken.ObjectMeta}
+			Eventually(getApiToken, timeout, interval).WithArguments(k8sClient, ctx, createdApiToken).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
 				Status:  metav1.ConditionTrue,
 				Reason:  "UnleashNotFound",
@@ -128,7 +83,7 @@ var _ = Describe("ApiToken controller", func() {
 			}))
 
 			By("Cleaning up the ApiToken")
-			Expect(k8sClient.Delete(ctx, &createdApiToken)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 		})
 
 		PIt("Should succeed when it can create token for Unleash", func() {

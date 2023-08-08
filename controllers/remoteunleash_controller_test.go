@@ -15,12 +15,12 @@ import (
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
-func getRemoteUnleash(k8sClient client.Client, ctx context.Context, createdRemoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
-	if err := k8sClient.Get(ctx, createdRemoteUnleash.NamespacedName(), createdRemoteUnleash); err != nil {
+func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
+	if err := k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
 		return nil, err
 	}
 
-	return unsetConditionLastTransitionTime(createdRemoteUnleash.Status.Conditions), nil
+	return unsetConditionLastTransitionTime(remoteUnleash.Status.Conditions), nil
 }
 
 var _ = Describe("RemoteUnleash controller", func() {
@@ -30,7 +30,6 @@ var _ = Describe("RemoteUnleash controller", func() {
 		RemoteUnleashToken     = "test"
 
 		timeout  = time.Second * 10
-		duration = time.Second * 10
 		interval = time.Millisecond * 250
 	)
 

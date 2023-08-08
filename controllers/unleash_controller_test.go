@@ -20,26 +20,12 @@ import (
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
-func makeUnleash(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
-	return &unleashv1.Unleash{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "unleash.nais.io/v1",
-			Kind:       "Unleash",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: spec,
-	}
-}
-
-func getUnleash(k8sClient client.Client, ctx context.Context, createdUnleash *unleashv1.Unleash) ([]metav1.Condition, error) {
-	if err := k8sClient.Get(ctx, createdUnleash.NamespacedName(), createdUnleash); err != nil {
+func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1.Unleash) ([]metav1.Condition, error) {
+	if err := k8sClient.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
 		return nil, err
 	}
 
-	return unsetConditionLastTransitionTime(createdUnleash.Status.Conditions), nil
+	return unsetConditionLastTransitionTime(unleash.Status.Conditions), nil
 }
 
 var _ = Describe("Unleash controller", func() {
@@ -55,7 +41,7 @@ var _ = Describe("Unleash controller", func() {
 			ctx := context.Background()
 
 			By("By creating a new Unleash")
-			unleash := makeUnleash("test-unleash-fail", UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := unleashResource("test-unleash-fail", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{},
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
@@ -83,7 +69,7 @@ var _ = Describe("Unleash controller", func() {
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")
-			unleash := makeUnleash("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
 					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},
@@ -146,7 +132,7 @@ var _ = Describe("Unleash controller", func() {
 			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
-			unleash := makeUnleash("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
 					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},
