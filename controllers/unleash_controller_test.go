@@ -14,11 +14,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
 
-func unleashWithSpec(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
+func makeUnleash(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
 	return &unleashv1.Unleash{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "unleash.nais.io/v1",
@@ -32,14 +33,19 @@ func unleashWithSpec(name, namespace string, spec unleashv1.UnleashSpec) *unleas
 	}
 }
 
-var _ = Describe("Unleash controller", func() {
+func getUnleash(k8sClient client.Client, ctx context.Context, createdUnleash *unleashv1.Unleash) ([]metav1.Condition, error) {
+	if err := k8sClient.Get(ctx, createdUnleash.NamespacedName(), createdUnleash); err != nil {
+		return nil, err
+	}
 
-	// Define utility constants for object names and testing timeouts/durations and intervals.
+	return unsetConditionLastTransitionTime(createdUnleash.Status.Conditions), nil
+}
+
+var _ = Describe("Unleash controller", func() {
 	const (
 		UnleashNamespace = "default"
 
 		timeout  = time.Second * 10
-		duration = time.Second * 10
 		interval = time.Millisecond * 250
 	)
 
@@ -47,35 +53,19 @@ var _ = Describe("Unleash controller", func() {
 		It("Should fail for missing database config", func() {
 			ctx := context.Background()
 
-			UnleashName := "test-unleash-fail"
-
 			By("By creating a new Unleash")
-			unleash := unleashWithSpec(UnleashName, UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := makeUnleash("test-unleash-fail", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{},
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
-			unleashLookupKey := unleash.NamespacedName()
-			createdUnleash := &unleashv1.Unleash{}
-
-			// We'll need to retry getting this newly created Unleash, given that creation may not immediately happen.
-			Eventually(func() ([]metav1.Condition, error) {
-				err := k8sClient.Get(ctx, unleashLookupKey, createdUnleash)
-				if err != nil {
-					return nil, err
-				}
-
-				// unset condition.LastTransitionTime to make comparison easier
-				unsetConditionLastTransitionTime(createdUnleash.Status.Conditions)
-
-				return createdUnleash.Status.Conditions, nil
-			}, timeout, interval).Should(ContainElement(metav1.Condition{
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
-
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 
 			By("By cleaning up the Unleash")
@@ -92,7 +82,7 @@ var _ = Describe("Unleash controller", func() {
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")
-			unleash := unleashWithSpec("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := makeUnleash("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
 					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},
@@ -167,7 +157,7 @@ var _ = Describe("Unleash controller", func() {
 			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
-			unleash := unleashWithSpec("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
+			unleash := makeUnleash("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
 					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
 				},

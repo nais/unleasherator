@@ -70,8 +70,10 @@ func remoteUnleashApiTokenResource(name, namespace, secretName string, remoteUnl
 	}
 }
 
-func unsetConditionLastTransitionTime(conditions []metav1.Condition) {
+func unsetConditionLastTransitionTime(conditions []metav1.Condition) []metav1.Condition {
 	for i := range conditions {
 		conditions[i].LastTransitionTime = metav1.Time{}
 	}
+
+	return conditions
 }
