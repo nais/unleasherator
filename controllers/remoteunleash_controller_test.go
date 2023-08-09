@@ -121,6 +121,12 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
 
+			By("By mocking Unleash API")
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
+
 			var remoteUnleashes []client.Object
 
 			By("By creating a new RemoteUnleash that does not match cluster")
