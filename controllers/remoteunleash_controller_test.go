@@ -8,10 +8,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
@@ -92,6 +95,59 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(createdRemoteUnleash.Status.Version).To(Equal("v4.0.0"))
 			Expect(createdRemoteUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdRemoteUnleash.Status.Connected).To(BeTrue())
+		})
+	})
+
+	Describe("When subscribing to federated Unleash", func() {
+		It("Should create RemoteUnleash if cluster matches", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			started := make(chan bool)
+			mockSubscriber.On("Subscribe", ctx, mock.AnythingOfType("Handler")).After(10 * time.Second).Return(nil)
+
+			go func(ctx context.Context) {
+				started <- true
+
+				err := remoteUnleashReconciler.FederationSubscribe(ctx)
+				Expect(err).ToNot(HaveOccurred(), "failed to subscribe to federation")
+			}(ctx)
+
+			<-started
+
+			Eventually(func() int {
+				return len(mockSubscriber.Calls)
+			}, timeout, interval).Should(Equal(1))
+
+			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
+
+			var remoteUnleashes []client.Object
+
+			By("By creating a new RemoteUnleash that does not match cluster")
+			name := "test-unleash-other-cluster"
+			namespaces := []string{"some-namespace"}
+			clusters := []string{"some-cluster"}
+			secret := remoteUnleashSecretResource(name, namespaces[0], "test")
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			remoteUnleashes = append([]client.Object{}, remoteUnleash)
+
+			err := handler(remoteUnleashes, secret, namespaces, clusters, pb.Status_Provisioned)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())
+
+			By("By creating a new RemoteUnleash that matches cluster")
+			name = "test-unleash-same-cluster"
+			namespaces = []string{"default"}
+			clusters = []string{"test-cluster"}
+			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			remoteUnleashes = append([]client.Object{}, remoteUnleash)
+
+			err = handler(remoteUnleashes, secret, namespaces, clusters, pb.Status_Provisioned)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 		})
 	})
 })

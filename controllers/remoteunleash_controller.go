@@ -298,7 +298,7 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 }
 
 func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error {
-	log := log.FromContext(ctx, "method", "FederationSubscribe")
+	log := log.FromContext(ctx).WithName("FederationSubscribe")
 
 	if !r.Federation.Enabled {
 		log.Info("Federation is disabled, not consuming pubsub messages")

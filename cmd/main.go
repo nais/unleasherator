@@ -136,8 +136,8 @@ func main() {
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {
-		er := remoteUnleashReconciler.FederationSubscribe(ctx)
-		if er != nil {
+		err := remoteUnleashReconciler.FederationSubscribe(ctx)
+		if err != nil {
 			setupLog.Error(err, "PubSub subscriber error, shutting down")
 			cancel()
 		}
