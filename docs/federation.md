@@ -65,4 +65,12 @@ spec:
     clusters:
       - cluster-a
       - cluster-b
+    secretNonce: secret-nonce
 ```
+
+| Name                     | Description                                                           | Default |
+| ------------------------ | --------------------------------------------------------------------- | ------- |
+| `federation.enabled`     | Enable federation for the specific Unleash instance                   | `false` |
+| `federation.namespaces`  | Namespaces to federate Unleash to create `RemoteUnleash` instances in | `[]     |
+| `federation.clusters`    | Clusters to federate Unleash to create `RemoteUnleash` instances in   | `[]`    |
+| `federation.secretNonce` | Secret nonce used for the secret resource name                        | `""`    |

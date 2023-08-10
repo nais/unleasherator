@@ -44,8 +44,9 @@ func TestSubscriber_Subscribe(t *testing.T) {
 		Spec: unleashv1.UnleashSpec{
 			Size: 1,
 			Federation: unleashv1.UnleashFederationConfig{
-				Namespaces: []string{"namespace-1", "namespace-2"},
-				Clusters:   []string{"cluster-1", "cluster-2"},
+				Namespaces:  []string{"namespace-1", "namespace-2"},
+				Clusters:    []string{"cluster-1", "cluster-2"},
+				SecretNonce: "not-a-real-nonce",
 			},
 		},
 	}
@@ -69,7 +70,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	go func() {
 		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleash []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
-			assert.Equal(t, "unleasherator-test-random", adminSecret.GetName())
+			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecret.GetName())
 			assert.Equal(t, apiToken, adminSecret.StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 

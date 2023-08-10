@@ -12,6 +12,7 @@ func UnleashFederationInstance(unleash *unleashv1.Unleash, token string) *pb.Ins
 		Name:        unleash.GetName(),
 		Url:         unleash.PublicApiURL(),
 		SecretToken: token,
+		SecretNonce: unleash.Spec.Federation.SecretNonce,
 		Namespaces:  unleash.Spec.Federation.Namespaces,
 		Clusters:    unleash.Spec.Federation.Clusters,
 	}

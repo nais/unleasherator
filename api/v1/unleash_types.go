@@ -114,6 +114,10 @@ type UnleashFederationConfig struct {
 	// Namespaces are the namespaces to federate to
 	// +kubebuilder:validation:Optional
 	Namespaces []string `json:"namespaces,omitempty"`
+
+	// SecretNonce is the shared secret used for federation
+	// +kubebuilder:validation:Optional
+	SecretNonce string `json:"sharedSecret,omitempty"`
 }
 
 // UnleashPrometheusConfig defines the prometheus configuration

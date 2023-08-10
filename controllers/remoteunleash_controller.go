@@ -362,6 +362,10 @@ func retirableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
 }
 
+// createOrUpdate creates or updates the given resource.
+// If the resource already exists, it will be updated.
+// If the resource does not exist, it will be created.
+// If the resource fails to persist, the error is returned.
 func (r *RemoteUnleashReconciler) createOrUpdate(ctx context.Context, resource client.Object) error {
 	objectKey := client.ObjectKeyFromObject(resource)
 	existing := &unleashv1.RemoteUnleash{}

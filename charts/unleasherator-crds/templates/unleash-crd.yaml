@@ -3090,6 +3090,9 @@ spec:
                     items:
                       type: string
                     type: array
+                  sharedSecret:
+                    description: SecretNonce is the shared secret used for federation
+                    type: string
                 type: object
               networkPolicy:
                 description: NetworkPolicy defines the network policy configuration
