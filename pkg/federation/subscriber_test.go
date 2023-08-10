@@ -67,11 +67,10 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		err = subscriber.Subscribe(ctx, func(remoteUnleash []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
+		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleash []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-random", adminSecret.GetName())
 			assert.Equal(t, apiToken, adminSecret.StringData["token"])
-			assert.Equal(t, namespaces, []string{"namespace-1", "namespace-2"})
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
 			// @todo assert remoteUnleash
@@ -116,14 +115,12 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	var capturedRemoteUnleashes []client.Object
 	var capturedAdminSecret *corev1.Secret
-	var capturedNamespaces []string
 	var capturedClusters []string
 	var capturedStatus pb.Status
 
-	mockHandler := func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
+	mockHandler := func(ctx context.Context, remoteUnleashes []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 		capturedRemoteUnleashes = remoteUnleashes
 		capturedAdminSecret = adminSecret
-		capturedNamespaces = namespaces
 		capturedClusters = clusters
 		capturedStatus = status
 		return nil
@@ -135,7 +132,6 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.NotNil(t, capturedRemoteUnleashes)
-	assert.Equal(t, len(capturedRemoteUnleashes), len(capturedNamespaces))
 	assert.Equal(t, len(capturedRemoteUnleashes), 1)
 	assert.Equal(t, len(capturedClusters), 1)
 
@@ -149,9 +145,6 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.True(t, strings.HasPrefix(capturedAdminSecret.Name, "unleasherator-"+instance.Name+"-"))
 	assert.Equal(t, operatorNamespace, capturedAdminSecret.Namespace)
 	assert.Equal(t, instance.SecretToken, capturedAdminSecret.StringData["admin"])
-
-	assert.Equal(t, instance.Namespaces, capturedNamespaces)
 	assert.Equal(t, instance.Clusters, capturedClusters)
-
 	assert.Equal(t, instance.Status, capturedStatus)
 }

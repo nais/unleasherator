@@ -103,6 +103,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
+			By("By starting the subscriber")
 			started := make(chan bool)
 			mockSubscriber.On("Subscribe", ctx, mock.AnythingOfType("Handler")).After(10 * time.Second).Return(nil)
 
@@ -137,7 +138,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
 			remoteUnleashes = append([]client.Object{}, remoteUnleash)
 
-			err := handler(remoteUnleashes, secret, namespaces, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())
@@ -150,10 +151,12 @@ var _ = Describe("RemoteUnleash controller", func() {
 			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
 			remoteUnleashes = append([]client.Object{}, remoteUnleash)
 
-			err = handler(remoteUnleashes, secret, namespaces, clusters, pb.Status_Provisioned)
+			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
+
+			By("By updating an existing RemoteUnleash that matches cluster")
 		})
 	})
 })

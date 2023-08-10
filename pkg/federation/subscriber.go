@@ -18,7 +18,7 @@ type Subscriber interface {
 	Close() error
 }
 
-type Handler func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error
+type Handler func(ctx context.Context, remoteUnleash []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
 	client            *pubsub.Client
@@ -69,7 +69,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.operatorNamespace, instance.SecretToken)
 	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), adminSecret.GetName(), adminSecret.GetNamespace())
 
-	return handler(remoteUnleashes, adminSecret, instance.Namespaces, instance.Clusters, instance.Status)
+	return handler(ctx, remoteUnleashes, adminSecret, instance.Clusters, instance.Status)
 }
 
 func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, operatorNamespace string) Subscriber {

@@ -309,7 +309,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 	for ctx.Err() == nil && permanentError == nil {
 		log.Info("Waiting for pubsub messages")
-		err := r.Federation.Subscriber.Subscribe(ctx, func(remoteUnleashes []client.Object, adminSecret *corev1.Secret, namespaces []string, clusters []string, status pb.Status) error {
+		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			log.Info("Received pubsub message", "status", status)
 
 			if !hasValue(r.Federation.ClusterName, clusters) {
