@@ -49,7 +49,7 @@ jobs:
 
       - name: Update values.yaml
         run: |
-          sed -i "s/^      tag:.*$/      tag: ${{ steps.version.outputs.version }}/g" ./charts/${{ steps.name.outputs.name }}/values.yaml
+          sed -i "s/^      tag: main$/      tag: ${{ steps.version.outputs.version }}/g" ./charts/${{ steps.name.outputs.name }}/values.yaml
           cat ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save Chart Metadata
@@ -58,6 +58,12 @@ jobs:
           name: chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}/Chart.yaml
+
+      - name: Save Chart Values
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          name: chart-values
+          path: |
             ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save CRDs Chart Metadata
@@ -66,7 +72,6 @@ jobs:
           name: crds-chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}-crds/Chart.yaml
-            ./charts/${{ steps.name.outputs.name }}-crds/values.yaml
 
   lint-test:
     name: Lint and test
@@ -143,6 +148,12 @@ jobs:
         uses: actions/download-artifact@v3.0.2
         with:
           name: chart-metadata
+          path: ./charts/${{ needs.meta.outputs.name }}
+
+      - name: Restore Chart Values
+        uses: actions/download-artifact@v3.0.2
+        with:
+          name: chart-values
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore CRDs Chart Metadata
