@@ -146,6 +146,9 @@ jobs:
         run: |
           kind load docker-image ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main --name chart-testing
 
+          # Hack imagePullPolicy to never to avoid pulling during test install
+          sed -i "s/imagePullPolicy: Always/imagePullPolicy: Never/g" ./charts/${{ needs.meta.outputs.name }}/values.yaml
+
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
         run: |
