@@ -127,7 +127,7 @@ jobs:
       - name: Load image to kind
         run: |
           make docker-build
-          kind load docker-image $(make docker-image) --name kind-chart-testing
+          kind load docker-image $(make docker-image) --name chart-testing
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
