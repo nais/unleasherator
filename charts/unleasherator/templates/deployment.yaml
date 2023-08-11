@@ -54,8 +54,8 @@ spec:
             }}
         - name: FEDERATION_PUBSUB_TOPIC
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubTopic }}
-        - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID
-          value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscriptionId
+        - name: FEDERATION_PUBSUB_SUBSCRIPTION
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscription
             }}
         - name: OPERATOR_NAMESPACE
           valueFrom:

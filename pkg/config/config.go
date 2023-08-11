@@ -37,11 +37,11 @@ type Config struct {
 }
 
 type FederationConfig struct {
-	ClusterName          string         `envconfig:"FEDERATION_CLUSTER_NAME"`
-	Mode                 FederationMode `envconfig:"FEDERATION_PUBSUB_MODE"`
-	PubsubProjectID      string         `envconfig:"FEDERATION_PUBSUB_GCP_PROJECT_ID"`
-	PubsubTopic          string         `envconfig:"FEDERATION_PUBSUB_TOPIC"`
-	PubsubSubscriptionID string         `envconfig:"FEDERATION_PUBSUB_SUBSCRIPTION_ID"`
+	ClusterName        string         `envconfig:"FEDERATION_CLUSTER_NAME"`
+	Mode               FederationMode `envconfig:"FEDERATION_PUBSUB_MODE"`
+	PubsubProjectID    string         `envconfig:"FEDERATION_PUBSUB_GCP_PROJECT_ID"`
+	PubsubTopic        string         `envconfig:"FEDERATION_PUBSUB_TOPIC"`
+	PubsubSubscription string         `envconfig:"FEDERATION_PUBSUB_SUBSCRIPTION"`
 }
 
 func (f *FederationConfig) IsEnabled() bool {
@@ -64,10 +64,7 @@ func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, e
 		return nil, err
 	}
 
-	subscription, err := c.pubsubSubscription(ctx, client)
-	if err != nil {
-		return nil, err
-	}
+	subscription := c.pubsubSubscription(ctx, client)
 
 	return federation.NewSubscriber(client, subscription, c.OperatorNamespace), nil
 }
@@ -95,15 +92,6 @@ func (c *Config) pubsubTopic(client *pubsub.Client) *pubsub.Topic {
 	return client.Topic(c.Federation.PubsubTopic)
 }
 
-func (c *Config) pubsubSubscription(ctx context.Context, client *pubsub.Client) (*pubsub.Subscription, error) {
-	topic := c.pubsubTopic(client)
-
-	return client.CreateSubscription(
-		ctx,
-		c.Federation.PubsubSubscriptionID,
-		pubsub.SubscriptionConfig{
-			Topic:                 topic,
-			EnableMessageOrdering: true,
-		},
-	)
+func (c *Config) pubsubSubscription(ctx context.Context, client *pubsub.Client) *pubsub.Subscription {
+	return client.Subscription(c.Federation.PubsubSubscription)
 }
