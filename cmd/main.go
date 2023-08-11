@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -83,7 +84,7 @@ func main() {
 
 	subscriber, err := cfg.PubsubSubscriber(ctx)
 	if err != nil {
-		setupLog.Error(err, "create pubsub subscriber: %s", err)
+		setupLog.Error(err, fmt.Sprintf("create pubsub subscriber: %s", err))
 		os.Exit(1)
 	}
 
@@ -93,7 +94,7 @@ func main() {
 
 	publisher, err := cfg.PubsubPublisher(ctx)
 	if err != nil {
-		setupLog.Error(err, "create pubsub publisher: %s", err)
+		setupLog.Error(err, fmt.Sprintf("create pubsub publisher: %s", err))
 		os.Exit(1)
 	}
 
