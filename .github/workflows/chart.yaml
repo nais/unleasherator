@@ -15,6 +15,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.9'
   HELM_VERSION: v3.11.2
+  GHCR_REGISTRY: ghcr.io
   ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
   ARTIFACT_REPO: nais-io/nais/feature
   SERVICE_ACCOUNT: gh-unleasherator@nais-io.iam.gserviceaccount.com
@@ -122,6 +123,31 @@ jobs:
       - name: Create kind cluster
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@v1.8.0
+
+      - uses: docker/setup-buildx-action@v2
+      - uses: docker/metadata-action@v4
+        id: metadata
+        with:
+          images: |
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=raw,value=main
+      - uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Load image to kind
+        run: |
+          kind load docker-image ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main --name chart-testing
+
+          # Hack imagePullPolicy to never to avoid pulling during test install
+          sed -i "s/imagePullPolicy: Always/imagePullPolicy: Never/g" ./charts/${{ needs.meta.outputs.name }}/values.yaml
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'

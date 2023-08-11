@@ -86,14 +86,20 @@ func main() {
 		setupLog.Error(err, "create pubsub subscriber: %s", err)
 		os.Exit(1)
 	}
-	defer subscriber.Close()
+
+	if subscriber != nil {
+		defer subscriber.Close()
+	}
 
 	publisher, err := cfg.PubsubPublisher(ctx)
 	if err != nil {
 		setupLog.Error(err, "create pubsub publisher: %s", err)
 		os.Exit(1)
 	}
-	defer publisher.Close()
+
+	if publisher != nil {
+		defer publisher.Close()
+	}
 
 	if err = (&controllers.UnleashReconciler{
 		Client:            mgr.GetClient(),
@@ -101,7 +107,7 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.UnleashFederation{
-			Enabled:   cfg.Federation.IsEnabled(),
+			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
 			Publisher: publisher,
 		},
 	}).SetupWithManager(mgr); err != nil {
@@ -114,7 +120,7 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
 		Federation: controllers.RemoteUnleashFederation{
-			Enabled:     cfg.Federation.IsEnabled(),
+			Enabled:     cfg.Federation.IsEnabled() && subscriber != nil,
 			ClusterName: cfg.Federation.ClusterName,
 			Subscriber:  subscriber,
 		},

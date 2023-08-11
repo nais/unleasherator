@@ -86,8 +86,12 @@ helm: manifests kustomize helmify ## Generate Helm chart.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: ## Build docker image with the manager.
 	docker build -t ${IMG} .
+
+.PHONY: docker-image
+docker-image: ## Echo the docker image name.
+	@echo ${IMG}
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -140,7 +144,7 @@ logs: manifests kustomize ## Show logs for controller in the K8s cluster specifi
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/localhost | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Build Dependencies
 
