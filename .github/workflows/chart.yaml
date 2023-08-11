@@ -15,6 +15,7 @@ concurrency:
 env:
   PYTHON_VERSION: '3.9'
   HELM_VERSION: v3.11.2
+  GHCR_REGISTRY: ghcr.io
   ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
   ARTIFACT_REPO: nais-io/nais/feature
   SERVICE_ACCOUNT: gh-unleasherator@nais-io.iam.gserviceaccount.com
@@ -122,6 +123,11 @@ jobs:
       - name: Create kind cluster
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@v1.8.0
+
+      - name: Load image to kind
+        run:
+          make docker-build
+          kind load docker-image ghcr.io/nais/unleasherator:main --name kind
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
