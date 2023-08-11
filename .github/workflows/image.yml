@@ -130,7 +130,7 @@ jobs:
         id: metadata
         with:
           images: |
-            ${{ env.GHCR_REGISTRY }}/${{ needs.meta.outputs.name }}
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           tags: |
             type=schedule
             type=ref,event=branch
