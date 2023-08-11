@@ -6,7 +6,8 @@ Implementation status: `beta`
 
 ## Implementation
 
-Creates a new unleash API token for the Unleash instance specified in the `unleashInstance` field. This can be either an `Unleash` or a `RemoteUnleash` resource in the same namespace.
+Creates a new unleash API token for the Unleash instance specified in the `unleashInstance` field.
+This can be either an `Unleash` or a `RemoteUnleash` resource in the same namespace.
 
 ```mermaid
 sequenceDiagram

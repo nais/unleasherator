@@ -13,6 +13,16 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: "unleasherator"
+        - name: FEDERATION_CLUSTER_NAME
+          value: ""
+        - name: FEDERATION_PUBSUB_MODE
+          value: ""
+        - name: FEDERATION_PUBSUB_GCP_PROJECT_ID
+          value: ""
+        - name: FEDERATION_PUBSUB_TOPIC
+          value: ""
+        - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID
+          value: ""
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:

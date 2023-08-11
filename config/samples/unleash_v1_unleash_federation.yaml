@@ -1,0 +1,32 @@
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  labels:
+    app.kubernetes.io/name: unleash
+    app.kubernetes.io/instance: unleash-sample
+    app.kubernetes.io/part-of: unleasherator
+    app.kuberentes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: unleasherator
+  name: unleash-sample
+spec:
+  size: 1
+  database:
+    secretName: postgres-postgresql
+    secretPassKey: postgres-password
+    host: postgres-postgresql
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+  federation:
+    enabled: true
+    clusters:
+      - prod-cluster
+      - dev-cluster
+    namespaces:
+      - team-a
+      - team-b
+

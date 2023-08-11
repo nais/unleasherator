@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	mockfederation "github.com/nais/unleasherator/pkg/federation/mockfediration"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -27,12 +28,15 @@ import (
 const operatorNamespace = "default"
 
 var (
-	cfg                *rest.Config
-	k8sClient          client.Client // You'll be using this client in your tests.
-	testEnv            *envtest.Environment
-	ctx                context.Context
-	cancel             context.CancelFunc
-	ApiTokenNameSuffix = "unleasherator"
+	cfg                     *rest.Config
+	k8sClient               client.Client // You'll be using this client in your tests.
+	testEnv                 *envtest.Environment
+	ctx                     context.Context
+	cancel                  context.CancelFunc
+	remoteUnleashReconciler *RemoteUnleashReconciler
+	ApiTokenNameSuffix      = "unleasherator"
+	mockSubscriber          = &mockfederation.MockSubscriber{}
+	mockPublisher           = &mockfederation.MockPublisher{}
 )
 
 func TestAPIs(t *testing.T) {
@@ -84,14 +88,24 @@ var _ = BeforeSuite(func() {
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
 		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
+		Federation: UnleashFederation{
+			Enabled:   true,
+			Publisher: mockPublisher,
+		},
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&RemoteUnleashReconciler{
+	remoteUnleashReconciler = &RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
-	}).SetupWithManager(k8sManager)
+		Federation: RemoteUnleashFederation{
+			Enabled:     true,
+			ClusterName: "test-cluster",
+			Subscriber:  mockSubscriber,
+		},
+	}
+	err = remoteUnleashReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
@@ -107,7 +121,6 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
-
 })
 
 var _ = AfterSuite(func() {

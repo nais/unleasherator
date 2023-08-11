@@ -26,8 +26,9 @@ import (
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/resources"
-	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
 const unleashFinalizer = "unleash.nais.io/finalizer"
@@ -41,6 +42,14 @@ var (
 		},
 		[]string{"namespace", "name", "status"},
 	)
+
+	unleashPublished = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_federation_published_total",
+			Help: "Number of Unleash federation messages published with status",
+		},
+		[]string{"state", "status"},
+	)
 )
 
 func init() {
@@ -53,6 +62,12 @@ type UnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	Federation        UnleashFederation
+}
+
+type UnleashFederation struct {
+	Enabled   bool
+	Publisher federation.Publisher
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -277,7 +292,44 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set the connection status of the Unleash instance to available
 	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	err = r.publish(ctx, unleash)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, err
+}
+
+// publish the Unleash instance to pubsub if federation is enabled.
+// It fetches the API token and publishes the instance using the federation publisher.
+// If the API token cannot be fetched, it returns an error.
+func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unleash) error {
+	log := log.FromContext(ctx).WithName("publish")
+
+	if !r.Federation.Enabled || !unleash.Spec.Federation.Enabled {
+		log.Info("Federation is disabled, skipping publishing")
+		return nil
+	}
+
+	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		log.Error(err, "Failed to fetch API token")
+		return fmt.Errorf("publish could not fetch API token: %w", err)
+	}
+
+	err = r.Federation.Publisher.Publish(ctx, unleash, string(token))
+	if err != nil {
+		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		return fmt.Errorf("publish could not publish Unleash instance: %w", err)
+	}
+
+	unleashPublished.WithLabelValues("provisioned", "success").Inc()
+	return nil
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
@@ -508,10 +560,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret, err = resources.OperatorSecretForUnleash(unleash, r.Scheme, r.OperatorNamespace, adminKey)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
+		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {
@@ -701,7 +750,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 	})
 }
 
-func (r UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
+func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx)
 
 	switch status.Type {
@@ -738,15 +787,4 @@ func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)
-}
-
-// GetApiToken will return the API token for the Unleash instance
-func GetApiToken(ctx context.Context, r client.Client, unleashName, operatorNamespace string) (string, error) {
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{Name: unleashName, Namespace: operatorNamespace}, secret)
-	if err != nil {
-		return "", err
-	}
-
-	return string(secret.Data[unleashv1.UnleashSecretTokenKey]), nil
 }

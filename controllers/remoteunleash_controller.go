@@ -6,9 +6,11 @@ import (
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/unleash"
-	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +28,13 @@ type RemoteUnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	Federation        RemoteUnleashFederation
+}
+
+type RemoteUnleashFederation struct {
+	Enabled     bool
+	ClusterName string
+	Subscriber  federation.Subscriber
 }
 
 var (
@@ -33,9 +42,17 @@ var (
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_remoteunleash_status",
-			Help: "Status of remote Unleash instances",
+			Help: "Status of RemoteUnleash instances",
 		},
 		[]string{"namespace", "name", "status"},
+	)
+
+	remoteUnleashReceived = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_federation_received_total",
+			Help: "Number of Unleash federation messages received with status",
+		},
+		[]string{"state", "status"},
 	)
 )
 
@@ -165,7 +182,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Create Unleash API client
-	unleashClient, err := unleash.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
+	unleashClient, err := unleashclient.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to create Unleash client"); err != nil {
 			return ctrl.Result{}, err
@@ -278,6 +295,108 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 
 func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *unleashv1.RemoteUnleash) {
 
+}
+
+func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error {
+	log := log.FromContext(ctx).WithName("FederationSubscribe")
+
+	if !r.Federation.Enabled {
+		log.Info("Federation is disabled, not consuming pubsub messages")
+		return nil
+	}
+
+	var permanentError error
+
+	for ctx.Err() == nil && permanentError == nil {
+		log.Info("Waiting for pubsub messages")
+		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+			log.Info("Received pubsub message", "status", status)
+
+			if !hasValue(r.Federation.ClusterName, clusters) {
+				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
+				return nil
+			}
+
+			switch status {
+			case pb.Status_Removed:
+				log.Info("Received Status_Removed, not implemented yet")
+				remoteUnleashReceived.WithLabelValues("removed", "error").Inc()
+				return nil
+
+			case pb.Status_Provisioned:
+				log.Info("Received Status_Provisioned")
+
+				const kubernetesWriteTimeout = time.Second * 5
+				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
+				defer cancel()
+
+				// TODO: prometheus metrics for created status
+				err := r.persistAll(timeoutContext, append(remoteUnleashes, adminSecret))
+				if err != nil {
+					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
+					if !retirableError(err) {
+						permanentError = err
+					}
+					return err
+				}
+
+				remoteUnleashReceived.WithLabelValues("provisioned", "success").Inc()
+				return nil
+			default:
+				remoteUnleashReceived.WithLabelValues("unknown", "error").Inc()
+				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
+				return nil
+			}
+		})
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return permanentError
+}
+
+// retirableError returns true if the error is not a forbidden or unauthorized error.
+func retirableError(err error) bool {
+	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// createOrUpdate creates or updates the given resource.
+// If the resource already exists, it will be updated.
+// If the resource does not exist, it will be created.
+// If the resource fails to persist, the error is returned.
+func (r *RemoteUnleashReconciler) createOrUpdate(ctx context.Context, resource client.Object) error {
+	objectKey := client.ObjectKeyFromObject(resource)
+	existing := &unleashv1.RemoteUnleash{}
+	err := r.Get(ctx, objectKey, existing)
+
+	if apierrors.IsNotFound(err) {
+		return r.Create(ctx, resource)
+	} else if err != nil {
+		return err
+	}
+
+	resource.SetResourceVersion(existing.GetResourceVersion())
+	resource.SetUID(existing.GetUID())
+	resource.SetSelfLink(existing.GetSelfLink())
+
+	return r.Update(ctx, resource)
+}
+
+// persistAll persists all resources in the given slice.
+// If any of the resources fail to persist, the error is returned.
+// Be aware that this function does not do any retries and will return
+// immediately if any of the resources fail to persist. Subsequent
+// resources will not be persisted.
+func (r *RemoteUnleashReconciler) persistAll(ctx context.Context, resources []client.Object) error {
+	for _, resource := range resources {
+		err := r.createOrUpdate(ctx, resource)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -1,4 +1,4 @@
-package unleash
+package unleashclient
 
 import (
 	"encoding/json"

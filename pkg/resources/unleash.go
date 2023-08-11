@@ -47,7 +47,7 @@ func GenerateAdminKey() (string, error) {
 }
 
 func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*monitoringv1.ServiceMonitor, error) {
-	ls := labelsForUnleash(unleash)
+	ls := labelsForUnleash(unleash.GetName())
 
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -77,7 +77,7 @@ func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 
 // Creates a secret that is managed by way of controller reference
 func InstanceSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, adminKey string) (*corev1.Secret, error) {
-	ls := labelsForUnleash(unleash)
+	ls := labelsForUnleash(unleash.GetName())
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -98,12 +98,12 @@ func InstanceSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 }
 
 // Creates a secret that is not managed, i.e. without a controllerReference
-func OperatorSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, namespace string, adminKey string) (*corev1.Secret, error) {
-	ls := labelsForUnleash(unleash)
+func OperatorSecretForUnleash(name, secretName, namespace, adminKey string) *corev1.Secret {
+	ls := labelsForUnleash(name)
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.GetOperatorSecretName(),
+			Name:      secretName,
 			Namespace: namespace,
 			Labels:    ls,
 		},
@@ -112,11 +112,11 @@ func OperatorSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 		},
 	}
 
-	return secret, nil
+	return secret
 }
 
 func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.ServiceAccount, error) {
-	ls := labelsForUnleash(unleash)
+	ls := labelsForUnleash(unleash.GetName())
 
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
@@ -134,7 +134,7 @@ func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 }
 
 func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.Service, error) {
-	ls := labelsForUnleash(unleash)
+	ls := labelsForUnleash(unleash.GetName())
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -162,7 +162,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 }
 
 func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
-	ls := labelsForUnleash(unleash)
+	ls := labelsForUnleash(unleash.GetName())
 	replicas := unleash.Spec.Size
 
 	envVars, err := envVarsForUnleash(unleash)
@@ -296,9 +296,10 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 
 // labelsForUnleash returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
-	return map[string]string{"app.kubernetes.io/name": "Unleash",
-		"app.kubernetes.io/instance":   unleash.Name,
+func labelsForUnleash(instanceName string) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":       "Unleash",
+		"app.kubernetes.io/instance":   instanceName,
 		"app.kubernetes.io/part-of":    "unleasherator",
 		"app.kubernetes.io/created-by": "controller-manager",
 	}
@@ -306,7 +307,7 @@ func labelsForUnleash(unleash *unleashv1.Unleash) map[string]string {
 
 // IngressForUnleash returns the Ingress for Unleash Deployment
 func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngressConfig, nameSuffix string, scheme *runtime.Scheme) (*networkingv1.Ingress, error) {
-	labels := labelsForUnleash(unleash)
+	labels := labelsForUnleash(unleash.GetName())
 	pathType := networkingv1.PathTypeImplementationSpecific
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -350,7 +351,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
 func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
-	labels := labelsForUnleash(unleash)
+	labels := labelsForUnleash(unleash.GetName())
 
 	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

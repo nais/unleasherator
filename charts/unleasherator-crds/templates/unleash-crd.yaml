@@ -3,7 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   name: unleashes.unleash.nais.io
   annotations:
-    controller-gen.kubebuilder.io/version: v0.12.0
+    controller-gen.kubebuilder.io/version: v0.11.4
   labels:
   {{- include "unleasherator-crds.labels" . | nindent 4 }}
 spec:
@@ -398,7 +398,9 @@ spec:
                                       to be used in HTTP probes
                                     properties:
                                       name:
-                                        description: The header field name
+                                        description: The header field name. This will
+                                          be canonicalized upon output, so case-variant
+                                          names will be understood as the same header.
                                         type: string
                                       value:
                                         description: The header field value
@@ -493,7 +495,9 @@ spec:
                                       to be used in HTTP probes
                                     properties:
                                       name:
-                                        description: The header field name
+                                        description: The header field name. This will
+                                          be canonicalized upon output, so case-variant
+                                          names will be understood as the same header.
                                         type: string
                                       value:
                                         description: The header field value
@@ -606,7 +610,9 @@ spec:
                                   be used in HTTP probes
                                 properties:
                                   name:
-                                    description: The header field name
+                                    description: The header field name. This will be
+                                      canonicalized upon output, so case-variant names
+                                      will be understood as the same header.
                                     type: string
                                   value:
                                     description: The header field value
@@ -807,7 +813,9 @@ spec:
                                   be used in HTTP probes
                                 properties:
                                   name:
-                                    description: The header field name
+                                    description: The header field name. This will be
+                                      canonicalized upon output, so case-variant names
+                                      will be understood as the same header.
                                     type: string
                                   value:
                                     description: The header field value
@@ -1182,7 +1190,9 @@ spec:
                                   be used in HTTP probes
                                 properties:
                                   name:
-                                    description: The header field name
+                                    description: The header field name. This will be
+                                      canonicalized upon output, so case-variant names
+                                      will be understood as the same header.
                                     type: string
                                   value:
                                     description: The header field value
@@ -3063,6 +3073,27 @@ spec:
                   - name
                   type: object
                 type: array
+              federation:
+                description: Federation is the configuration for Unleash federation
+                properties:
+                  clusters:
+                    description: Clusters are the clusters to federate to
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    default: false
+                    description: Enable enables Unleash federation
+                    type: boolean
+                  namespaces:
+                    description: Namespaces are the namespaces to federate to
+                    items:
+                      type: string
+                    type: array
+                  sharedSecret:
+                    description: SecretNonce is the shared secret used for federation
+                    type: string
+                type: object
               networkPolicy:
                 description: NetworkPolicy defines the network policy configuration
                 properties:

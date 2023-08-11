@@ -1,0 +1,53 @@
+dependencies:
+  - allOf:
+      - unleasherator-crds
+environmentKinds:
+  - management
+  - tenant
+  - onprem
+  - legacy
+values:
+  controllerManager.manager.env.apiTokenNameSuffix:
+    computed:
+      template: '"{{ .Env.name }}"'
+  # Federation
+  controllerManager.manager.env.federationClusterName:
+    computed:
+      template: '"{{ .Env.name }}"'
+  controllerManager.manager.env.federationPubsubGcpProjectId:
+    computed:
+      template: '"{{ .Env.unleasherator_pubsub_project_id }}"'
+  controllerManager.manager.env.federationPubsubMode:
+    computed:
+      template: '"{{ .Env.unleasherator_pubsub_mode }}"'
+  controllerManager.manager.env.federationPubsubSubscriptionId:
+    computed:
+      template: '"{{ .Env.unleasherator_pubsub_subscription_id }}"'
+  controllerManager.manager.env.federationPubsubTopic:
+    computed:
+      template: '"{{ .Env.unleasherator_pubsub_topic }}"'
+  controllerManager.manager.image.tag:
+    config:
+      type: string
+  # NetPol
+  networkPolicy.allowDNS:
+    computed:
+      template: "true"
+  networkPolicy.allowedNamespaces:
+    computed:
+      template: |
+        - bifrost-unleash
+  networkPolicy.apiServerCIDR:
+    computed:
+      template: '"{{ .Env.apiserver_endpoint }}/32"'
+    ignoreKind:
+      - onprem
+  networkPolicy.enabled:
+    computed:
+      template: '{{ne .Kind "onprem"}}'
+  networkPolicy.extraOutboundIPs:
+    computed:
+      template: |
+        - "{{ .Env.management_lb_internal_ip }}"
+    ignoreKind:
+      - management

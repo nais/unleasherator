@@ -34,6 +34,11 @@ controllerManager:
         type: RuntimeDefault
     env:
       apiTokenNameSuffix: unleasherator
+      federationClusterName: ""
+      federationPubsubGcpProjectId: ""
+      federationPubsubMode: ""
+      federationPubsubSubscriptionId: ""
+      federationPubsubTopic: ""
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main

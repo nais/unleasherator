@@ -45,6 +45,18 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
+        - name: FEDERATION_CLUSTER_NAME
+          value: {{ quote .Values.controllerManager.manager.env.federationClusterName }}
+        - name: FEDERATION_PUBSUB_MODE
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubMode }}
+        - name: FEDERATION_PUBSUB_GCP_PROJECT_ID
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubGcpProjectId
+            }}
+        - name: FEDERATION_PUBSUB_TOPIC
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubTopic }}
+        - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID
+          value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscriptionId
+            }}
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:

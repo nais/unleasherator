@@ -34,7 +34,7 @@ all: fmt lint vet build generate helm
 
 .PHONY: help
 help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n	make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "	\033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Development
 
@@ -45,6 +45,10 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+
+.PHONY: proto
+proto: protoc protoc-gen-go ## Generate protobuf files.
+	$(PROTOC) --go_opt=paths=source_relative --plugin $(LOCALBIN)/protoc-gen-go --go_out=. pkg/pb/unleasherator.proto
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -65,7 +69,7 @@ test: manifests generate fmt vet lint envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet ## Build manager binary.
+build: generate proto fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
@@ -89,7 +93,7 @@ docker-build: test ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
 
-# PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
+# PLATFORMS defines the target platforms for	the manager image be build to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - able to use docker buildx . More info: https://docs.docker.com/build/buildx/
 # - have enable BuildKit, More info: https://docs.docker.com/develop/develop-images/build_enhancements/
@@ -151,11 +155,12 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 HELMIFY ?= $(LOCALBIN)/helmify
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+PROTOC ?= $(LOCALBIN)/protoc
+PROTOC_GEN ?= $(LOCALBIN)/protoc-gen-go
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
-CONTROLLER_TOOLS_VERSION ?= v0.12.0
-HELMIFY_VERSION ?= v0.4.4-alpha6
+PROTOBUF_VERSION ?= 23.3# without v-prefix
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -166,7 +171,7 @@ $(KUSTOMIZE): $(LOCALBIN)
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
-	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
+	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
@@ -176,9 +181,60 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: helmify
 helmify: $(HELMIFY) ## Download helmify locally if necessary.
 $(HELMIFY): $(LOCALBIN)
-	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/nais/helmify/cmd/helmify@$(HELMIFY_VERSION)
+	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/nais/helmify/cmd/helmify
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	test -s $(LOCALBIN)/golangci-lint || GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint
+
+.PHONY: protoc-gen-go
+protoc-gen-go: $(PROTOC_GEN)
+$(PROTOC_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/protoc-gen-go || GOBIN=$(LOCALBIN) go install google.golang.org/protobuf/cmd/protoc-gen-go
+
+.PHONY: protoc
+protoc: $(PROTOC)
+$(PROTOC): $(LOCALBIN)
+	if [ -f $(LOCALBIN)/protoc ]; then \
+		if [ "$$($(LOCALBIN)/protoc --version | cut -d' ' -f2)" == "$(PROTOBUF_VERSION)" ]; then \
+			exit 0; \
+		else \
+			echo "protoc version $$($(LOCALBIN)/protoc --version | cut -d' ' -f2) does not match required version $(PROTOBUF_VERSION)"; \
+			rm $(LOCALBIN)/protoc; \
+		fi; \
+	fi; \
+	\
+	OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	\
+	ARCH=$$(uname -m); \
+	\
+	if [[ "$$OS" == "darwin" && "$$ARCH" == "x86_64" ]]; then \
+			OS="osx"; \
+			ARCH="x86_64"; \
+	elif [[ "$$OS" == "darwin" && "$$ARCH" == "arm64" ]]; then \
+			OS="osx"; \
+			ARCH="aarch_64"; \
+	elif [[ "$$OS" == "linux" && "$$ARCH" == "x86_64" ]]; then \
+			OS="linux"; \
+			ARCH="x86_64"; \
+	elif [[ "$$OS" == "linux" && "$$ARCH" == "aarch64" ]]; then \
+			OS="linux"; \
+			ARCH="aarch_64"; \
+	else \
+			echo "Unsupported operating system or architecture: $$OS $$ARCH"; \
+			exit 1; \
+	fi; \
+	\
+	echo "Installing protoc for $$OS $$ARCH"; \
+	URL="https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOBUF_VERSION)/protoc-$(PROTOBUF_VERSION)-$$OS-$$ARCH.zip"; \
+	\
+	echo "Downloading $$URL..."; \
+	curl -LO "$$URL"; \
+	\
+	echo "Unzipping protoc binary..."; \
+	unzip -q -j protoc-*.zip 'bin/protoc' -d $(LOCALBIN); \
+	\
+	echo "Cleaning up..."; \
+	rm protoc-*.zip;
+

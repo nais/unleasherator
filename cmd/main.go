@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -18,6 +19,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/controllers"
+	"github.com/nais/unleasherator/pkg/config"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -45,9 +47,20 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	// Load configuration from environment
+	cfg, err := config.LoadFromEnv()
+	if err != nil {
+		setupLog.Error(err, "unable to load configuration from environment")
+		os.Exit(1)
+	}
+
+	// Global parent context for program
+	signalHandlerContext := ctrl.SetupSignalHandler()
+	ctx, cancel := context.WithCancel(signalHandlerContext)
+	defer cancel()
+
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	var err error
 	options := ctrl.Options{Scheme: scheme}
 	if configFile != "" {
 		options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
@@ -63,28 +76,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	apiTokenNameSuffix := os.Getenv("API_TOKEN_NAME_SUFFIX")
-	operatorNamespace := os.Getenv("OPERATOR_NAMESPACE")
-	if operatorNamespace == "" {
+	if cfg.OperatorNamespace == "" {
 		setupLog.Error(err, "unable to get OPERATOR_NAMESPACE from environment")
 		os.Exit(1)
 	}
+
+	subscriber, err := cfg.PubsubSubscriber(ctx)
+	if err != nil {
+		setupLog.Error(err, "create pubsub subscriber: %s", err)
+		os.Exit(1)
+	}
+	defer subscriber.Close()
+
+	publisher, err := cfg.PubsubPublisher(ctx)
+	if err != nil {
+		setupLog.Error(err, "create pubsub publisher: %s", err)
+		os.Exit(1)
+	}
+	defer publisher.Close()
 
 	if err = (&controllers.UnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
-		OperatorNamespace: operatorNamespace,
+		OperatorNamespace: cfg.OperatorNamespace,
+		Federation: controllers.UnleashFederation{
+			Enabled:   cfg.Federation.IsEnabled(),
+			Publisher: publisher,
+		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
-	if err = (&controllers.RemoteUnleashReconciler{
+	remoteUnleashReconciler := &controllers.RemoteUnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
-		OperatorNamespace: operatorNamespace,
-	}).SetupWithManager(mgr); err != nil {
+		OperatorNamespace: cfg.OperatorNamespace,
+		Federation: controllers.RemoteUnleashFederation{
+			Enabled:     cfg.Federation.IsEnabled(),
+			ClusterName: cfg.Federation.ClusterName,
+			Subscriber:  subscriber,
+		},
+	}
+	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
 	}
@@ -92,13 +127,21 @@ func main() {
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
 		Recorder:           mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace:  operatorNamespace,
-		ApiTokenNameSuffix: apiTokenNameSuffix,
+		OperatorNamespace:  cfg.OperatorNamespace,
+		ApiTokenNameSuffix: cfg.ApiTokenNameSuffix,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
+
+	go func(ctx context.Context) {
+		err := remoteUnleashReconciler.FederationSubscribe(ctx)
+		if err != nil {
+			setupLog.Error(err, "PubSub subscriber error, shutting down")
+			cancel()
+		}
+	}(ctx)
 
 	// @TODO add webhooks here
 
@@ -112,7 +155,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

@@ -70,8 +70,45 @@ func remoteUnleashApiTokenResource(name, namespace, secretName string, remoteUnl
 	}
 }
 
-func unsetConditionLastTransitionTime(conditions []metav1.Condition) {
+func unleashResource(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
+	return &unleashv1.Unleash{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "unleash.nais.io/v1",
+			Kind:       "Unleash",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: spec,
+	}
+}
+
+func unleashApiTokenResource(name, namespace, secretName string, unleash *unleashv1.Unleash) *unleashv1.ApiToken {
+	return &unleashv1.ApiToken{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "unleash.nais.io/v1",
+			Kind:       "ApiToken",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: unleashv1.ApiTokenSpec{
+			UnleashInstance: unleashv1.ApiTokenUnleashInstance{
+				ApiVersion: "unleash.nais.io/v1",
+				Kind:       "Unleash",
+				Name:       unleash.Name,
+			},
+			SecretName: secretName,
+		},
+	}
+}
+
+func unsetConditionLastTransitionTime(conditions []metav1.Condition) []metav1.Condition {
 	for i := range conditions {
 		conditions[i].LastTransitionTime = metav1.Time{}
 	}
+
+	return conditions
 }

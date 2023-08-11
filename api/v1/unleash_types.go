@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	unleashclient "github.com/nais/unleasherator/pkg/unleash"
+	"github.com/nais/unleasherator/pkg/unleashclient"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -95,6 +95,29 @@ type UnleashSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Federation is the configuration for Unleash federation
+	// +kubebuilder:validation:Optional
+	Federation UnleashFederationConfig `json:"federation,omitempty"`
+}
+
+// UnleashFederationConfig defines the configuration for Unleash federation
+type UnleashFederationConfig struct {
+	// Enable enables Unleash federation
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Clusters are the clusters to federate to
+	// +kubebuilder:validation:Optional
+	Clusters []string `json:"clusters,omitempty"`
+
+	// Namespaces are the namespaces to federate to
+	// +kubebuilder:validation:Optional
+	Namespaces []string `json:"namespaces,omitempty"`
+
+	// SecretNonce is the shared secret used for federation
+	// +kubebuilder:validation:Optional
+	SecretNonce string `json:"sharedSecret,omitempty"`
 }
 
 // UnleashPrometheusConfig defines the prometheus configuration
@@ -290,6 +313,14 @@ func (u *Unleash) GetOperatorSecretName() string {
 
 func (u *Unleash) URL() string {
 	return fmt.Sprintf("http://%s.%s", u.Name, u.Namespace)
+}
+
+func (u *Unleash) PublicApiURL() string {
+	return fmt.Sprintf("https://%s", u.Spec.ApiIngress.Host)
+}
+
+func (u *Unleash) PublicWebURL() string {
+	return fmt.Sprintf("https://%s", u.Spec.WebIngress.Host)
 }
 
 func (u *Unleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
