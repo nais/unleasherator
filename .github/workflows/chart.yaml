@@ -127,7 +127,7 @@ jobs:
       - name: Load image to kind
         run: |
           make docker-build
-          kind load docker-image ghcr.io/nais/unleasherator:main --name kind
+          kind load docker-image ghcr.io/nais/unleasherator:main --name kind-chart-testing
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
