@@ -63,17 +63,17 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet lint envtest ## Run tests.
+test: envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
 ##@ Build
 
 .PHONY: build
-build: generate proto fmt vet ## Build manager binary.
+build: manifests generate proto fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
+run: build ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: helm
