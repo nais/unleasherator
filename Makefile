@@ -69,7 +69,7 @@ test: envtest ## Run tests.
 ##@ Build
 
 .PHONY: build
-build: manifests generate proto fmt vet ## Build manager binary.
+build: manifests generate proto ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
