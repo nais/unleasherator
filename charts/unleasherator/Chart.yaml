@@ -4,6 +4,8 @@ description: A Helm chart for Unleasherator
 maintainers:
   - email: "nais@nav.no"
     name: "nais"
+sources:
+  - https://github.com/nais/unleasherator/tree/main/charts/unleasherator
 name: unleasherator
 type: application
 version: 1.14.0

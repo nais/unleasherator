@@ -4,6 +4,8 @@ description: A Helm chart for Unleasherator CRDs
 maintainers:
   - email: "nais@nav.no"
     name: "nais"
+sources:
+  - https://github.com/nais/unleasherator/tree/main/charts/unleasherator-crds
 name: unleasherator-crds
 type: application
 version: 1.14.0

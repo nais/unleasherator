@@ -1,0 +1,62 @@
+name: Fasit Rollout
+on:
+  workflow_run:
+    workflows: [
+      "Helm Chart",
+      "Container Image"
+    ]
+    branches: [ main ]
+    types:
+      - completed
+
+env:
+  ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
+  ARTIFACT_REPO: nais-io/nais/feature
+
+jobs:
+  meta:
+    name: Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      name: ${{ steps.name.outputs.name }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - id: version
+        run: echo "version=$(date +'%Y%m%d')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
+
+      - id: name
+        run: echo "name=${{ github.event.repository.name }}" >> ${GITHUB_OUTPUT}
+
+  wait:
+    name: Wait for workflows
+    runs-on: ubuntu-latest
+    needs: meta
+    steps:
+      - uses: ahmadnassri/action-workflow-run-wait@2aa3d9e1a12ecaaa9908e368eaf2123bb084323e
+
+  rollout:
+    name: Rollout to Fasit
+    runs-on: fasit-deploy
+    permissions:
+      id-token: write
+    needs: [meta, wait]
+    steps:
+      - uses: nais/fasit-deploy@v2
+        with:
+          chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
+          version: ${{ needs.meta.outputs.version }}
+          feature_name: ${{ needs.meta.outputs.name }}
+
+  git-tag:
+    runs-on: ubuntu-latest
+    needs: [meta, rollout]
+    steps:
+      - uses: actions/checkout@v3
+      - name: git tag and push
+        run: |
+          git tag ${{ needs.meta.outputs.version }}
+          git push origin ${{ needs.meta.outputs.version }}
