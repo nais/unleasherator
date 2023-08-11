@@ -45,7 +45,15 @@ jobs:
       id-token: write
     needs: [meta, wait]
     steps:
-      - uses: nais/fasit-deploy@v2
+      - name: Deploy CRDs
+        uses: nais/fasit-deploy@v2
+        with:
+          chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}-crds
+          version: ${{ needs.meta.outputs.version }}
+          feature_name: ${{ needs.meta.outputs.name }}-crds
+
+      - name: Deploy Operator
+        uses: nais/fasit-deploy@v2
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
           version: ${{ needs.meta.outputs.version }}
