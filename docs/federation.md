@@ -40,13 +40,13 @@ The management cluster has an Unleasherator instance that is responsible for cre
 
 For Unleasherator to be able to create the Unleash instance, it needs to be configured with the correct PubSub topic. The following configuration options are available for Unleasherator Helm chart:
 
-| Name                                                           | Description                                                           | Default |
-| -------------------------------------------------------------- | --------------------------------------------------------------------- | ------- |
-| `controllerManager.manager.env.federationClusterName`          | Cluster name                                                          | `""`    |
-| `controllerManager.manager.env.federationPubsubMode`           | Federation mode, either `"publish"`, `"subscribe"` or `""` (disabled) | `""`    |
-| `controllerManager.manager.env.federationPubsubGcpProjectId`   | GCP project ID for PubSub topic                                       | `""`    |
-| `controllerManager.manager.env.federationPubsubSubscriptionId` | PubSub subscription ID                                                | `""`    |
-| `controllerManager.manager.env.federationPubsubTopic`          | PubSub topic                                                          | `""`    |
+| Name                                                         | Description                                                           | Default |
+| ------------------------------------------------------------ | --------------------------------------------------------------------- | ------- |
+| `controllerManager.manager.env.federationClusterName`        | Cluster name                                                          | `""`    |
+| `controllerManager.manager.env.federationPubsubMode`         | Federation mode, either `"publish"`, `"subscribe"` or `""` (disabled) | `""`    |
+| `controllerManager.manager.env.federationPubsubGcpProjectId` | GCP project ID for PubSub topic                                       | `""`    |
+| `controllerManager.manager.env.federationPubsubSubscription` | PubSub subscription ID                                                | `""`    |
+| `controllerManager.manager.env.federationPubsubTopic`        | PubSub topic                                                          | `""`    |
 
 The following configuration options are available for the individual Unleash instance:
 

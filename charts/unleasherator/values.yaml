@@ -37,7 +37,7 @@ controllerManager:
       federationClusterName: ""
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""
-      federationPubsubSubscriptionId: ""
+      federationPubsubSubscription: ""
       federationPubsubTopic: ""
     image:
       repository: ghcr.io/nais/unleasherator

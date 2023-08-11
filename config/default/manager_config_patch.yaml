@@ -21,7 +21,7 @@ spec:
           value: ""
         - name: FEDERATION_PUBSUB_TOPIC
           value: ""
-        - name: FEDERATION_PUBSUB_SUBSCRIPTION_ID
+        - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: ""
         - name: OPERATOR_NAMESPACE
           valueFrom:

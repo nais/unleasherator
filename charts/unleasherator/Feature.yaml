@@ -20,9 +20,9 @@ values:
   controllerManager.manager.env.federationPubsubMode:
     computed:
       template: '"{{ .Env.unleasherator_pubsub_mode }}"'
-  controllerManager.manager.env.federationPubsubSubscriptionId:
+  controllerManager.manager.env.federationPubsubSubscription:
     computed:
-      template: '"{{ .Env.unleasherator_pubsub_subscription_id }}"'
+      template: '"{{ .Env.unleasherator_pubsub_subscription }}"'
   controllerManager.manager.env.federationPubsubTopic:
     computed:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
