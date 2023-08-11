@@ -125,7 +125,7 @@ jobs:
         uses: helm/kind-action@v1.8.0
 
       - name: Load image to kind
-        run:
+        run: |
           make docker-build
           kind load docker-image ghcr.io/nais/unleasherator:main --name kind
 
