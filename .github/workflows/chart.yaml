@@ -124,10 +124,26 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@v1.8.0
 
+      - uses: docker/setup-buildx-action@v2
+      - uses: docker/metadata-action@v4
+        id: metadata
+        with:
+          images: |
+            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
+          tags: |
+            type=raw,value=main
+      - uses: docker/build-push-action@v4
+        with:
+          context: .
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
       - name: Load image to kind
         run: |
-          make docker-build
-          kind load docker-image $(make docker-image) --name chart-testing
+          kind load docker-image ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main --name chart-testing
 
       - name: Run chart-testing (install)
         if: steps.list-changed.outputs.changed == 'true'
