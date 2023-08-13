@@ -50,7 +50,7 @@ controllerManager:
         cpu: 50m
         memory: 256Mi
   replicas: 1
-  serviceaccount:
+  serviceAccount:
     annotations: {}
 kubernetesClusterDomain: cluster.local
 managerConfig:
