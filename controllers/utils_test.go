@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -111,4 +113,29 @@ func unsetConditionLastTransitionTime(conditions []metav1.Condition) []metav1.Co
 	}
 
 	return conditions
+}
+
+// promeGaugeVecVal returns the value of a prometheus GaugeVec
+func promGaugeVecVal(gv *prometheus.GaugeVec, lvs ...string) (float64, error) {
+	var m = &dto.Metric{}
+
+	if err := gv.WithLabelValues(lvs...).Write(m); err != nil {
+		return 0, err
+	}
+
+	return m.GetGauge().GetValue(), nil
+}
+
+func promCounterVecVal(cv *prometheus.CounterVec, lvs ...string) (float64, error) {
+	var m = &dto.Metric{}
+
+	if err := cv.WithLabelValues(lvs...).Write(m); err != nil {
+		return 0, nil
+	}
+
+	return m.GetCounter().GetValue(), nil
+}
+
+func promCounterVecFlush(cv *prometheus.CounterVec) {
+	cv.Reset()
 }
