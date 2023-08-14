@@ -9,8 +9,7 @@ import (
 
 // test the RemoteunleashInstance function
 func TestRemoteunleashInstance(t *testing.T) {
-	object := RemoteunleashInstance("name", "url", "namespace", "secretName", "secretNamespace")
-	remoteUnleash := object.(*unleashv1.RemoteUnleash)
+	remoteUnleash := RemoteunleashInstance("name", "url", "namespace", "secretName", "secretNamespace")
 
 	assert.Equal(t, "name", remoteUnleash.GetName())
 	assert.Equal(t, "namespace", remoteUnleash.GetNamespace())
@@ -39,6 +38,6 @@ func TestRemoteunleashInstances(t *testing.T) {
 	assert.Equal(t, len(namespaces), len(resources))
 
 	for i := 0; i < len(namespaces); i++ {
-		assertPair(resources[i].(*unleashv1.RemoteUnleash), namespaces[i])
+		assertPair(resources[i], namespaces[i])
 	}
 }

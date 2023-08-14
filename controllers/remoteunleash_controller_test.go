@@ -128,7 +128,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
-			var remoteUnleashes []client.Object
+			var remoteUnleashes []*unleashv1.RemoteUnleash
 
 			By("By creating a new RemoteUnleash that does not match cluster")
 			name := "test-unleash-other-cluster"
@@ -136,7 +136,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			clusters := []string{"some-cluster"}
 			secret := remoteUnleashSecretResource(name, namespaces[0], "test")
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
-			remoteUnleashes = append([]client.Object{}, remoteUnleash)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
@@ -149,7 +149,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			clusters = []string{"test-cluster"}
 			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
 			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
-			remoteUnleashes = append([]client.Object{}, remoteUnleash)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
@@ -157,6 +157,18 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 
 			By("By updating an existing RemoteUnleash that matches cluster")
+			name = "test-unleash-same-cluster"
+			namespaces = []string{"default"}
+			clusters = []string{"test-cluster"}
+			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
+
+			Eventually(func() error {
+				return handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			}, timeout, interval).ShouldNot(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 		})
 	})
 })

@@ -9,8 +9,9 @@ import (
 	"github.com/nais/unleasherator/pkg/resources"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
 
 type Subscriber interface {
@@ -18,7 +19,7 @@ type Subscriber interface {
 	Close() error
 }
 
-type Handler func(ctx context.Context, remoteUnleash []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error
+type Handler func(ctx context.Context, remoteUnleash []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
 	client            *pubsub.Client

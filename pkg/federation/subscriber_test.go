@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestSubscriber_Subscribe(t *testing.T) {
@@ -68,13 +67,15 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleash []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, operatorNamespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecret.GetName())
 			assert.Equal(t, apiToken, adminSecret.StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
-			// @todo assert remoteUnleash
+			assert.Equal(t, 2, len(remoteUnleashes))
+			assert.Equal(t, "namespace-1", remoteUnleashes[0].GetNamespace())
+			assert.Equal(t, "namespace-2", remoteUnleashes[1].GetNamespace())
 
 			received <- true
 
@@ -114,12 +115,12 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		OrderingKey: pubsubOrderingKey,
 	}
 
-	var capturedRemoteUnleashes []client.Object
+	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
 	var capturedAdminSecret *corev1.Secret
 	var capturedClusters []string
 	var capturedStatus pb.Status
 
-	mockHandler := func(ctx context.Context, remoteUnleashes []client.Object, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 		capturedRemoteUnleashes = remoteUnleashes
 		capturedAdminSecret = adminSecret
 		capturedClusters = clusters
@@ -136,7 +137,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.Equal(t, len(capturedRemoteUnleashes), 1)
 	assert.Equal(t, len(capturedClusters), 1)
 
-	capturedRemoteUnleash := capturedRemoteUnleashes[0].(*unleashv1.RemoteUnleash)
+	capturedRemoteUnleash := capturedRemoteUnleashes[0]
 
 	assert.Equal(t, instance.Name, capturedRemoteUnleash.GetName())
 	assert.Equal(t, instance.Url, capturedRemoteUnleash.URL())
