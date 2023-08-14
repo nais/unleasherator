@@ -89,7 +89,10 @@ func (c *Config) pubsubClient(ctx context.Context) (*pubsub.Client, error) {
 }
 
 func (c *Config) pubsubTopic(client *pubsub.Client) *pubsub.Topic {
-	return client.Topic(c.Federation.PubsubTopic)
+	topic := client.Topic(c.Federation.PubsubTopic)
+	topic.EnableMessageOrdering = true
+
+	return topic
 }
 
 func (c *Config) pubsubSubscription(ctx context.Context, client *pubsub.Client) *pubsub.Subscription {
