@@ -27,7 +27,7 @@ values:
     computed:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
   # Service account
-  controllerManager.serviceaccount.annotations:
+  controllerManager.serviceAccount.annotations:
     computed:
       template: |
         iam.gke.io/gcp-service-account: "{{ .Env.unleasherator_service_account }}"
