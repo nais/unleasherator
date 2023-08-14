@@ -164,8 +164,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
-			Expect(err).ToNot(HaveOccurred())
+			Eventually(func() error {
+				return handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			}, timeout, interval).ShouldNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 		})
