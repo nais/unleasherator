@@ -136,7 +136,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			clusters := []string{"some-cluster"}
 			secret := remoteUnleashSecretResource(name, namespaces[0], "test")
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
-			remoteUnleashes = append([]*unleashv1.RemoteUnleash{}, remoteUnleash)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
@@ -149,7 +149,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			clusters = []string{"test-cluster"}
 			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
 			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
-			remoteUnleashes = append([]*unleashv1.RemoteUnleash{}, remoteUnleash)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
@@ -162,7 +162,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			clusters = []string{"test-cluster"}
 			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
 			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
-			remoteUnleashes = append([]*unleashv1.RemoteUnleash{}, remoteUnleash)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
