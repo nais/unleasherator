@@ -7,7 +7,6 @@ import (
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/mock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -55,11 +54,8 @@ var _ = Describe("RemoteUnleash controller", func() {
 				Message: "Failed to get admin token secret",
 			}))
 			Expect(createdRemoteUnleash.IsReady()).To(BeFalse())
-
-			var m = &dto.Metric{}
-			err := unleashStatus.WithLabelValues(RemoteUnleashNamespace, RemoteUnleashName, "available").Write(m)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(m.GetGauge().GetValue()).To(Equal(float64(0)))
+			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeReconciled)).To(Equal(0.0))
+			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeConnected)).To(Equal(0.0))
 
 			By("By deleting the RemoteUnleash")
 			Expect(k8sClient.Delete(ctx, createdRemoteUnleash)).Should(Succeed())
@@ -95,6 +91,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(createdRemoteUnleash.Status.Version).To(Equal("v4.0.0"))
 			Expect(createdRemoteUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdRemoteUnleash.Status.Connected).To(BeTrue())
+
+			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeReconciled)).To(Equal(1.0))
+			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeConnected)).To(Equal(1.0))
 		})
 	})
 
@@ -155,6 +154,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
+			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "success")).To(Equal(1.0))
 
 			By("By updating an existing RemoteUnleash that matches cluster")
 			name = "test-unleash-same-cluster"
@@ -169,6 +169,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 			}, timeout, interval).ShouldNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
+			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "success")).To(Equal(2.0))
 		})
 	})
 })
