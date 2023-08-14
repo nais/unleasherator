@@ -3092,6 +3092,7 @@ spec:
                     type: array
                   sharedSecret:
                     description: SecretNonce is the shared secret used for federation
+                    pattern: ^[a-z0-9]+$
                     type: string
                 type: object
               networkPolicy:
