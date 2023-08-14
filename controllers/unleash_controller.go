@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -53,7 +54,7 @@ var (
 )
 
 func init() {
-	metrics.Registry.MustRegister(unleashStatus)
+	metrics.Registry.MustRegister(unleashStatus, unleashPublished)
 }
 
 // UnleashReconciler reconciles a Unleash object
@@ -139,8 +140,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
-			log.Error(err, "Failed to add finalizer into the Unleash")
-			return ctrl.Result{Requeue: true}, nil
+			log.Info("Finalizer already present for Unleash")
+			return ctrl.Result{}, nil
 		}
 
 		if err = r.Update(ctx, unleash); err != nil {
@@ -276,6 +277,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Set the reconcile status of the Unleash instance to available
+	log.Info("Successfully reconciled Unleash resources")
 	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -291,17 +293,20 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Set the connection status of the Unleash instance to available
+	log.Info("Successfully connected to Unleash instance", "version", stats.VersionOSS)
 	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
+	// Publish the Unleash instance to federation if enabled
 	err = r.publish(ctx, unleash)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{}, err
+	log.Info("Reconciliation of Unleash finished")
+	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
 }
 
 // publish the Unleash instance to pubsub if federation is enabled.
@@ -314,6 +319,8 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 		log.Info("Federation is disabled, skipping publishing")
 		return nil
 	}
+
+	log.Info("Publishing Unleash instance to federation")
 
 	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
@@ -392,7 +399,7 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 
 	// If the ServiceMonitor does not exist, we create it
 	if apierrors.IsNotFound(err) {
-		log.Info("Creating a new ServiceMonitor", "ServiceMonitor.Namespace", newServiceMonitor.Namespace, "ServiceMonitor.Name", newServiceMonitor.Name)
+		log.Info("Creating ServiceMonitor", "ServiceMonitor.Namespace", newServiceMonitor.Namespace, "ServiceMonitor.Name", newServiceMonitor.Name)
 		if err := r.Create(ctx, newServiceMonitor); err != nil {
 			log.Error(err, "Failed to create new ServiceMonitor", "ServiceMonitor.Namespace", newServiceMonitor.Namespace, "ServiceMonitor.Name", newServiceMonitor.Name)
 			return ctrl.Result{}, err
@@ -453,7 +460,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
@@ -468,7 +475,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -510,7 +517,7 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// If the ingress is enabled and exists, we update it if it has changed.
@@ -524,7 +531,7 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// update prometheus metrics
@@ -616,7 +623,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
+		return ctrl.Result{}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		return ctrl.Result{}, err
@@ -694,14 +701,10 @@ func (r *UnleashReconciler) testConnection(unleash UnleashInstance, ctx context.
 		return nil, err
 	}
 
-	log.Info("Successfully connected to Unleash instance", "statusCode", res.StatusCode, "version", stats.VersionOSS)
 	return stats, nil
 }
 
 func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
-	log := log.FromContext(ctx)
-
-	log.Info("Successfully reconciled Unleash")
 	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
@@ -727,9 +730,6 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 }
 
 func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult) error {
-	log := log.FromContext(ctx)
-
-	log.Info("Successfully connected to Unleash")
 	return r.updateStatus(ctx, unleash, stats, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
@@ -782,9 +782,11 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
-		Owns(&appsv1.Deployment{}).
+		//Owns(&appsv1.Deployment{}).
+		WithEventFilter(pred).
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)
 }

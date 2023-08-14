@@ -59,6 +59,9 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiToken.Status.Created).Should(Equal(false))
 			Expect(createdApiToken.Status.Failed).Should(Equal(true))
 
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(0.0))
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(1.0))
+
 			By("Cleaning up the ApiToken")
 			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
 		})
@@ -66,12 +69,12 @@ var _ = Describe("ApiToken controller", func() {
 		It("Should fail when RemoteUnleash does not exist", func() {
 			ctx := context.Background()
 
-			resourceName := "test-apitoken-remoteunleash-fail"
+			apiTokenName := "test-apitoken-remoteunleash-fail"
 
 			By("By creating a new ApiToken")
-			secret := remoteUnleashSecretResource(resourceName, ApiTokenNamespace, "test")
+			secret := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, "test")
 			_, remoteUnleash := remoteUnleashResource("test-remoteunleash-not-exist", ApiTokenNamespace, ApiTokenServerURL, secret)
-			apiToken := remoteUnleashApiTokenResource(resourceName, ApiTokenNamespace, resourceName, remoteUnleash)
+			apiToken := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, remoteUnleash)
 			Expect(k8sClient.Create(ctx, apiToken)).Should(Succeed())
 
 			createdApiToken := &unleashv1.ApiToken{ObjectMeta: apiToken.ObjectMeta}
@@ -81,6 +84,9 @@ var _ = Describe("ApiToken controller", func() {
 				Reason:  "UnleashNotFound",
 				Message: "RemoteUnleash resource with name test-remoteunleash-not-exist not found in namespace default",
 			}))
+
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(0.0))
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(1.0))
 
 			By("Cleaning up the ApiToken")
 			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
@@ -192,6 +198,9 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(1.0))
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(0.0))
+
 			By("By deleting the ApiToken")
 			deletePath := fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint)
 			httpmock.RegisterResponder("DELETE", deletePath, httpmock.NewStringResponder(200, ""))
@@ -292,6 +301,18 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretServerEnv))
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
+
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(1.0))
+			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(0.0))
+
+			By("By deleting the ApiToken")
+			deletePath := fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint)
+			httpmock.RegisterResponder("DELETE", deletePath, httpmock.NewStringResponder(200, ""))
+			Expect(k8sClient.Delete(ctx, createdApiToken)).Should(Succeed())
+			Eventually(func() int {
+				info := httpmock.GetCallCountInfo()
+				return info[fmt.Sprintf("DELETE %s", deletePath)]
+			}, timeout, interval).ShouldNot(BeZero())
 		})
 	})
 })

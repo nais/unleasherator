@@ -17,6 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleashclient"
@@ -35,6 +37,10 @@ var (
 		[]string{"namespace", "name", "status"},
 	)
 )
+
+func init() {
+	metrics.Registry.MustRegister(apiTokenStatus)
+}
 
 // ApiTokenReconciler reconciles a ApiToken object
 type ApiTokenReconciler struct {
@@ -134,7 +140,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 	}
 
 	// Get Unleash API client
@@ -252,7 +258,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Set ApiToken status to success
 	err = r.updateStatusSuccess(ctx, token)
-	return ctrl.Result{}, err
+	return ctrl.Result{RequeueAfter: 1 * time.Hour}, err
 }
 
 // getUnleashInstance returns the Unleash instance that the ApiToken belongs to
@@ -358,7 +364,9 @@ func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiT
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApiTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.ApiToken{}).
+		WithEventFilter(pred).
 		Complete(r)
 }

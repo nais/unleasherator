@@ -22,22 +22,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
-
-// RemoteUnleashReconciler reconciles a RemoteUnleash object
-type RemoteUnleashReconciler struct {
-	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	OperatorNamespace string
-	Federation        RemoteUnleashFederation
-}
-
-type RemoteUnleashFederation struct {
-	Enabled     bool
-	ClusterName string
-	Subscriber  federation.Subscriber
-}
 
 var (
 	// remoteUnleashStatus is a Prometheus metric which will be used to expose the status of the RemoteUnleash instances
@@ -57,6 +44,25 @@ var (
 		[]string{"state", "status"},
 	)
 )
+
+func init() {
+	metrics.Registry.MustRegister(remoteUnleashStatus, remoteUnleashReceived)
+}
+
+// RemoteUnleashReconciler reconciles a RemoteUnleash object
+type RemoteUnleashReconciler struct {
+	client.Client
+	Scheme            *runtime.Scheme
+	Recorder          record.EventRecorder
+	OperatorNamespace string
+	Federation        RemoteUnleashFederation
+}
+
+type RemoteUnleashFederation struct {
+	Enabled     bool
+	ClusterName string
+	Subscriber  federation.Subscriber
+}
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=remoteunleashes/status,verbs=get;update;patch
@@ -198,18 +204,18 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	stats, _, err := unleashClient.GetInstanceAdminStats()
-
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, stats, err, fmt.Sprintf("Failed to connect to Unleash instance statistics endpoint on host %s", remoteUnleash.URL())); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true}, err
+		// Requeue after 1 minute if we failed to connect to Unleash
+		return ctrl.Result{}, err
 	}
 
 	// Set RemoteUnleash status to connected
 	err = r.updateStatusConnectionSuccess(ctx, stats, remoteUnleash)
-	return ctrl.Result{}, err
+	return ctrl.Result{RequeueAfter: 1 * time.Hour}, err
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
@@ -369,7 +375,9 @@ func retriableError(err error) bool {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.RemoteUnleash{}).
+		WithEventFilter(pred).
 		Complete(r)
 }

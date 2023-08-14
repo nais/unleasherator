@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/mock"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,13 +106,13 @@ var _ = Describe("Unleash controller", func() {
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
-			var m1 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Write(m1)).Should(Succeed())
-			Expect(m1.GetGauge().GetValue()).To(Equal(float64(1)))
+			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled)
+			Expect(err).To(BeNil())
+			Expect(val).To(Equal(float64(1)))
 
-			var m2 = &dto.Metric{}
-			Expect(unleashStatus.WithLabelValues(createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Write(m2)).Should(Succeed())
-			Expect(m2.GetGauge().GetValue()).To(Equal(float64(1)))
+			val, err = promGaugeVecVal(unleashStatus, createdUnleash.Namespace, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected)
+			Expect(err).To(BeNil())
+			Expect(val).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
@@ -125,11 +124,16 @@ var _ = Describe("Unleash controller", func() {
 			By("By mocking Unleash API")
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+				httpmock.NewStringResponder(200, `{"health": "OK"}`))
 			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By mocking Unleash Publisher")
-			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string")).Return(nil)
+			matcher := func(unleash *unleashv1.Unleash) bool {
+				return unleash.Name == "test-unleash-federate"
+			}
+			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -143,6 +147,7 @@ var _ = Describe("Unleash controller", func() {
 				},
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+			promCounterVecFlush(unleashPublished)
 
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
@@ -154,6 +159,11 @@ var _ = Describe("Unleash controller", func() {
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
+			Expect(mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)).To(BeTrue())
+
+			val, err := promCounterVecVal(unleashPublished, "provisioned", "success")
+			Expect(err).To(BeNil())
+			Expect(val).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
