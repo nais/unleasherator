@@ -10,6 +10,7 @@ import (
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -331,10 +332,10 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
 				defer cancel()
 
-				adminSecretErr := r.createOrUpdateSecret(timeoutContext, adminSecret)
-				remoteUnleashErr := r.persistAllRemoteUnleash(timeoutContext, remoteUnleashes)
+				adminSecretErr := utils.UpsertObject(timeoutContext, r.Client, adminSecret)
+				remoteUnleashesErr := utils.UpsertAllObjects(timeoutContext, r.Client, remoteUnleashes)
 
-				err := errors.Join(adminSecretErr, remoteUnleashErr)
+				err := errors.Join(adminSecretErr, remoteUnleashesErr)
 				if err != nil {
 					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
 
@@ -364,63 +365,6 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
-}
-
-func (r *RemoteUnleashReconciler) createOrUpdateSecret(ctx context.Context, secret *corev1.Secret) error {
-	objectKey := client.ObjectKeyFromObject(secret)
-	existing := &corev1.Secret{}
-
-	err := r.Get(ctx, objectKey, existing)
-
-	if apierrors.IsNotFound(err) {
-		return r.Create(ctx, secret)
-	} else if err != nil {
-		return err
-	}
-
-	secret.CreationTimestamp = existing.CreationTimestamp
-	secret.ResourceVersion = existing.ResourceVersion
-	secret.UID = existing.UID
-
-	return r.Update(ctx, secret)
-}
-
-// createOrUpdateRemoteUnleash creates or updates the given resource.
-// If the resource already exists, it will be updated.
-// If the resource does not exist, it will be created.
-// If the resource fails to persist, the error is returned.
-func (r *RemoteUnleashReconciler) createOrUpdateRemoteUnleash(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) error {
-	objectKey := client.ObjectKeyFromObject(remoteUnleash)
-	existing := &unleashv1.RemoteUnleash{}
-
-	err := r.Get(ctx, objectKey, existing)
-
-	if apierrors.IsNotFound(err) {
-		return r.Create(ctx, remoteUnleash)
-	} else if err != nil {
-		return err
-	}
-
-	remoteUnleash.CreationTimestamp = existing.CreationTimestamp
-	remoteUnleash.ResourceVersion = existing.ResourceVersion
-	remoteUnleash.UID = existing.UID
-
-	return r.Update(ctx, remoteUnleash)
-}
-
-// persistAllRemoteUnleash persists all resources in the given slice.
-// If any of the resources fail to persist, the error is returned.
-// Be aware that this function does not do any retries and will return
-// immediately if any of the resources fail to persist. Subsequent
-// resources will not be persisted.
-func (r *RemoteUnleashReconciler) persistAllRemoteUnleash(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash) error {
-	for _, remoteUnleash := range remoteUnleashes {
-		err := r.createOrUpdateRemoteUnleash(ctx, remoteUnleash)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
