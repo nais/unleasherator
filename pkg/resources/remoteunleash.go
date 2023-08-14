@@ -3,10 +3,9 @@ package resources
 import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func RemoteunleashInstance(name, url, namespace, secretName, secretNamespace string) client.Object {
+func RemoteunleashInstance(name, url, namespace, secretName, secretNamespace string) *unleashv1.RemoteUnleash {
 	return &unleashv1.RemoteUnleash{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RemoteUnleash",
@@ -29,8 +28,8 @@ func RemoteunleashInstance(name, url, namespace, secretName, secretNamespace str
 	}
 }
 
-func RemoteunleashInstances(name, url string, namespaces []string, secretName, secretNamespace string) []client.Object {
-	resources := make([]client.Object, 0, len(namespaces))
+func RemoteunleashInstances(name, url string, namespaces []string, secretName, secretNamespace string) []*unleashv1.RemoteUnleash {
+	resources := make([]*unleashv1.RemoteUnleash, 0, len(namespaces))
 	for _, namespace := range namespaces {
 		resources = append(resources, RemoteunleashInstance(name, url, namespace, secretName, secretNamespace))
 	}
