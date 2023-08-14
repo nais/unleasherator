@@ -331,7 +331,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				defer cancel()
 
 				// TODO: prometheus metrics for created status
-				err := r.persistAll(timeoutContext, append(remoteUnleashes, adminSecret))
+				err := r.persistAll(timeoutContext, append([]client.Object{adminSecret}, remoteUnleashes...))
 				if err != nil {
 					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
 					if !retirableError(err) {
