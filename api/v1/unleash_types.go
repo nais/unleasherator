@@ -118,7 +118,7 @@ type UnleashFederationConfig struct {
 	// SecretNonce is the shared secret used for federation
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]+$`
-	SecretNonce string `json:"sharedSecret,omitempty"`
+	SecretNonce string `json:"secretNonce,omitempty"`
 }
 
 // UnleashPrometheusConfig defines the prometheus configuration
