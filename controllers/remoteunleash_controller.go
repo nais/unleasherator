@@ -352,7 +352,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
 						if namespaceNotFoundError(err) {
-							log.Info("Namespace %s not found for RemoteUnleash %s", err.(*apierrors.StatusError).ErrStatus.Details.Name, remoteUnleashes[0].GetName())
+							log.Info(fmt.Sprintf("Namespace %s not found for RemoteUnleash %s", err.(*apierrors.StatusError).ErrStatus.Details.Name, remoteUnleashes[0].GetName()))
 							continue
 						} else {
 							if !retriableError(err) {
