@@ -41,7 +41,7 @@ func (s *subscriber) Subscribe(ctx context.Context, handler Handler) error {
 	cctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	log.Info("waiting for federation")
+	log.Info("waiting for messages")
 	return s.subscription.Receive(cctx, func(ctx context.Context, msg *pubsub.Message) {
 		log.Info("received message")
 		if err := s.handleMessage(ctx, msg, handler); err != nil {
