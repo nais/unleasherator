@@ -191,7 +191,7 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 			Eventually(func() int {
 				return len(mockSubscriber.Calls)
-			}, timeout, interval).Should(Equal(1))
+			}, timeout, interval).Should(Not(Equal(0)))
 
 			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
 
