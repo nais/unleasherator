@@ -3090,7 +3090,7 @@ spec:
                     items:
                       type: string
                     type: array
-                  sharedSecret:
+                  secretNonce:
                     description: SecretNonce is the shared secret used for federation
                     pattern: ^[a-z0-9]+$
                     type: string
