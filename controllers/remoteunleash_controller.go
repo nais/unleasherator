@@ -328,7 +328,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			switch status {
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, not implemented yet")
-				remoteUnleashReceived.WithLabelValues("removed", "error").Inc()
+				remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
 				return nil
 
 			case pb.Status_Provisioned:
@@ -338,12 +338,8 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
 				defer cancel()
 
-				adminSecretErr := utils.UpsertObject(timeoutContext, r.Client, adminSecret)
-				remoteUnleashesErr := utils.UpsertAllObjects(timeoutContext, r.Client, remoteUnleashes)
-
-				err := errors.Join(adminSecretErr, remoteUnleashesErr)
-				if err != nil {
-					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
+				if err := utils.UpsertObject(timeoutContext, r.Client, adminSecret); err != nil {
+					remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
 					if !retriableError(err) {
 						permanentError = err
@@ -351,10 +347,26 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return err
 				}
 
+				if err := utils.UpsertAllObjects(timeoutContext, r.Client, remoteUnleashes); len(err) > 0 {
+					for _, err := range err {
+						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
+
+						if namespaceNotFoundError(err) {
+							log.Info("Namespace %s not found for RemoteUnleash %s", err.(*apierrors.StatusError).ErrStatus.Details.Name, remoteUnleashes[0].GetName())
+							continue
+						} else {
+							if !retriableError(err) {
+								permanentError = err
+							}
+							return err
+						}
+					}
+				}
+
 				remoteUnleashReceived.WithLabelValues("provisioned", "success").Inc()
 				return nil
 			default:
-				remoteUnleashReceived.WithLabelValues("unknown", "error").Inc()
+				remoteUnleashReceived.WithLabelValues("unknown", "failed").Inc()
 				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
 				return nil
 			}
@@ -371,6 +383,12 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// namespaceNotFoundError returns true if the error is a namespace not found error.
+func namespaceNotFoundError(err error) bool {
+	var statusErr *apierrors.StatusError
+	return errors.As(err, &statusErr) && statusErr.ErrStatus.Reason == metav1.StatusReasonNotFound && statusErr.ErrStatus.Details.Kind == "namespaces"
 }
 
 // SetupWithManager sets up the controller with the Manager.

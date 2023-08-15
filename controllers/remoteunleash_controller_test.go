@@ -171,5 +171,51 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "success")).To(Equal(2.0))
 		})
+
+		It("Should handle RemoteUnleash namespace not existing", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			By("By starting the subscriber")
+			started := make(chan bool)
+			mockSubscriber.On("Subscribe", ctx, mock.AnythingOfType("Handler")).After(10 * time.Second).Return(nil)
+
+			go func(ctx context.Context) {
+				started <- true
+
+				err := remoteUnleashReconciler.FederationSubscribe(ctx)
+				Expect(err).ToNot(HaveOccurred(), "failed to subscribe to federation")
+			}(ctx)
+
+			<-started
+
+			Eventually(func() int {
+				return len(mockSubscriber.Calls)
+			}, timeout, interval).Should(Equal(1))
+
+			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
+
+			By("By mocking Unleash API")
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
+
+			var remoteUnleashes []*unleashv1.RemoteUnleash
+
+			By("By creating a new RemoteUnleash in a namespace that does not exist")
+			name := "test-unleash-namespaces-not-found"
+			namespaces := []string{"namespace-not-found"}
+			clusters := []string{"test-cluster"}
+			secret := remoteUnleashSecretResource(name, "default", "test")
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
+
+			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())
+			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "failed")).To(Equal(1.0))
+		})
 	})
 })

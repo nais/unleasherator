@@ -54,13 +54,18 @@ func UpsertObject[T client.Object](ctx context.Context, r client.Client, obj T) 
 }
 
 // UpsertAllObjects upserts all objects in the given slice to the Kubernetes API server.
-// If an error occurs while upserting an object, the function returns the error and stops upserting.
-func UpsertAllObjects[T client.Object](ctx context.Context, r client.Client, objects []T) error {
+// If an object already exists, it is updated. If an object does not exist, it is created.
+// The objects are identified by their keys, which are extracted from the objects themselves.
+// The function returns a slice of errors, one for each object that failed to be upserted.
+func UpsertAllObjects[T client.Object](ctx context.Context, r client.Client, objects []T) []error {
+	errs := []error{}
+
 	for _, obj := range objects {
 		err := UpsertObject(ctx, r, obj)
 		if err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+
+	return errs
 }
