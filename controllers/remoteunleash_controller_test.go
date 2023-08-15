@@ -127,6 +127,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
+			By("Flushing prometheus metrics")
+			promCounterVecFlush(remoteUnleashReceived)
+
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
 			By("By creating a new RemoteUnleash that does not match cluster")
@@ -200,6 +203,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			defer httpmock.DeactivateAndReset()
 			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
+
+			By("Flushing prometheus metrics")
+			promCounterVecFlush(remoteUnleashReceived)
 
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
