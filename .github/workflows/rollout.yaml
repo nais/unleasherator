@@ -50,7 +50,6 @@ jobs:
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}-crds
           version: ${{ needs.meta.outputs.version }}
-          feature_name: ${{ needs.meta.outputs.name }}-crds
 
   rollout-controller:
     name: Rollout Controller to Fasit
@@ -64,7 +63,6 @@ jobs:
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
           version: ${{ needs.meta.outputs.version }}
-          feature_name: ${{ needs.meta.outputs.name }}
 
   git-tag:
     runs-on: ubuntu-latest
