@@ -7,6 +7,7 @@ import (
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/config"
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/unleashclient"
@@ -55,6 +56,7 @@ type RemoteUnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	Timeout           config.TimeoutConfig
 	Federation        RemoteUnleashFederation
 }
 
@@ -334,11 +336,10 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			case pb.Status_Provisioned:
 				log.Info("Received Status_Provisioned")
 
-				const kubernetesWriteTimeout = time.Second * 5
-				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
-				defer cancel()
+				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
+				defer secretCancel()
 
-				if err := utils.UpsertObject(timeoutContext, r.Client, adminSecret); err != nil {
+				if err := utils.UpsertObject(secretCtx, r.Client, adminSecret); err != nil {
 					remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
 					if !retriableError(err) {
@@ -347,7 +348,10 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return err
 				}
 
-				if err := utils.UpsertAllObjects(timeoutContext, r.Client, remoteUnleashes); len(err) > 0 {
+				objectsCtx, objectsCancel := r.Timeout.WriteContext(ctx)
+				defer objectsCancel()
+
+				if err := utils.UpsertAllObjects(objectsCtx, r.Client, remoteUnleashes); len(err) > 0 {
 					for _, err := range err {
 						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
