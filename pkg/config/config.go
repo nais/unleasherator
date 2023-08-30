@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
@@ -34,6 +35,16 @@ type Config struct {
 	ApiTokenNameSuffix string `envconfig:"API_TOKEN_NAME_SUFFIX"`
 	OperatorNamespace  string `envconfig:"OPERATOR_NAMESPACE"`
 	Federation         FederationConfig
+	Timeout            TimeoutConfig
+}
+
+type TimeoutConfig struct {
+	// WriteSeconds is the maximum number of seconds to wait for a write operation to complete.
+	Write time.Duration `envconfig:"TIMEOUT_WRITE" default:"10s"`
+}
+
+func (t *TimeoutConfig) WriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, t.Write)
 }
 
 type FederationConfig struct {

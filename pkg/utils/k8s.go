@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,14 +59,33 @@ func UpsertObject[T client.Object](ctx context.Context, r client.Client, obj T) 
 // The objects are identified by their keys, which are extracted from the objects themselves.
 // The function returns a slice of errors, one for each object that failed to be upserted.
 func UpsertAllObjects[T client.Object](ctx context.Context, r client.Client, objects []T) []error {
-	errs := []error{}
+	errs := make([]error, len(objects))
+	var wg sync.WaitGroup
 
-	for _, obj := range objects {
-		err := UpsertObject(ctx, r, obj)
-		if err != nil {
-			errs = append(errs, err)
-		}
+	for i, obj := range objects {
+		wg.Add(1)
+		go func(i int, obj T) {
+			defer wg.Done()
+			errs[i] = UpsertObject(ctx, r, obj)
+		}(i, obj)
 	}
 
-	return errs
+	wg.Wait()
+
+	return removeEmptyErrs(errs)
+}
+
+// removeEmptyErrs returns a slice of non-nil errors from the input slice.
+// If all errors in the input slice are nil, it returns nil.
+func removeEmptyErrs(slice []error) []error {
+	result := make([]error, 0, len(slice))
+	for _, s := range slice {
+		if s != nil {
+			result = append(result, s)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }

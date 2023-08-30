@@ -120,6 +120,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
+		Timeout:           cfg.Timeout,
 		Federation: controllers.RemoteUnleashFederation{
 			Enabled:     cfg.Federation.IsEnabled() && subscriber != nil,
 			ClusterName: cfg.Federation.ClusterName,

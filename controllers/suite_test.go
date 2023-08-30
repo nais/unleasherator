@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -18,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/config"
 	mockfederation "github.com/nais/unleasherator/pkg/federation/mockfediration"
 	//+kubebuilder:scaffold:imports
 )
@@ -83,6 +85,10 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	timeout := config.TimeoutConfig{
+		Write: time.Duration(5) * time.Second,
+	}
+
 	err = (&UnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
@@ -99,6 +105,7 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
+		Timeout:           timeout,
 		Federation: RemoteUnleashFederation{
 			Enabled:     true,
 			ClusterName: "test-cluster",
