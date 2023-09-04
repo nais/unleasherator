@@ -39,6 +39,7 @@ controllerManager:
       federationPubsubMode: ""
       federationPubsubSubscription: ""
       federationPubsubTopic: ""
+      googleApplicationCredentials: ""
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main
@@ -52,6 +53,8 @@ controllerManager:
   replicas: 1
   serviceAccount:
     annotations: {}
+controllerManagerGcp:
+  serviceAccountCredentialsJson: ""
 kubernetesClusterDomain: cluster.local
 managerConfig:
   controllerManagerConfigYaml: |-

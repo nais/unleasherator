@@ -61,6 +61,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ quote .Values.controllerManager.manager.env.googleApplicationCredentials
+            }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
@@ -87,6 +90,9 @@ spec:
         - mountPath: /controller_manager_config.yaml
           name: manager-config
           subPath: controller_manager_config.yaml
+        - mountPath: /var/secrets/google
+          name: controller-manager-gcp
+          readOnly: true
       - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
@@ -112,3 +118,9 @@ spec:
       - configMap:
           name: {{ include "unleasherator.fullname" . }}-manager-config
         name: manager-config
+      - name: controller-manager-gcp
+        secret:
+          items:
+          - key: service-account-credentials.json
+            path: service-account-credentials.json
+          secretName: {{ include "unleasherator.fullname" . }}-controller-manager-gcp
