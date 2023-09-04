@@ -57,6 +57,10 @@ spec:
         - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscription
             }}
+        - name: HTTPS_PROXY
+          value: {{ quote .Values.controllerManager.manager.env.httpsProxy }}
+        - name: NO_PROXY
+          value: {{ quote .Values.controllerManager.manager.env.noProxy }}
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:

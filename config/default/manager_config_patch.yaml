@@ -23,6 +23,10 @@ spec:
           value: ""
         - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: ""
+        - name: HTTPS_PROXY
+          value: ""
+        - name: NO_PROXY
+          value: ""
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
