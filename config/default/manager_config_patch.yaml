@@ -27,13 +27,24 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: ""
         args:
         - "--config=controller_manager_config.yaml"
         volumeMounts:
         - name: manager-config
           mountPath: /controller_manager_config.yaml
           subPath: controller_manager_config.yaml
+        - name: controller-manager-gcp
+          mountPath: /var/secrets/google
+          readOnly: true
       volumes:
       - name: manager-config
         configMap:
           name: manager-config
+      - name: controller-manager-gcp
+        secret:
+          secretName: controller-manager-gcp
+          items:
+          - key: service-account-credentials.json
+            path: service-account-credentials.json
