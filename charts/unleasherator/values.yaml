@@ -40,6 +40,8 @@ controllerManager:
       federationPubsubSubscription: ""
       federationPubsubTopic: ""
       googleApplicationCredentials: ""
+      httpsProxy: ""
+      noProxy: ""
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main
