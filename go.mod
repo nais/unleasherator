@@ -18,8 +18,8 @@ require (
 	google.golang.org/api v0.126.0
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.30.0
-	k8s.io/api v0.26.7
-	k8s.io/apimachinery v0.26.7
+	k8s.io/api v0.26.9
+	k8s.io/apimachinery v0.26.9
 	k8s.io/client-go v0.26.7
 	sigs.k8s.io/controller-runtime v0.14.6
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20230513180526-af986b86bcca
