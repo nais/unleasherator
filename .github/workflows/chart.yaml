@@ -54,21 +54,21 @@ jobs:
           cat ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save Chart Metadata
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v3.1.3
         with:
           name: chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}/Chart.yaml
 
       - name: Save Chart Values
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v3.1.3
         with:
           name: chart-values
           path: |
             ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save CRDs Chart Metadata
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v3.1.3
         with:
           name: crds-chart-metadata
           path: |
