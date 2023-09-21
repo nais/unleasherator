@@ -8,6 +8,9 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/nais/unleasherator/pkg/federation"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 const (
@@ -36,6 +39,27 @@ type Config struct {
 	OperatorNamespace  string `envconfig:"OPERATOR_NAMESPACE"`
 	Federation         FederationConfig
 	Timeout            TimeoutConfig
+	Options            OperatorConfig
+}
+
+type OperatorConfig struct {
+	HealthProbeBindAddress     string `envconfig:"HEALTH_PROBE_BIND_ADDRESS" default:":8081"`
+	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
+	WebhookPort                int    `envconfig:"WEBHOOK_PORT" default:"9443"`
+	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
+	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
+}
+
+func (c *OperatorConfig) ManagerOptions(scheme *runtime.Scheme) manager.Options {
+	return manager.Options{
+		Scheme:           scheme,
+		LeaderElection:   c.LeaderElectionEnabled,
+		LeaderElectionID: c.LeaderElectionResourceName,
+		Metrics: server.Options{
+			BindAddress: c.MetricsBindAddress,
+		},
+		HealthProbeBindAddress: c.HealthProbeBindAddress,
+	}
 }
 
 type TimeoutConfig struct {

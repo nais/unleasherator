@@ -39,8 +39,7 @@ spec:
                 values:
                 - linux
       containers:
-      - args: {{- toYaml .Values.controllerManager.manager.args | nindent 8 }}
-        command:
+      - command:
         - /manager
         env:
         - name: API_TOKEN_NAME_SUFFIX
@@ -91,9 +90,6 @@ spec:
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
         volumeMounts:
-        - mountPath: /controller_manager_config.yaml
-          name: manager-config
-          subPath: controller_manager_config.yaml
         - mountPath: /var/secrets/google
           name: controller-manager-gcp
           readOnly: true
@@ -119,9 +115,6 @@ spec:
       serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
-      - configMap:
-          name: {{ include "unleasherator.fullname" . }}-manager-config
-        name: manager-config
       - name: controller-manager-gcp
         secret:
           items:

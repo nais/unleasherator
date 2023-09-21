@@ -80,8 +80,8 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:             scheme.Scheme,
-		MetricsBindAddress: "0", // disable firewall prompt on mac
+		Scheme: scheme.Scheme,
+		//MetricsBindAddress: "0", // disable firewall prompt on mac
 	})
 	Expect(err).ToNot(HaveOccurred())
 
