@@ -35,22 +35,18 @@ func (p *FederationMode) Set(value string) error {
 }
 
 type Config struct {
-	ApiTokenNameSuffix string `envconfig:"API_TOKEN_NAME_SUFFIX"`
-	OperatorNamespace  string `envconfig:"OPERATOR_NAMESPACE"`
-	Federation         FederationConfig
-	Timeout            TimeoutConfig
-	Options            OperatorConfig
-}
-
-type OperatorConfig struct {
+	ApiTokenNameSuffix         string `envconfig:"API_TOKEN_NAME_SUFFIX"`
+	Federation                 FederationConfig
 	HealthProbeBindAddress     string `envconfig:"HEALTH_PROBE_BIND_ADDRESS" default:":8081"`
-	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
-	WebhookPort                int    `envconfig:"WEBHOOK_PORT" default:"9443"`
 	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
 	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
+	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
+	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE"`
+	Timeout                    TimeoutConfig
+	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
 }
 
-func (c *OperatorConfig) ManagerOptions(scheme *runtime.Scheme) manager.Options {
+func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 	return manager.Options{
 		Scheme:           scheme,
 		LeaderElection:   c.LeaderElectionEnabled,

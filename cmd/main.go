@@ -57,7 +57,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	options := cfg.Options.ManagerOptions(scheme)
+	options := cfg.ManagerOptions(scheme)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {

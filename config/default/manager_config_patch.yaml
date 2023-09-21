@@ -33,6 +33,16 @@ spec:
               fieldPath: metadata.namespace
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: ""
+        - name: HEALTH_PROBE_BIND_ADDRESS
+          value: ":8081"
+        - name: METRICS_BIND_ADDRESS
+          value: "127.0.0.1:8080"
+        - name: WEBHOOK_PORT
+          value: "9443"
+        - name: LEADER_ELECTION_ENABLED
+          value: "true"
+        - name: LEADER_ELECTION_RESOURCE_NAME
+          value: "509984d3.nais.io"
         volumeMounts:
         - name: controller-manager-gcp
           mountPath: /var/secrets/google
