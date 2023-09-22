@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -17,6 +18,16 @@ import (
 // Call the AdminToken method and assert that it returns the expected token
 type mockClient struct {
 	mock.Mock
+}
+
+// GroupVersionKindFor implements client.Client.
+func (*mockClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
+	panic("unimplemented")
+}
+
+// IsObjectNamespaced implements client.Client.
+func (*mockClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
+	panic("unimplemented")
 }
 
 func (m *mockClient) Get(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
