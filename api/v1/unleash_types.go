@@ -8,6 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	autoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -93,12 +95,36 @@ type UnleashSpec struct {
 
 	// Resources are the resource requests and limits for the unleash deployment
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
+	// +kubebuilder:default={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Federation is the configuration for Unleash federation
 	// +kubebuilder:validation:Optional
 	Federation UnleashFederationConfig `json:"federation,omitempty"`
+
+	// VerticalPodAutoscaler is the configuration for the vertical pod autoscaler
+	// +kubebuilder:validation:Optional
+	VerticalPodAutoscaler UnleashVerticalPodAutoscalerConfig `json:"verticalPodAutoscaler,omitempty"`
+}
+
+type UnleashVerticalPodAutoscalerConfig struct {
+	// Enable enables the vertical pod autoscaler
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MinAllowed is the minimum allowed resource requests and limits for the unleash deployment
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={cpu: "100m", memory: "128Mi"}
+	MinAllowed corev1.ResourceList `json:"minAllowed,omitempty"`
+
+	// MaxAllowed is the maximum allowed resource requests and limits for the unleash deployment
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default={cpu: "2000m", memory: "2048Mi"}
+	MaxAllowed corev1.ResourceList `json:"maxAllowed,omitempty"`
+
+	// ExtraPolicies is a list of extra container resource policies to add to the VerticalPodAutoscaler.
+	// +kubebuilder:validation:Optional
+	ExtraPolicies []autoscalingv1.ContainerResourcePolicy `json:"extraPolicies,omitempty"`
 }
 
 // UnleashFederationConfig defines the configuration for Unleash federation

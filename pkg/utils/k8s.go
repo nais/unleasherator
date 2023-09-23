@@ -7,7 +7,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // envVar returns an environment variable for the given name and value
@@ -31,6 +33,56 @@ func SecretEnvVar(name, secretName, secretKey string) corev1.EnvVar {
 			},
 		},
 	}
+}
+
+// ReconcileObject reconciles the desired state of the given object with its current state in the Kubernetes cluster.
+// If the object does not exist in the cluster, it will be created. If it does exist, it will be updated if necessary.
+// If the object is not enabled, it will be deleted if it exists in the cluster.
+// The function returns an error if there was a problem getting, creating, updating, or deleting the object.
+func ReconcileObject[T client.Object](ctx context.Context, r client.Client, obj T, enabled bool) error {
+	objectKey := client.ObjectKeyFromObject(obj)
+	existing := obj.DeepCopyObject().(T)
+
+	err := r.Get(ctx, objectKey, existing)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	if !enabled {
+		if !apierrors.IsNotFound(err) {
+			if existing.GetDeletionTimestamp() == nil {
+				return r.Delete(ctx, obj)
+			}
+		}
+		return nil
+	}
+
+	if err != nil && apierrors.IsNotFound(err) {
+		return r.Create(ctx, obj)
+	}
+
+	rawObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return err
+	}
+
+	rawExisting, err := runtime.DefaultUnstructuredConverter.ToUnstructured(existing)
+	if err != nil {
+		return err
+	}
+
+	if !equality.Semantic.DeepDerivative(rawObj["spec"], rawExisting["spec"]) || !equality.Semantic.DeepDerivative(rawObj["meatadata"].(map[string]interface{})["labels"], rawExisting["metadata"].(map[string]interface{})["labels"]) {
+		obj.SetCreationTimestamp(existing.GetCreationTimestamp())
+		obj.SetResourceVersion(existing.GetResourceVersion())
+		obj.SetUID(existing.GetUID())
+
+		err = r.Update(ctx, obj)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.

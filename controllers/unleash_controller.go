@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	autoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +31,7 @@ import (
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/utils"
 )
 
 const (
@@ -256,6 +258,16 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	res, err = r.reconcileServiceMonitor(ctx, unleash)
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
+	res, err = r.reconcileVerticalPodAutoscaler(ctx, unleash)
+	if err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile VerticalPodAutoscaler"); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -530,8 +542,6 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, nil
 	}
 
-	// update prometheus metrics
-
 	return ctrl.Result{}, nil
 }
 
@@ -675,6 +685,15 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *UnleashReconciler) reconcileVerticalPodAutoscaler(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+	VerticalPodAutoscaler, err := resources.VerticalPodAutoscalerForUnleash(unleash, r.Scheme)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, utils.ReconcileObject[*autoscalingv1.VerticalPodAutoscaler](ctx, r.Client, VerticalPodAutoscaler, unleash.Spec.VerticalPodAutoscaler.Enabled)
 }
 
 // testConnection will test the connection to the Unleash instance
