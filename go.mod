@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/stretchr/testify v1.8.4
-	google.golang.org/api v0.142.0
+	google.golang.org/api v0.143.0
 	google.golang.org/grpc v1.58.2
 	google.golang.org/protobuf v1.31.0
 	k8s.io/api v0.28.2
@@ -26,7 +26,11 @@ require (
 	sigs.k8s.io/controller-tools v0.11.4
 )
 
-require github.com/google/gnostic-models v0.6.8 // indirect
+require (
+	github.com/GaijinEntertainment/go-exhaustruct/v3 v3.1.0 // indirect
+	github.com/ccojocar/zxcvbn-go v1.0.1 // indirect
+	github.com/google/gnostic-models v0.6.8 // indirect
+)
 
 require (
 	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
@@ -41,7 +45,6 @@ require (
 	github.com/Antonboom/nilnil v0.1.7 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Djarvur/go-err113 v0.0.0-20210108212216-aea10b59be24 // indirect
-	github.com/GaijinEntertainment/go-exhaustruct/v2 v2.3.0 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/OpenPeeDeeP/depguard/v2 v2.1.0 // indirect
 	github.com/alexkohler/nakedret/v2 v2.0.2 // indirect
@@ -108,7 +111,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20210720184732-4bb14d4b1be1 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.2.5 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.1 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/gordonklaus/ineffassign v0.0.0-20230610083614-0e73809eb601 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
@@ -157,7 +160,6 @@ require (
 	github.com/moricho/tparallel v0.3.1 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nakabonne/nestif v0.3.1 // indirect
-	github.com/nbutton23/zxcvbn-go v0.0.0-20210217022336-fa2cb2858354 // indirect
 	github.com/nishanths/exhaustive v0.11.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.13.5 // indirect
@@ -213,7 +215,6 @@ require (
 	gitlab.com/bosi/decorder v0.4.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.tmz.dev/musttag v0.7.2 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/crypto v0.13.0 // indirect
@@ -232,7 +233,7 @@ require (
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20230920183334-c177e329c48b // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20230920183334-c177e329c48b // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920183334-c177e329c48b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230920204549-e6e6cdab5c13 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
