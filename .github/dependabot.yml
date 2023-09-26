@@ -20,6 +20,14 @@ updates:
       prometheus:
         patterns:
           - "github.com/prometheus/*"
+      build-test:
+        patterns:
+          - "github.com/arttor/helmify/cmd/helmify"
+          - "github.com/golangci/golangci-lint/cmd/golangci-lint"
+          - "github.com/onsi/ginkgo/v2"
+          - "github.com/jarcoal/httpmock"
+          - "github.com/onsi/gomega"
+          - "github.com/stretchr/testify"
     ignore:
       # These pacakges are dependent on the Kubernetes version we are targeting
       - dependency-name: "k8s.io/api"
