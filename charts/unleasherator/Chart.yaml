@@ -8,4 +8,4 @@ sources:
   - https://github.com/nais/unleasherator/tree/main/charts/unleasherator
 name: unleasherator
 type: application
-version: 1.14.0
+version: 1.15.0
