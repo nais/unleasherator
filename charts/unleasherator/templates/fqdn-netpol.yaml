@@ -4,6 +4,8 @@ apiVersion: networking.gke.io/v1alpha3
 kind: FQDNNetworkPolicy
 metadata:
   name: {{ .Release.Name }}-fqdn
+  annotations:
+    fqdnnetworkpolicies.networking.gke.io/aaaa-lookups: skip
 spec:
   egress:
   - ports:
