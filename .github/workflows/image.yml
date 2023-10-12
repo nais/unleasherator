@@ -70,6 +70,7 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.21"
+          use-latest: true
       - name: Install make
         run: sudo apt-get update && sudo apt-get install make
       - name: Generate code
