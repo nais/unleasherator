@@ -8,7 +8,10 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/pkg/observability"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
@@ -41,20 +44,32 @@ type Config struct {
 	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
 	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
 	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
-	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE"`
+	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE" required:"true"`
 	Timeout                    TimeoutConfig
+	Log                        LogConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
+}
+
+type LogConfig struct {
+	Level string `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 	return manager.Options{
-		Scheme:           scheme,
-		LeaderElection:   c.LeaderElectionEnabled,
-		LeaderElectionID: c.LeaderElectionResourceName,
+		Scheme:                  scheme,
+		LeaderElection:          c.LeaderElectionEnabled,
+		LeaderElectionID:        c.LeaderElectionResourceName,
+		LeaderElectionNamespace: c.OperatorNamespace,
 		Metrics: server.Options{
 			BindAddress: c.MetricsBindAddress,
 		},
 		HealthProbeBindAddress: c.HealthProbeBindAddress,
+		Cache: cache.Options{
+			HTTPClient: observability.HttpClient(),
+		},
+		Client: client.Options{
+			HTTPClient: observability.HttpClient(),
+		},
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/controllers"
 	"github.com/nais/unleasherator/pkg/config"
+	"github.com/nais/unleasherator/pkg/observability"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -42,20 +43,24 @@ func main() {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Load configuration from environment
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
 		setupLog.Error(err, "unable to load configuration from environment")
 		os.Exit(1)
 	}
 
-	// Global parent context for program
 	signalHandlerContext := ctrl.SetupSignalHandler()
 	ctx, cancel := context.WithCancel(signalHandlerContext)
 	defer cancel()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	tp, err := observability.InitTracer()
+	if err != nil {
+		setupLog.Error(err, "unable to initialize OpenTelemetry")
+		os.Exit(1)
+	}
+	defer tp.Shutdown(ctx)
 
 	options := cfg.ManagerOptions(scheme)
 
