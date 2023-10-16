@@ -27,7 +27,7 @@
               aarch64-linux =
                 "sha256-M9CgiHugLh7t7ulWGp4psRCtihBDxmBxqmSw5UHxKj4=";
               aarch64-darwin =
-                "sha256-TLTeAE8rzf5iz+mraaoOIGCDTmmZiDygLhIbVNmMPbE=";
+                "sha256-ohXx4OPoEmBBojHmuS8V+V1JbXkKud8kKPjniQhKv1w=";
               x86_64-linux =
                 "sha256-gJ/BvTbzKa8Wx2Hleyy2GEe+EOnlKvqT/6xuPu1nvB0=";
             };
@@ -54,7 +54,7 @@
           GOLANGCI_LINT = "${pkgs.golangci-lint}";
           src = gitignore.lib.gitignoreSource ./.;
           vendorSha256 =
-            "sha256-jZjQ8QZGy5w3R2Rkib327y+HAVwMjB62PAc1L5rzGMU="; # nixpkgs.lib.fakeSha256;
+            "sha256-h2x22TJkOrRzkU8TAV6OUJTSxIPWGyccDzKeacj43B4="; # nixpkgs.lib.fakeSha256;
         };
         helmify = pkgs.buildGoModule {
           name = "helmify";
@@ -74,6 +74,7 @@
           contents = [ unleasherator ];
           config = {
             Entrypoint = [ "${unleasherator}/bin/cmd" ];
+
             User = "65532:65532";
           };
         };
@@ -105,7 +106,7 @@
         docker = dockerImage;
         devShell = pkgs.mkShell {
           packages = with pkgs; [
-            go_1_20
+            go_1_21
             golangci-lint
             gopls
             gotools
