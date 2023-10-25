@@ -32,7 +32,12 @@ import (
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
-const unleashFinalizer = "unleash.nais.io/finalizer"
+const (
+	unleashFinalizer                  = "unleash.nais.io/finalizer"
+	unleashPublishMetricStatusSending = "sending"
+	unleashPublishMetricStatusSuccess = "success"
+	unleashPublishMetricStatusFailed  = "failed"
+)
 
 var (
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
@@ -322,22 +327,22 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 	log.Info("Publishing Unleash instance to federation")
 	// Count the number of Unleash instances published
-	unleashPublished.WithLabelValues("provisioned", "unknown").Inc()
+	unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSending).Inc()
 
 	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
-		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusFailed).Inc()
 		log.Error(err, "Failed to fetch API token")
 		return fmt.Errorf("publish could not fetch API token: %w", err)
 	}
 
 	err = r.Federation.Publisher.Publish(ctx, unleash, string(token))
 	if err != nil {
-		unleashPublished.WithLabelValues("provisioned", "failed").Inc()
+		unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusFailed).Inc()
 		return fmt.Errorf("publish could not publish Unleash instance: %w", err)
 	}
 
-	unleashPublished.WithLabelValues("provisioned", "success").Inc()
+	unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSuccess).Inc()
 	return nil
 }
 
