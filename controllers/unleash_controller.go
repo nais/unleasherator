@@ -321,6 +321,8 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 	}
 
 	log.Info("Publishing Unleash instance to federation")
+	// Count the number of Unleash instances published
+	unleashPublished.WithLabelValues("provisioned", "unknown").Inc()
 
 	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
