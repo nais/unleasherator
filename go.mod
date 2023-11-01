@@ -21,7 +21,7 @@ require (
 	k8s.io/api v0.28.3
 	k8s.io/apimachinery v0.28.3
 	k8s.io/client-go v0.28.3
-	sigs.k8s.io/controller-runtime v0.16.2
+	sigs.k8s.io/controller-runtime v0.16.3
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20230513180526-af986b86bcca
 	sigs.k8s.io/controller-tools v0.11.4
 )
@@ -240,8 +240,8 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.4.5 // indirect
-	k8s.io/apiextensions-apiserver v0.28.2 // indirect
-	k8s.io/component-base v0.28.2 // indirect
+	k8s.io/apiextensions-apiserver v0.28.3 // indirect
+	k8s.io/component-base v0.28.3 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20230918164632-68afd615200d // indirect
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b // indirect
