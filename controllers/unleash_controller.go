@@ -689,7 +689,7 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 }
 
 // testConnection will test the connection to the Unleash instance
-func (r *UnleashReconciler) testConnection(unleash UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
+func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		log.Error(err, "Failed to set up client for Unleash")

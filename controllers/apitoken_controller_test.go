@@ -198,6 +198,10 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
 
+			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretEnvEnv))
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretEnvEnv]).ShouldNot(BeEmpty())
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretEnvEnv]).Should(Equal([]byte("development")))
+
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(1.0))
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(0.0))
 
@@ -231,7 +235,7 @@ var _ = Describe("ApiToken controller", func() {
 								Secret:      apiTokenSecret,
 								Username:    fmt.Sprintf("%s-%s", apiTokenName, ApiTokenNameSuffix),
 								Type:        "client",
-								Environment: "*",
+								Environment: "development",
 								Project:     "*",
 								Projects:    []string{},
 								ExpiresAt:   time.Now().UTC().AddDate(0, 0, 1).Format(time.RFC3339),
@@ -301,6 +305,10 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretServerEnv))
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
 			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
+
+			Expect(createdApiTokenSecret.Data).Should(HaveKey(unleashv1.ApiTokenSecretEnvEnv))
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretEnvEnv]).ShouldNot(BeEmpty())
+			Expect(createdApiTokenSecret.Data[unleashv1.ApiTokenSecretEnvEnv]).Should(Equal([]byte("development")))
 
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(1.0))
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(0.0))

@@ -34,4 +34,5 @@ const (
 
 	ApiTokenSecretTokenEnv  = "UNLEASH_SERVER_API_TOKEN"
 	ApiTokenSecretServerEnv = "UNLEASH_SERVER_API_URL"
+	ApiTokenSecretEnvEnv    = "UNLEASH_SERVER_API_ENV"
 )

@@ -32,6 +32,7 @@ The token will be stored in secret in the same namespace as the `ApiToken` resou
 
 - `UNLEASH_SERVER_API_TOKEN` - the token itself
 - `UNLEASH_SERVER_API_URL` - the URL of the Unleash instance (remember to add `/api` to the end when authenticating to the Unleash API)
+- `UNLEASH_SERVER_API_ENV` - the environment the token is valid for. Defaults to `development` if not specified.
 
 ## Spec
 

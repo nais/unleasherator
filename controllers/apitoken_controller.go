@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -223,17 +223,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// Kubernetes secret with token
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      token.Spec.SecretName,
-			Namespace: token.GetObjectMeta().GetNamespace(),
-		},
-		Data: map[string][]byte{
-			unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
-			unleashv1.ApiTokenSecretServerEnv: []byte(unleash.URL()),
-		},
-	}
+	secret := resources.ApiTokenSecret(unleash, token, apiToken)
 
 	if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
 		log.Error(err, "Failed to set controller reference on secret for ApiToken")
@@ -262,7 +252,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // getUnleashInstance returns the Unleash instance that the ApiToken belongs to
-func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unleashv1.ApiToken) (UnleashInstance, error) {
+func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unleashv1.ApiToken) (resources.UnleashInstance, error) {
 	if token.Spec.UnleashInstance.ApiVersion != unleashv1.GroupVersion.String() {
 		return nil, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
 	}
