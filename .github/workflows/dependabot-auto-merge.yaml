@@ -16,15 +16,15 @@ jobs:
         with:
           app-id: ${{ secrets.DEPENDABOT_AUTO_MERGE_APP_ID}}
           private-key: ${{ secrets.DEPENDABOT_AUTO_MERGE_APP_SECRET }}
+
+      - name: Authenticate cli
+        run: echo "${{ steps.app-token.outputs.token }}" | gh auth login --with-token
           
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@v1.6.0
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Authenticate cli
-        run: echo "${{ steps.app-token.outputs.token }}" | gh auth login --with-token
 
       - name: Enable auto-merge for Dependabot PRs
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
