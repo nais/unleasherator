@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -67,9 +68,21 @@ func remoteUnleashApiTokenResource(name, namespace, secretName string, remoteUnl
 				Kind:       "RemoteUnleash",
 				Name:       remoteUnleash.Name,
 			},
-			SecretName: secretName,
+			SecretName:  secretName,
+			Type:        "CLIENT",
+			Environment: "development",
+			Projects: []string{
+				"*",
+			},
 		},
 	}
+}
+
+func remoteUnleashApiTokenResourceWithEnv(name, namespace, secretName, env string, remoteUnleash *unleashv1.RemoteUnleash) *unleashv1.ApiToken {
+	token := remoteUnleashApiTokenResource(name, namespace, secretName, remoteUnleash)
+	token.Spec.Environment = env
+
+	return token
 }
 
 func unleashResource(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
@@ -138,4 +151,48 @@ func promCounterVecVal(cv *prometheus.CounterVec, lvs ...string) (float64, error
 
 func promCounterVecFlush(cv *prometheus.CounterVec) {
 	cv.Reset()
+}
+
+func apiTokenEventually(ctx context.Context, apiTokenLookup types.NamespacedName, apiTokenCreated *unleashv1.ApiToken) func() ([]metav1.Condition, error) {
+	return func() ([]metav1.Condition, error) {
+		err := k8sClient.Get(ctx, apiTokenLookup, apiTokenCreated)
+		if err != nil {
+			return nil, err
+		}
+
+		unsetConditionLastTransitionTime(apiTokenCreated.Status.Conditions)
+
+		return apiTokenCreated.Status.Conditions, nil
+	}
+}
+
+func apiTokenSuccessCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "API token successfully created",
+	}
+}
+
+func remoteUnleashEventually(ctx context.Context, remoteUNleashLookup types.NamespacedName, remoteUnleashCreated *unleashv1.RemoteUnleash) func() ([]metav1.Condition, error) {
+	return func() ([]metav1.Condition, error) {
+		err := k8sClient.Get(ctx, remoteUNleashLookup, remoteUnleashCreated)
+		if err != nil {
+			return nil, err
+		}
+
+		unsetConditionLastTransitionTime(remoteUnleashCreated.Status.Conditions)
+
+		return remoteUnleashCreated.Status.Conditions, nil
+	}
+}
+
+func remoteUnleashSuccessCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeConnected,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Successfully connected to Unleash",
+	}
 }

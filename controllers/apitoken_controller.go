@@ -72,9 +72,10 @@ type ApiTokenReconciler struct {
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
+	log.Info("Starting reconciliation of ApiToken")
 	token := &unleashv1.ApiToken{}
-	err := r.Get(ctx, req.NamespacedName, token)
 
+	err := r.Get(ctx, req.NamespacedName, token)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
@@ -86,22 +87,24 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Set status to unknown if not set
 	if token.Status.Conditions == nil || len(token.Status.Conditions) == 0 {
+		log.Info("Setting status to unknown for ApiToken")
+
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
 			Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
 		})
+
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken status")
 			return ctrl.Result{}, err
 		}
-	}
 
-	// Refetch after status update
-	if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-		log.Error(err, "Failed to get ApiToken")
-		return ctrl.Result{}, err
+		if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+			log.Error(err, "Failed to get ApiToken")
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Add finalizer if not present
@@ -114,6 +117,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		if err = r.Update(ctx, token); err != nil {
 			log.Error(err, "Failed to update ApiToken to add finalizer")
+			return ctrl.Result{}, err
+		}
+
+		if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+			log.Error(err, "Failed to get ApiToken")
 			return ctrl.Result{}, err
 		}
 	}
@@ -163,6 +171,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Check if marked for deletion
 	if token.GetDeletionTimestamp() != nil {
+		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
 			log.Info("Performing Finalizer Operations for ApiToken before deletion")
 			r.doFinalizerOperationsForToken(token, apiClient, log)
@@ -199,9 +208,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Check if token exists in Unleash
-	apiToken, err := apiClient.GetAPIToken(token.UnleashClientName(r.ApiTokenNameSuffix))
+	log.Info("Fetching token from Unleash for ApiToken")
+	apiToken, err := apiClient.GetAPIToken(token.ApiTokenName(r.ApiTokenNameSuffix))
 	if err != nil {
-		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists"); err != nil {
+		log.Error(err, "Failed to get token from Unleash")
+		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists in Unleash"); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
@@ -209,14 +220,33 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Create token if it does not exist in Unleash
 	if apiToken == nil {
-		apiToken, err = apiClient.CreateAPIToken(unleashclient.ApiTokenRequest{
-			Username:    token.UnleashClientName(r.ApiTokenNameSuffix),
-			Type:        token.Spec.Type,
-			Environment: token.Spec.Environment,
-			Projects:    token.Spec.Projects,
-		})
+		log.Info("Creating token in Unleash for ApiToken")
+		apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
 		if err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to created token"); err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to create token in Unleash"); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Update token if it differs from the desired state
+	// Tokens in Unleash are immutable, so we need to delete the old token and create a new one
+	if apiToken != nil && !token.ApiTokenIsEqual(apiToken) {
+		log.Info("Updating token in Unleash for ApiToken")
+		log.Info("Deleting old token in Unleash for ApiToken")
+		err = apiClient.DeleteApiToken(token.ApiTokenName(r.ApiTokenNameSuffix))
+		if err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Creating new token in Unleash for ApiToken")
+		apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
+		if err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to create new token in Unleash"); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, err
@@ -224,13 +254,13 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	secret := resources.ApiTokenSecret(unleash, token, apiToken)
-
 	if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
-		log.Error(err, "Failed to set controller reference on secret for ApiToken")
+		log.Error(err, "Failed to set controller reference on token secret")
 		return ctrl.Result{}, err
 	}
 
 	// Delete existing token secret if it exists
+	log.Info("Deleting existing token secret for ApiToken")
 	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
 			return ctrl.Result{}, err
@@ -239,6 +269,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Create new token secret in Kubernetes
+	log.Info("Creating token secret for ApiToken")
 	if err := r.Create(ctx, secret); err != nil {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
 			return ctrl.Result{}, err
@@ -345,11 +376,12 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 
 // doFinalizerOperationsForToken will delete the ApiToken from Unleash
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
-	tokenName := token.UnleashClientName(r.ApiTokenNameSuffix)
+	tokenName := token.ApiTokenName(r.ApiTokenNameSuffix)
 	err := unleashClient.DeleteApiToken(tokenName)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", tokenName))
 	}
+	log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", tokenName))
 }
 
 // SetupWithManager sets up the controller with the Manager.
