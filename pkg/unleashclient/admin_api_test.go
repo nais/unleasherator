@@ -13,3 +13,21 @@ func TestInstanceAdminStatsResult(t *testing.T) {
 		t.Errorf("Error unmarshalling json: %s", err)
 	}
 }
+
+func TestApiToken(t *testing.T) {
+	jsonString := `{"tokenName":"my-token","type":"client","environment":"development","projects":["default"],"secret":"default:development.0000000000000000000000000000000000000000000000000000000000000000","username":"my-token-2","alias":null,"project":"default","createdAt":"2023-12-08T11:36:52.035Z"}`
+	var result ApiToken
+	err := json.Unmarshal([]byte(jsonString), &result)
+	if err != nil {
+		t.Errorf("Error unmarshalling json: %s", err)
+	}
+}
+
+func TestApiTokenResult(t *testing.T) {
+	jsonString := `{"tokens":[{"secret":"default:development.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"token-a","type":"client","project":"default","projects":["default"],"environment":"development","expiresAt":null,"createdAt":"2023-12-08T09:23:19.962Z","alias":null,"seenAt":null,"username":"token-a"},{"secret":"*:production.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"token-b","type":"client","project":"*","projects":["*"],"environment":"production","expiresAt":null,"createdAt":"2023-12-07T08:58:25.547Z","alias":null,"seenAt":null,"username":"token-b"},{"secret":"*:*.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"admin","type":"admin","project":"*","projects":["*"],"environment":"*","expiresAt":null,"createdAt":"2023-05-31T06:54:22.698Z","alias":null,"seenAt":"2023-12-08T12:35:14.627Z","username":"admin"}]}`
+	var result ApiTokenResult
+	err := json.Unmarshal([]byte(jsonString), &result)
+	if err != nil {
+		t.Errorf("Error unmarshalling json: %s", err)
+	}
+}

@@ -56,7 +56,7 @@ spec:
                 type: string
               projects:
                 default:
-                - '*'
+                - default
                 description: Projects is the list of projects to create the token for.
                 items:
                   type: string

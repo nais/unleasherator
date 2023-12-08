@@ -65,14 +65,22 @@ var _ = Describe("ApiToken controller", func() {
 					return httpmock.NewStringResponse(400, ""), nil
 				}
 
+				Expect(tokenRequest.Username).ShouldNot(BeEmpty())
+				Expect(tokenRequest.Type).Should(BeElementOf("CLIENT", "FRONTEND"))
+				Expect(tokenRequest.Environment).ShouldNot(BeEmpty())
+				Expect(tokenRequest.Project).Should(BeEmpty())
+				Expect(tokenRequest.Projects).ShouldNot(BeEmpty())
+
+				// {"id":"3cf5d4b3-488d-41bb-91a6-af30ab1b383b","name":"BadDataError","message":"Request validation failed: your request body or params contain invalid data: Project=default222 does not exist","details":[{"message":"Project=default222 does not exist","description":"Project=default222 does not exist"}]}⏎
+				// {"id":"56d6a7a5-20e1-4cfd-ab43-8541f52e5221","name":"BadDataError","message":"Request validation failed: your request body or params contain invalid data: Environment=development222 does not exist","details":[{"message":"Environment=development222 does not exist","description":"Environment=development222 does not exist"}]}
+
 				existingTokens.Tokens = append(existingTokens.Tokens, unleashclient.ApiToken{
 					Secret:      ApiTokenSecret,
 					Username:    tokenRequest.Username,
 					Type:        tokenRequest.Type,
 					Environment: tokenRequest.Environment,
-					Project:     tokenRequest.Project,
+					Project:     tokenRequest.Projects[0],
 					Projects:    tokenRequest.Projects,
-					ExpiresAt:   tokenRequest.ExpiresAt,
 					CreatedAt:   time.Now().Format(time.RFC3339),
 				})
 
@@ -89,11 +97,9 @@ var _ = Describe("ApiToken controller", func() {
 
 				urlPath := strings.Split(req.URL.Path, "/")
 				tokenName := urlPath[len(urlPath)-1]
-				fmt.Printf("Deleting token %s\n", tokenName)
 
 				for i, token := range existingTokens.Tokens {
 					if token.Username == tokenName {
-						fmt.Printf("Deleting token %s\n", tokenName)
 						existingTokens.Tokens = append(existingTokens.Tokens[:i], existingTokens.Tokens[i+1:]...)
 						break
 					}
@@ -154,6 +160,8 @@ var _ = Describe("ApiToken controller", func() {
 				Reason:  "UnleashNotFound",
 				Message: "RemoteUnleash resource with name test-remoteunleash-not-exist not found in namespace default",
 			}))
+			Expect(apiTokenCreated.Status.Created).Should(Equal(false))
+			Expect(apiTokenCreated.Status.Failed).Should(Equal(true))
 
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(0.0))
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(1.0))
@@ -163,10 +171,14 @@ var _ = Describe("ApiToken controller", func() {
 		})
 	})
 
-	Context("When creating a new ApiToken", func() {
-		PIt("Should succeed when it can create token for Unleash", func() {
+	Context("Invalid ApiToken", func() {
+		PIt("Should fail for invalid ApiToken type")
+		PIt("Should fail for non-existing ApiToken environment")
+		PIt("Should fail for non-existing ApiToken project")
+	})
 
-		})
+	Context("When creating a new ApiToken", func() {
+		PIt("Should succeed when it can create token for Unleash")
 
 		It("Should succeed when it can create token for RemoteUnleash", func() {
 			ctx := context.Background()
@@ -186,24 +198,35 @@ var _ = Describe("ApiToken controller", func() {
 			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
 			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
-			Expect(apiTokenCreated.Status.Created).Should(Equal(true))
-			Expect(apiTokenCreated.Status.Failed).Should(Equal(false))
+			Expect(apiTokenCreated.Spec).Should(Equal(unleashv1.ApiTokenSpec{
+				UnleashInstance: unleashv1.ApiTokenUnleashInstance{
+					Name:       unleashCreated.Name,
+					Kind:       "RemoteUnleash",
+					ApiVersion: "unleash.nais.io/v1",
+				},
+				SecretName:  apiTokenName,
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"default"},
+			}))
+
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(1))
+			Expect(existingTokens.Tokens).Should(HaveLen(1))
+			Expect(existingTokens.Tokens[0].Username).Should(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
+			Expect(existingTokens.Tokens[0].Type).Should(Equal("CLIENT"))
+			Expect(existingTokens.Tokens[0].Environment).Should(Equal("development"))
+			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"default"}))
 
 			By("By checking that the ApiToken secret has been created")
 			apiTokenSecretCreated := &corev1.Secret{}
 			Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenSecretCreated)).Should(Succeed())
-
-			Expect(apiTokenSecretCreated.Data).Should(HaveKey(unleashv1.ApiTokenSecretTokenEnv))
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretTokenEnv]).ShouldNot(BeEmpty())
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretTokenEnv]).Should(Equal([]byte(ApiTokenSecret)))
-
-			Expect(apiTokenSecretCreated.Data).Should(HaveKey(unleashv1.ApiTokenSecretServerEnv))
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretServerEnv]).ShouldNot(BeEmpty())
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretServerEnv]).Should(Equal([]byte(ApiTokenServerURL)))
-
-			Expect(apiTokenSecretCreated.Data).Should(HaveKey(unleashv1.ApiTokenSecretEnvEnv))
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretEnvEnv]).ShouldNot(BeEmpty())
-			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretEnvEnv]).Should(Equal([]byte("development")))
+			Expect(apiTokenSecretCreated.Data).Should(Equal(map[string][]byte{
+				unleashv1.ApiTokenSecretTokenEnv:    []byte(ApiTokenSecret),
+				unleashv1.ApiTokenSecretTypeEnv:     []byte("CLIENT"),
+				unleashv1.ApiTokenSecretServerEnv:   []byte(ApiTokenServerURL),
+				unleashv1.ApiTokenSecretEnvEnv:      []byte("development"),
+				unleashv1.ApiTokenSecretProjectsEnv: []byte("default"),
+			}))
 
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeCreated)).Should(Equal(1.0))
 			Expect(promGaugeVecVal(apiTokenStatus, ApiTokenNamespace, apiTokenName, unleashv1.ApiTokenStatusConditionTypeFailed)).Should(Equal(0.0))
@@ -215,6 +238,49 @@ var _ = Describe("ApiToken controller", func() {
 				return info[fmt.Sprintf("DELETE %s", fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint))]
 			}, timeout, interval).ShouldNot(BeZero())
 			Expect(existingTokens.Tokens).Should(BeEmpty())
+		})
+
+		It("Should create token with custom environment and project", func() {
+			ctx := context.Background()
+
+			apiTokenName := "test-apitoken-custom"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+
+			By("By creating a new RemoteUnleash")
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			By("By creating a new ApiToken")
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+			apiTokenCreated.Spec.Environment = "production"
+			apiTokenCreated.Spec.Projects = []string{"project1", "project2", "project3"}
+			apiTokenCreated.Spec.Type = "FRONTEND"
+
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+			Expect(apiTokenCreated.Spec.Type).Should(Equal("FRONTEND"))
+			Expect(apiTokenCreated.Spec.Environment).Should(Equal("production"))
+			Expect(apiTokenCreated.Spec.Projects).Should(Equal([]string{"project1", "project2", "project3"}))
+
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(1))
+			Expect(existingTokens.Tokens).Should(HaveLen(1))
+			Expect(existingTokens.Tokens[0].Type).Should(Equal("FRONTEND"))
+			Expect(existingTokens.Tokens[0].Environment).Should(Equal("production"))
+			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"project1", "project2", "project3"}))
+
+			By("By checking that the ApiToken secret has been created")
+			apiTokenSecretCreated := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenSecretCreated)).Should(Succeed())
+			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretTypeEnv]).Should(Equal([]byte("FRONTEND")))
+			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretEnvEnv]).Should(Equal([]byte("production")))
+			Expect(apiTokenSecretCreated.Data[unleashv1.ApiTokenSecretProjectsEnv]).Should(Equal([]byte("project1,project2,project3")))
+
+			By("By deleting the ApiToken")
+			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
 		})
 
 		It("Should create secret when ApiToken exists in Unleash but not in Kubernetes", func() {
@@ -237,10 +303,10 @@ var _ = Describe("ApiToken controller", func() {
 				{
 					Secret:      ApiTokenSecret,
 					Username:    apiTokenCreated.ApiTokenName("unleasherator"),
-					Type:        apiTokenCreated.Spec.Type,
-					Environment: apiTokenCreated.Spec.Environment,
-					Projects:    apiTokenCreated.Spec.Projects,
-					ExpiresAt:   time.Now().AddDate(0, 0, 1).Format(time.RFC3339),
+					Type:        "CLIENT",
+					Environment: "development",
+					Project:     "default",
+					Projects:    []string{"default"},
 					CreatedAt:   time.Now().Format(time.RFC3339),
 				},
 			}
@@ -273,18 +339,27 @@ var _ = Describe("ApiToken controller", func() {
 			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
 
 			By("By creating a new ApiToken")
-			apiTokenCreated := remoteUnleashApiTokenResourceWithEnv(apiTokenName, ApiTokenNamespace, apiTokenName, "development", unleashCreated)
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
 			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+			apiTokenSecret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenSecret)).Should(Succeed())
 
-			By("By updating the ApiToken")
+			By("By updating the ApiToken with a new environment")
 			apiTokenCreated.Spec.Environment = "production"
 			Expect(k8sClient.Update(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenSecretEventually(ctx, apiTokenLookup, apiTokenSecret), timeout, interval).Should(ContainElement([]byte("production")))
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
-
-			By("By checking that the ApiToken was updated in Unleash")
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(2))
 			Expect(existingTokens.Tokens[0].Environment).Should(Equal("production"))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(2))
+
+			By("By updating the ApiToken with a new project")
+			apiTokenCreated.Spec.Projects = []string{"project1", "project2", "project3"}
+			Expect(k8sClient.Update(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenSecretEventually(ctx, apiTokenLookup, apiTokenSecret), timeout, interval).Should(ContainElement([]byte("project1,project2,project3")))
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"project1", "project2", "project3"}))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(3))
 
 			By("By deleting the ApiToken")
 			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())

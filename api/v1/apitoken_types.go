@@ -47,7 +47,7 @@ type ApiTokenSpec struct {
 
 	// Projects is the list of projects to create the token for.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={"*"}
+	// +kubebuilder:default={"default"}
 	Projects []string `json:"projects,omitempty"`
 }
 

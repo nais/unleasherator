@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -68,21 +69,9 @@ func remoteUnleashApiTokenResource(name, namespace, secretName string, remoteUnl
 				Kind:       "RemoteUnleash",
 				Name:       remoteUnleash.Name,
 			},
-			SecretName:  secretName,
-			Type:        "CLIENT",
-			Environment: "development",
-			Projects: []string{
-				"*",
-			},
+			SecretName: secretName,
 		},
 	}
-}
-
-func remoteUnleashApiTokenResourceWithEnv(name, namespace, secretName, env string, remoteUnleash *unleashv1.RemoteUnleash) *unleashv1.ApiToken {
-	token := remoteUnleashApiTokenResource(name, namespace, secretName, remoteUnleash)
-	token.Spec.Environment = env
-
-	return token
 }
 
 func unleashResource(name, namespace string, spec unleashv1.UnleashSpec) *unleashv1.Unleash {
@@ -172,6 +161,17 @@ func apiTokenSuccessCondition() metav1.Condition {
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "API token successfully created",
+	}
+}
+
+func apiTokenSecretEventually(ctx context.Context, name types.NamespacedName, secret *v1.Secret) func() (map[string][]byte, error) {
+	return func() (map[string][]byte, error) {
+		err := k8sClient.Get(ctx, name, secret)
+		if err != nil {
+			return nil, err
+		}
+
+		return secret.Data, err
 	}
 }
 
