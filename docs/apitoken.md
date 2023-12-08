@@ -28,11 +28,15 @@ sequenceDiagram
     Unleasherator->>ApiToken: Update status
 ```
 
-The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains two keys:
+The token will be stored in secret in the same namespace as the `ApiToken` resource. The name of the secret is specified in the `secretName` field and contains the following data:
 
-- `UNLEASH_SERVER_API_TOKEN` - the token itself
-- `UNLEASH_SERVER_API_URL` - the URL of the Unleash instance (remember to add `/api` to the end when authenticating to the Unleash API)
-- `UNLEASH_SERVER_API_ENV` - the environment the token is valid for. Defaults to `development` if not specified.
+| Key                           | Default       | Description                                                                                                |
+| ----------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| `UNLEASH_SERVER_API_TOKEN`    |               | The token itself                                                                                           |
+| `UNLEASH_SERVER_API_URL`      |               | The URL of the Unleash instance (remember to add `/api` to the end when authenticating to the Unleash API) |
+| `UNLEASH_SERVER_API_ENV`      | `development` | The environment the token is valid for                                                                     |
+| `UNLEASH_SERVER_API_PROJECTS` | `default`     | The projects the token is valid for (as a comma-separated list)                                            |
+| `UNLEASH_SERVER_API_TYPE`     | `CLIENT`      | The type of the token (either `CLIENT` or `FRONTEND`)                                                      |
 
 ## Spec
 
