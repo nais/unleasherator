@@ -81,7 +81,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("RemoteUnleash resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
+			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get RemoteUnleash")
 		return ctrl.Result{}, err
@@ -89,15 +89,19 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Check if marked for deletion
 	if remoteUnleash.GetDeletionTimestamp() != nil {
+		log.Info("RemoteUnleash marked for deletion")
 		if controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
 			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
 
-			if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
+			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
-				Message: "Performing finalizer operations",
-			}); err != nil {
+				Message: "Performing finalizer options",
+			})
+
+			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+				log.Error(err, "Failed to update RemoteUnleash status")
 				return ctrl.Result{}, err
 			}
 
@@ -108,16 +112,19 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 
-			if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
+			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Finalizing",
-				Message: "Finalizer operations completed",
-			}); err != nil {
+				Message: fmt.Sprintf("Finalizer operations for RemoteUnleash %s name were successfully accomplished", remoteUnleash.Name),
+			})
+
+			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+				log.Error(err, "Failed to update Unleash status")
 				return ctrl.Result{}, err
 			}
 
-			log.Info("Removing finalizer from RemoteUnleash")
+			log.Info("Removing finalizer from RemoteUnleash after successfully perform the operations")
 			if ok := controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer); !ok {
 				log.Error(err, "Failed to remove finalizer from RemoteUnleash")
 				return ctrl.Result{Requeue: true}, err
@@ -128,19 +135,22 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, err
 			}
 		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: false}, nil
 	}
 
-	// Set status to unknown if not set
+	// Set status to unknown if no status is set
 	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
 		log.Info("Setting status to unknown for RemoteUnleash")
 
-		if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
-		}); err != nil {
+		})
+
+		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+			log.Error(err, "Failed to update RemoteUnleash status")
 			return ctrl.Result{}, err
 		}
 
@@ -156,7 +166,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 		if ok := controllerutil.AddFinalizer(remoteUnleash, tokenFinalizer); !ok {
 			log.Error(err, "Failed to add finalizer to RemoteUnleash")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 
 		if err = r.Update(ctx, remoteUnleash); err != nil {
@@ -170,7 +180,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Get admin token from secret
+	// Get admin token from RemoteUnleash secret
 	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to get admin token secret"); err != nil {

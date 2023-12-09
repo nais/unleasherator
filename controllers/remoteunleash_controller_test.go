@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -30,10 +31,23 @@ var _ = Describe("RemoteUnleash controller", func() {
 		RemoteUnleashNamespace = "default"
 		RemoteUnleashServerURL = "http://remoteunleash.nais.io"
 		RemoteUnleashToken     = "test"
+		RemoteUnleashVersion   = "v5.1.2"
 
 		timeout  = time.Second * 10
 		interval = time.Millisecond * 250
 	)
+
+	BeforeEach(func() {
+		promCounterVecFlush(remoteUnleashReceived)
+
+		httpmock.Activate()
+		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+			httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, RemoteUnleashVersion)))
+	})
+
+	AfterEach(func() {
+		httpmock.DeactivateAndReset()
+	})
 
 	Context("When creating a RemoteUnleash", func() {
 		It("Should fail if the secret does not exist", func() {
@@ -61,15 +75,12 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(k8sClient.Delete(ctx, createdRemoteUnleash)).Should(Succeed())
 		})
 
+		PIt("Should fail if the secret does not contain a token")
+		PIt("Should fail if it cannot connect to Unleash")
+
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 			RemoteUnleashName := "test-unleash-success"
-
-			By("By mocking Unleash API")
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash secret")
 			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
@@ -88,16 +99,19 @@ var _ = Describe("RemoteUnleash controller", func() {
 			}))
 
 			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
-			Expect(createdRemoteUnleash.Status.Version).To(Equal("v4.0.0"))
+			Expect(createdRemoteUnleash.Status.Version).To(Equal(RemoteUnleashVersion))
 			Expect(createdRemoteUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdRemoteUnleash.Status.Connected).To(BeTrue())
 
 			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeReconciled)).To(Equal(1.0))
 			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeConnected)).To(Equal(1.0))
+
+			Expect(httpmock.GetCallCountInfo()).To(HaveLen(1))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(1))
 		})
 	})
 
-	Describe("When subscribing to federated Unleash", func() {
+	Context("When subscribing to federated Unleash", func() {
 		It("Should create RemoteUnleash if cluster matches", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -121,23 +135,14 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
 
-			By("By mocking Unleash API")
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
-
-			By("Flushing prometheus metrics")
-			promCounterVecFlush(remoteUnleashReceived)
-
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
 			By("By creating a new RemoteUnleash that does not match cluster")
 			name := "test-unleash-other-cluster"
 			namespaces := []string{"some-namespace"}
 			clusters := []string{"some-cluster"}
-			secret := remoteUnleashSecretResource(name, namespaces[0], "test")
-			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			secret := remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
@@ -149,8 +154,8 @@ var _ = Describe("RemoteUnleash controller", func() {
 			name = "test-unleash-same-cluster"
 			namespaces = []string{"default"}
 			clusters = []string{"test-cluster"}
-			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
-			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			secret = remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
@@ -163,8 +168,8 @@ var _ = Describe("RemoteUnleash controller", func() {
 			name = "test-unleash-same-cluster"
 			namespaces = []string{"default"}
 			clusters = []string{"test-cluster"}
-			secret = remoteUnleashSecretResource(name, namespaces[0], "test")
-			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			secret = remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			Eventually(func() error {
@@ -198,23 +203,14 @@ var _ = Describe("RemoteUnleash controller", func() {
 
 			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
 
-			By("By mocking Unleash API")
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
-
-			By("Flushing prometheus metrics")
-			promCounterVecFlush(remoteUnleashReceived)
-
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
 			By("By creating a new RemoteUnleash in a namespace that does not exist")
 			name := "test-unleash-namespaces-not-found"
 			namespaces := []string{"namespace-not-found"}
 			clusters := []string{"test-cluster"}
-			secret := remoteUnleashSecretResource(name, "default", "test")
-			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], "http://unleash-1.nais.io", secret)
+			secret := remoteUnleashSecretResource(name, "default", RemoteUnleashToken)
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)

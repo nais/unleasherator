@@ -79,7 +79,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
+			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get ApiToken")
 		return ctrl.Result{}, err
@@ -110,6 +110,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(token, tokenFinalizer) {
 		log.Info("Adding finalizer to ApiToken")
+
 		if ok := controllerutil.AddFinalizer(token, tokenFinalizer); !ok {
 			log.Error(err, "Failed to add finalizer to ApiToken")
 			return ctrl.Result{}, err
