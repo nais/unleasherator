@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -30,10 +31,25 @@ func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1
 var _ = Describe("Unleash controller", func() {
 	const (
 		UnleashNamespace = "default"
+		UnleashVersion   = "v5.1.2"
 
 		timeout  = time.Second * 10
 		interval = time.Millisecond * 250
 	)
+
+	BeforeEach(func() {
+		promCounterVecFlush(unleashPublished)
+
+		httpmock.Activate()
+		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+			httpmock.NewStringResponder(200, `{"health": "OK"}`))
+		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+			httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+	})
+
+	AfterEach(func() {
+		httpmock.DeactivateAndReset()
+	})
 
 	Context("When creating a Unleash", func() {
 		It("Should fail for missing database config", func() {
@@ -53,19 +69,17 @@ var _ = Describe("Unleash controller", func() {
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(0))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
+		PIt("Should fail when it cannot connect to Unleash")
+
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
-
-			By("By mocking Unleash API")
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
@@ -84,9 +98,12 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			Expect(createdUnleash.Status.Version).To(Equal("v4.0.0"))
+			Expect(createdUnleash.Status.Version).To(Equal(UnleashVersion))
 			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdUnleash.Status.Connected).To(BeTrue())
+
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(1))
 
 			deployment := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), deployment)).Should(Succeed())
@@ -121,14 +138,6 @@ var _ = Describe("Unleash controller", func() {
 		It("Should publish Unleash instance when federation is enabled", func() {
 			ctx := context.Background()
 
-			By("By mocking Unleash API")
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
-				httpmock.NewStringResponder(200, `{"health": "OK"}`))
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, `{"versionOSS": "v4.0.0"}`))
-
 			By("By mocking Unleash Publisher")
 			matcher := func(unleash *unleashv1.Unleash) bool {
 				return unleash.Name == "test-unleash-federate"
@@ -147,7 +156,6 @@ var _ = Describe("Unleash controller", func() {
 				},
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
-			promCounterVecFlush(unleashPublished)
 
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{

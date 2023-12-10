@@ -10,17 +10,36 @@ type InstanceAdminStatsResult struct {
 	VersionOSS        string  `json:"versionOSS"`
 	VersionEnterprise string  `json:"versionEnterprise"`
 	Users             float64 `json:"users"`
-	FeatureToggles    float64 `json:"featureToggles"`
-	Projects          float64 `json:"projects"`
-	ContextFields     float64 `json:"contextFields"`
-	Roles             float64 `json:"roles"`
-	Groups            float64 `json:"groups"`
-	Environments      float64 `json:"environments"`
-	Segments          float64 `json:"segments"`
-	Strategies        float64 `json:"strategies"`
-	SAMLenabled       bool    `json:"SAMLenabled"`
-	OIDCenabled       bool    `json:"OIDCenabled"`
-	Sum               string  `json:"sum"`
+	ActiveUsers       struct {
+		Last7  float64 `json:"last7"`
+		Last30 float64 `json:"last30"`
+		Last60 float64 `json:"last60"`
+		Last90 float64 `json:"last90"`
+	} `json:"activeUsers"`
+	FeatureToggles       float64 `json:"featureToggles"`
+	Projects             float64 `json:"projects"`
+	ContextFields        float64 `json:"contextFields"`
+	Roles                float64 `json:"roles"`
+	CustomRootRoles      float64 `json:"customRootRoles"`
+	CustomRootRolesInUse float64 `json:"customRootRolesInUse"`
+	Groups               float64 `json:"groups"`
+	Environments         float64 `json:"environments"`
+	Segments             float64 `json:"segments"`
+	Strategies           float64 `json:"strategies"`
+	SAMLenabled          bool    `json:"SAMLenabled"`
+	OIDCenabled          bool    `json:"OIDCenabled"`
+	ClientApps           []struct {
+		Range string  `json:"range"`
+		Count float64 `json:"count"`
+	} `json:"clientApps"`
+	FeatureExports    float64 `json:"featureExports"`
+	FeatureImports    float64 `json:"featureImports"`
+	ProductionChanges struct {
+		Last30 float64 `json:"last30"`
+		Last60 float64 `json:"last60"`
+		Last90 float64 `json:"last90"`
+	} `json:"productionChanges"`
+	Sum string `json:"sum"`
 }
 
 type HealthResult struct {
@@ -55,6 +74,7 @@ func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Respo
 type ApiToken struct {
 	Secret      string   `json:"secret"`
 	Username    string   `json:"username"`
+	TokenName   string   `json:"tokenName"`
 	Type        string   `json:"type"` // Possible values: [client, admin, frontend]
 	Environment string   `json:"environment"`
 	Project     string   `json:"project"`
