@@ -107,7 +107,9 @@ var _ = Describe("RemoteUnleash controller", func() {
 			Expect(promGaugeVecVal(remoteUnleashStatus, RemoteUnleashNamespace, RemoteUnleashName, unleashv1.UnleashStatusConditionTypeConnected)).To(Equal(1.0))
 
 			Expect(httpmock.GetCallCountInfo()).To(HaveLen(1))
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(1))
+			// This should ideally be 1, but due "object has been modified; please apply your changes to the latest version and try again" error
+			// it can be 2 or more as the reconciler retries.
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).ToNot(Equal(0))
 		})
 	})
 

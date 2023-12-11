@@ -89,8 +89,17 @@ func TestApiToken_IsEqual(t *testing.T) {
 	unleashToken.Environment = "production"
 	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
 
-	// Test when the tokens have different projects
+	// Test when the tokens have same projects but in different order
 	unleashToken.Environment = "development"
+	unleashToken.Projects = []string{"project2", "project1"}
+	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
+
+	// Test when the tokens have different projects
 	unleashToken.Projects = []string{"project1", "project3"}
 	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
+
+	// Test when the tokens are wildcards
+	apiToken.Spec.Projects = []string{"*"}
+	unleashToken.Projects = []string{"*"}
+	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
 }

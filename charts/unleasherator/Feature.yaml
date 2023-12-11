@@ -31,6 +31,10 @@ values:
     computed:
       template: |
         iam.gke.io/gcp-service-account: "{{ .Env.unleasherator_service_account }}"
+  # Features
+  controllerManager.manager.env.featureApiTokenUpdateEnabled:
+    config:
+      type: bool
   # Onprem stuff
   controllerManagerGcp.serviceAccountCredentialsJson:
     computed:

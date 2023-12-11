@@ -23,6 +23,8 @@ spec:
           value: ""
         - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: ""
+        - name: "FEATURE_API_TOKEN_UPDATE_ENABLED"
+          value: "false"
         - name: HTTPS_PROXY
           value: ""
         - name: NO_PROXY

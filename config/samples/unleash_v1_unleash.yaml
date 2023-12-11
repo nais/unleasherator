@@ -10,6 +10,7 @@ metadata:
   name: unleash-sample
 spec:
   size: 1
+  customImage: unleashorg/unleash-server:5
   database:
     secretName: postgres-postgresql
     secretPassKey: postgres-password

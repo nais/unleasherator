@@ -56,6 +56,9 @@ spec:
         - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscription
             }}
+        - name: FEATURE_API_TOKEN_UPDATE_ENABLED
+          value: {{ quote .Values.controllerManager.manager.env.featureApiTokenUpdateEnabled
+            }}
         - name: HTTPS_PROXY
           value: {{ quote .Values.controllerManager.manager.env.httpsProxy }}
         - name: NO_PROXY

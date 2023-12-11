@@ -44,6 +44,12 @@ type Config struct {
 	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE"`
 	Timeout                    TimeoutConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
+	Features                   Features
+}
+
+type Features struct {
+	// UnleashTokenUpdate enables updating tokens in Unleash.
+	ApiTokenUpdateEnabled bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {

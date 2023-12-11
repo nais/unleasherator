@@ -1,0 +1,13 @@
+{
+  "tokenName": "my-token-default",
+  "type": "client",
+  "environment": "development",
+  "projects": [
+    "default"
+  ],
+  "secret": "default:development.00000",
+  "username": "my-token-default",
+  "alias": null,
+  "project": "default",
+  "createdAt": "2023-12-11T10:21:28.088Z"
+}

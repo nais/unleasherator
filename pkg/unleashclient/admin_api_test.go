@@ -2,8 +2,11 @@ package unleashclient
 
 import (
 	"encoding/json"
+	"net/http"
+	"os"
 	"testing"
 
+	"github.com/jarcoal/httpmock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -52,7 +55,7 @@ func TestInstanceAdminStatsResult(t *testing.T) {
 }
 
 func TestApiToken(t *testing.T) {
-	jsonString := `{"tokenName":"my-token","type":"client","environment":"development","projects":["default"],"secret":"default:development.0000000000000000000000000000000000000000000000000000000000000000","username":"my-token","alias":null,"project":"default","createdAt":"2023-12-08T11:36:52.035Z"}`
+	jsonString := `{"tokenName":"my-token","type":"client","environment":"development","projects":["default"],"secret":"default:development.00000","username":"my-token","alias":null,"project":"default","createdAt":"2023-12-08T11:36:52.035Z"}`
 	var result ApiToken
 	err := json.Unmarshal([]byte(jsonString), &result)
 	if err != nil {
@@ -63,15 +66,24 @@ func TestApiToken(t *testing.T) {
 	assert.Equal(t, "client", result.Type)
 	assert.Equal(t, "development", result.Environment)
 	assert.Equal(t, "default", result.Projects[0])
-	assert.Equal(t, "default:development.0000000000000000000000000000000000000000000000000000000000000000", result.Secret)
+	assert.Equal(t, "default:development.00000", result.Secret)
 	assert.Equal(t, "my-token", result.Username)
 	assert.Equal(t, "", result.Alias)
 	assert.Equal(t, "default", result.Project)
 	assert.Equal(t, "2023-12-08T11:36:52.035Z", result.CreatedAt)
+
+	jsonString = `{"tokenName":"my-token-star","type":"client","environment":"development","projects":["*"],"secret":"*:development.00000","username":"my-token-star","alias":null,"project":"*","createdAt":"2023-12-11T09:17:59.680Z"}`
+	err = json.Unmarshal([]byte(jsonString), &result)
+	if err != nil {
+		t.Errorf("Error unmarshalling json: %s", err)
+	}
+
+	assert.Equal(t, "*", result.Projects[0])
+	assert.Equal(t, "*", result.Project)
 }
 
 func TestApiTokenResult(t *testing.T) {
-	jsonString := `{"tokens":[{"secret":"default:development.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"token-a","type":"client","project":"default","projects":["default"],"environment":"development","expiresAt":null,"createdAt":"2023-12-08T09:23:19.962Z","alias":null,"seenAt":null,"username":"token-a"},{"secret":"*:production.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"token-b","type":"client","project":"*","projects":["*"],"environment":"production","expiresAt":null,"createdAt":"2023-12-07T08:58:25.547Z","alias":null,"seenAt":null,"username":"token-b"},{"secret":"*:*.0000000000000000000000000000000000000000000000000000000000000000","tokenName":"admin","type":"admin","project":"*","projects":["*"],"environment":"*","expiresAt":null,"createdAt":"2023-05-31T06:54:22.698Z","alias":null,"seenAt":"2023-12-08T12:35:14.627Z","username":"admin"}]}`
+	jsonString := `{"tokens":[{"secret":"default:development.00000","tokenName":"token-a","type":"client","project":"default","projects":["default"],"environment":"development","expiresAt":null,"createdAt":"2023-12-08T09:23:19.962Z","alias":null,"seenAt":null,"username":"token-a"},{"secret":"*:production.00000","tokenName":"token-b","type":"client","project":"*","projects":["*"],"environment":"production","expiresAt":null,"createdAt":"2023-12-07T08:58:25.547Z","alias":null,"seenAt":null,"username":"token-b"},{"secret":"*:*.00000","tokenName":"admin","type":"admin","project":"*","projects":["*"],"environment":"*","expiresAt":null,"createdAt":"2023-05-31T06:54:22.698Z","alias":null,"seenAt":"2023-12-08T12:35:14.627Z","username":"admin"}]}`
 	var result ApiTokenResult
 	err := json.Unmarshal([]byte(jsonString), &result)
 	if err != nil {
@@ -79,4 +91,116 @@ func TestApiTokenResult(t *testing.T) {
 	}
 
 	assert.Equal(t, 3, len(result.Tokens))
+}
+func TestClient_GetAPIToken(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+	httpmock.RegisterResponder("GET", "/api/admin/api-tokens", func(req *http.Request) (*http.Response, error) {
+		jsonData, err := os.ReadFile("testdata/unleash-admin-api-get-tokens.json")
+		if err != nil {
+			return httpmock.NewStringResponse(500, ""), err
+		}
+
+		return httpmock.NewBytesResponse(200, jsonData), nil
+	})
+
+	client, err := NewClient("http://unleash.example.com", "token")
+	assert.NoError(t, err)
+
+	t.Run("Token for default project exists", func(t *testing.T) {
+		expectedToken := &ApiToken{
+			Secret:      "default:development.00000",
+			TokenName:   "token-default",
+			Type:        "client",
+			Project:     "default",
+			Projects:    []string{"default"},
+			Environment: "development",
+			CreatedAt:   "2023-12-08T09:23:19.962Z",
+			Username:    "token-default",
+		}
+
+		token, err := client.GetAPIToken("token-default")
+		assert.NoError(t, err)
+		assert.Equal(t, expectedToken, token)
+	})
+
+	t.Run("Token for wildcard (*) project exists", func(t *testing.T) {
+		expectedToken := &ApiToken{
+			Secret:      "*:production.00000",
+			TokenName:   "token-wildcard",
+			Type:        "client",
+			Project:     "*",
+			Projects:    []string{"*"},
+			Environment: "production",
+			CreatedAt:   "2023-12-07T08:58:25.547Z",
+			Username:    "token-wildcard",
+		}
+
+		token, err := client.GetAPIToken("token-wildcard")
+		assert.NoError(t, err)
+		assert.Equal(t, expectedToken, token)
+	})
+
+	t.Run("Token with multiple projects exists", func(t *testing.T) {
+		expectedToken := &ApiToken{
+			Secret:      "project-a:development.00000",
+			TokenName:   "token-multi-projects",
+			Type:        "client",
+			Project:     "project-a",
+			Projects:    []string{"project-a", "project-b"},
+			Environment: "development",
+			CreatedAt:   "2023-12-07T08:58:25.547Z",
+			Username:    "token-multi-projects",
+		}
+
+		token, err := client.GetAPIToken("token-multi-projects")
+		assert.NoError(t, err)
+		assert.Equal(t, expectedToken, token)
+	})
+
+	t.Run("Token does not exist", func(t *testing.T) {
+		token, err := client.GetAPIToken("non-existent-user")
+		assert.NoError(t, err)
+		assert.Nil(t, token)
+	})
+}
+
+func TestClient_CreateAPIToken(t *testing.T) {
+	client, err := NewClient("http://unleash.example.com", "token")
+	assert.NoError(t, err)
+
+	t.Run("Should create token for default project", func(t *testing.T) {
+		httpmock.Activate()
+		defer httpmock.DeactivateAndReset()
+		httpmock.RegisterResponder("POST", "/api/admin/api-tokens", func(req *http.Request) (*http.Response, error) {
+			jsonData, err := os.ReadFile("testdata/unleash-admin-api-create-token-default.json")
+			if err != nil {
+				return httpmock.NewStringResponse(500, ""), err
+			}
+
+			return httpmock.NewBytesResponse(201, jsonData), nil
+		})
+
+		tokenRequest := ApiTokenRequest{
+			Username:    "my-token-default",
+			Type:        "client",
+			Environment: "development",
+			Projects:    []string{"default"},
+		}
+
+		expectedToken := &ApiToken{
+			Secret:      "default:development.00000",
+			TokenName:   "my-token-default",
+			Type:        "client",
+			Project:     "default",
+			Projects:    []string{"default"},
+			Environment: "development",
+			CreatedAt:   "2023-12-11T10:21:28.088Z",
+			Username:    "my-token-default",
+		}
+
+		token, err := client.CreateAPIToken(tokenRequest)
+		assert.NoError(t, err)
+		assert.Equal(t, expectedToken, token)
+	})
 }
