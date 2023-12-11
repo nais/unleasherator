@@ -98,67 +98,20 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	log.Info("Starting reconciliation of Unleash")
 
-	// Fetch the Unleash instance
 	unleash := &unleashv1.Unleash{}
 	err := r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// If the Unleash is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			log.Info("unleash resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
+			log.Info("Unleash resource not found. Ignoring since object must be deleted")
+			return ctrl.Result{Requeue: false}, nil
 		}
-		// Error reading the object - requeue the request.
-		log.Error(err, "Failed to get unleash")
+		log.Error(err, "Failed to get Unleash")
 		return ctrl.Result{}, err
 	}
 
-	// Let's just set the status as Unknown when no status are available
-	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
-		log.Info("Setting status as Unknown for Unleash")
-		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: unleashv1.UnleashStatusConditionTypeReconciled, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
-		if err = r.Status().Update(ctx, unleash); err != nil {
-			log.Error(err, "Failed to update Unleash status")
-			return ctrl.Result{}, err
-		}
-
-		// Let's re-fetch the unleash Unleash after update the status
-		// so that we have the latest state of the resource on the cluster and we will avoid
-		// raise the issue "the object has been modified, please apply
-		// your changes to the latest version and try again" which would re-trigger the reconciliation
-		// if we try to update it again in the following operations
-		if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
-			log.Error(err, "Failed to re-fetch unleash")
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Let's add a finalizer. Then, we can define some operations which should
-	// occurs before the Unleash to be deleted.
-	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers
-	if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
-		log.Info("Adding Finalizer for Unleash")
-
-		if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
-			log.Error(err, "Failed to re-fetch unleash")
-			return ctrl.Result{}, err
-		}
-
-		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
-			log.Info("Finalizer already present for Unleash")
-			return ctrl.Result{}, nil
-		}
-
-		if err = r.Update(ctx, unleash); err != nil {
-			log.Error(err, "Failed to update Unleash to add finalizer")
-			return ctrl.Result{}, err
-		}
-	}
-
-	// Check if the Unleash instance is marked to be deleted, which is
-	// indicated by the deletion timestamp being set.
-	isUnleashMarkedToBeDeleted := unleash.GetDeletionTimestamp() != nil
-	if isUnleashMarkedToBeDeleted {
+	// Check if marked for deletion
+	if unleash.GetDeletionTimestamp() != nil {
+		log.Info("Unleash marked for deletion")
 		if controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
 			log.Info("Performing Finalizer Operations for Unleash before delete CR")
 
@@ -176,29 +129,24 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 			r.doFinalizerOperationsForUnleash(unleash, ctx, log)
 
-			// TODO(user): If you add operations to the doFinalizerOperationsForUnleash method
-			// then you need to ensure that all worked fine before deleting and updating the Downgrade status
-			// otherwise, you should requeue here.
-
-			// Re-fetch the unleash Unleash before update the status
-			// so that we have the latest state of the resource on the cluster and we will avoid
-			// raise the issue "the object has been modified, please apply
-			// your changes to the latest version and try again" which would re-trigger the reconciliation
 			if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
-				log.Error(err, "Failed to re-fetch unleash")
+				log.Error(err, "Failed to get Unleash")
 				return ctrl.Result{}, err
 			}
 
-			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{Type: unleashv1.UnleashStatusConditionTypeDegraded,
-				Status: metav1.ConditionTrue, Reason: "Finalizing",
-				Message: fmt.Sprintf("Finalizer operations for Unleash %s name were successfully accomplished", unleash.Name)})
+			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Finalizing",
+				Message: fmt.Sprintf("Finalizer operations for Unleash %s name were successfully accomplished", unleash.Name),
+			})
 
 			if err := r.Status().Update(ctx, unleash); err != nil {
 				log.Error(err, "Failed to update Unleash status")
 				return ctrl.Result{}, err
 			}
 
-			log.Info("Removing Finalizer for Unleash after successfully perform the operations")
+			log.Info("Removing finalizer for Unleash after successfully perform the operations")
 			if ok := controllerutil.RemoveFinalizer(unleash, unleashFinalizer); !ok {
 				log.Error(err, "Failed to remove finalizer for Unleash")
 				return ctrl.Result{Requeue: true}, nil
@@ -209,7 +157,48 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return ctrl.Result{}, err
 			}
 		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{Requeue: false}, nil
+	}
+
+	// Set status to unknown if no status is set
+	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
+		log.Info("Setting status as unknown for Unleash")
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Reconciling",
+			Message: "Starting reconciliation",
+		})
+
+		if err = r.Status().Update(ctx, unleash); err != nil {
+			log.Error(err, "Failed to update Unleash status")
+			return ctrl.Result{}, err
+		}
+
+		if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
+			log.Error(err, "Failed to get Unleash")
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
+		log.Info("Adding finalizer for Unleash")
+
+		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
+			log.Info("Finalizer already present for Unleash")
+			return ctrl.Result{}, nil
+		}
+
+		if err = r.Update(ctx, unleash); err != nil {
+			log.Error(err, "Failed to update Unleash to add finalizer")
+			return ctrl.Result{}, err
+		}
+
+		if err := r.Get(ctx, req.NamespacedName, unleash); err != nil {
+			log.Error(err, "Failed to get Unleash")
+			return ctrl.Result{}, err
+		}
 	}
 
 	var res ctrl.Result
@@ -277,7 +266,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Re-fetch Unleash instance before update the status
 	err = r.Get(ctx, req.NamespacedName, unleash)
 	if err != nil {
-		log.Error(err, "Failed to re-fetch Unleash")
+		log.Error(err, "Failed to get Unleash")
 		return ctrl.Result{}, err
 	}
 

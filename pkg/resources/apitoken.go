@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"strings"
+
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	corev1 "k8s.io/api/core/v1"
@@ -14,9 +16,11 @@ func ApiTokenSecret(unleash UnleashInstance, token *unleashv1.ApiToken, apiToken
 			Namespace: token.GetObjectMeta().GetNamespace(),
 		},
 		Data: map[string][]byte{
-			unleashv1.ApiTokenSecretTokenEnv:  []byte(apiToken.Secret),
-			unleashv1.ApiTokenSecretServerEnv: []byte(unleash.URL()),
-			unleashv1.ApiTokenSecretEnvEnv:    []byte(token.Spec.Environment),
+			unleashv1.ApiTokenSecretTokenEnv:    []byte(apiToken.Secret),
+			unleashv1.ApiTokenSecretServerEnv:   []byte(unleash.URL()),
+			unleashv1.ApiTokenSecretEnvEnv:      []byte(token.Spec.Environment),
+			unleashv1.ApiTokenSecretTypeEnv:     []byte(token.Spec.Type),
+			unleashv1.ApiTokenSecretProjectsEnv: []byte(strings.Join(token.Spec.Projects, ",")),
 		},
 	}
 }

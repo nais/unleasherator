@@ -14,13 +14,3 @@ func promGaugeValueForStatus(status metav1.ConditionStatus) float64 {
 	}
 	return 0
 }
-
-// hasValue returns true if s is in list, false otherwise.
-func hasValue(s string, list []string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
