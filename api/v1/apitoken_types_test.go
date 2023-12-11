@@ -65,7 +65,7 @@ func TestApiToken_NamespacedName(t *testing.T) {
 func TestApiToken_IsEqual(t *testing.T) {
 	apiToken := &ApiToken{
 		Spec: ApiTokenSpec{
-			Type:        "client",
+			Type:        "CLIENT",
 			Environment: "development",
 			Projects:    []string{"project1", "project2"},
 		},
@@ -77,15 +77,19 @@ func TestApiToken_IsEqual(t *testing.T) {
 		Projects:    []string{"project1", "project2"},
 	}
 
+	// Test when the token types are case different
+	apiToken.Spec.Type = "ClIeNt"
+	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
+
 	// Test when the tokens are equal
 	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
 
 	// Test when the tokens have different types
-	unleashToken.Type = "server"
+	unleashToken.Type = "FRONTEND"
 	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
 
 	// Test when the tokens have different environments
-	unleashToken.Type = "client"
+	unleashToken.Type = "CLIENT"
 	unleashToken.Environment = "production"
 	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
 
