@@ -53,6 +53,11 @@ type ApiTokenReconciler struct {
 	// in order to avoid name collisions when multiple clusters are
 	// using the same Unleash instance.
 	ApiTokenNameSuffix string
+
+	// ApiTokenUpdateEnabled enables updating tokens in Unleash since
+	// tokens in Unleash are immutable. This is a feature flag that
+	// can be enabled in the operator config.
+	ApiTokenUpdateEnabled bool
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens,verbs=get;list;watch;create;update;patch;delete
@@ -234,23 +239,29 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update token if it differs from the desired state
 	// Tokens in Unleash are immutable, so we need to delete the old token and create a new one
 	if apiToken != nil && !token.ApiTokenIsEqual(apiToken) {
-		log.Info("Updating token in Unleash for ApiToken")
-		log.Info("Deleting old token in Unleash for ApiToken")
-		err = apiClient.DeleteApiToken(token.ApiTokenName(r.ApiTokenNameSuffix))
-		if err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
+		log.Info(fmt.Sprintf("Token in Kubernetes: type=%s, environment=%s, projects=%s", token.Spec.Type, token.Spec.Environment, token.Spec.Projects))
+		log.Info(fmt.Sprintf("Token in Unleash: type=%s, environment=%s, projects=%s", apiToken.Type, apiToken.Environment, apiToken.Projects))
 
-		log.Info("Creating new token in Unleash for ApiToken")
-		apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
-		if err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to create new token in Unleash"); err != nil {
+		if r.ApiTokenUpdateEnabled {
+			log.Info("Deleting old token in Unleash for ApiToken")
+			err = apiClient.DeleteApiToken(token.ApiTokenName(r.ApiTokenNameSuffix))
+			if err != nil {
+				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
+					return ctrl.Result{}, err
+				}
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{}, err
+
+			log.Info("Creating new token in Unleash for ApiToken")
+			apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
+			if err != nil {
+				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to create new token in Unleash"); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, err
+			}
+		} else {
+			log.Info("Token update is disabled in operator config")
 		}
 	}
 

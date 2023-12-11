@@ -119,10 +119,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
-		Client:             k8sManager.GetClient(),
-		Scheme:             k8sManager.GetScheme(),
-		OperatorNamespace:  operatorNamespace,
-		ApiTokenNameSuffix: ApiTokenNameSuffix,
+		Client:                k8sManager.GetClient(),
+		Scheme:                k8sManager.GetScheme(),
+		OperatorNamespace:     operatorNamespace,
+		ApiTokenNameSuffix:    ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled: true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
