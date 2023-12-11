@@ -1,6 +1,8 @@
 package unleash_nais_io_v1
 
 import (
+	"strings"
+
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/nais/unleasherator/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -123,7 +125,7 @@ func (t *ApiToken) ApiTokenRequest(suffix string) unleashclient.ApiTokenRequest 
 }
 
 func (t *ApiToken) ApiTokenIsEqual(token *unleashclient.ApiToken) bool {
-	return t.Spec.Type == token.Type &&
+	return strings.EqualFold(t.Spec.Type, token.Type) &&
 		t.Spec.Environment == token.Environment &&
 		utils.StringSliceEquals(t.Spec.Projects, token.Projects)
 }
