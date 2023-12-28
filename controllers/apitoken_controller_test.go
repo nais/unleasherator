@@ -77,7 +77,7 @@ var _ = Describe("ApiToken controller", func() {
 				existingTokens.Tokens = append(existingTokens.Tokens, unleashclient.ApiToken{
 					Secret:      ApiTokenSecret,
 					Username:    tokenRequest.Username,
-					Type:        tokenRequest.Type,
+					Type:        strings.ToLower(tokenRequest.Type),
 					Environment: tokenRequest.Environment,
 					Project:     tokenRequest.Projects[0],
 					Projects:    tokenRequest.Projects,
@@ -213,7 +213,7 @@ var _ = Describe("ApiToken controller", func() {
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(1))
 			Expect(existingTokens.Tokens).Should(HaveLen(1))
 			Expect(existingTokens.Tokens[0].Username).Should(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
-			Expect(existingTokens.Tokens[0].Type).Should(Equal("CLIENT"))
+			Expect(existingTokens.Tokens[0].Type).Should(Equal("client"))
 			Expect(existingTokens.Tokens[0].Environment).Should(Equal("development"))
 			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"default"}))
 
@@ -268,7 +268,7 @@ var _ = Describe("ApiToken controller", func() {
 
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(1))
 			Expect(existingTokens.Tokens).Should(HaveLen(1))
-			Expect(existingTokens.Tokens[0].Type).Should(Equal("FRONTEND"))
+			Expect(existingTokens.Tokens[0].Type).Should(Equal("frontend"))
 			Expect(existingTokens.Tokens[0].Environment).Should(Equal("production"))
 			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"project1", "project2", "project3"}))
 
