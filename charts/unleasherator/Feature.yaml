@@ -86,3 +86,7 @@ values:
         - "{{ .Env.management_lb_internal_ip }}"
     ignoreKind:
       - management
+  # Alerts
+  alerts.enabled:
+    computed:
+      template: "true"

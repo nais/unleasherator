@@ -1,0 +1,56 @@
+---
+{{- if and .Values.alerts .Values.alerts.enabled }}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" }}
+{{ $fullName := include "unleasherator.fullname" . }}
+{{ $jobName := "$fullName-controller-manager-metrics-service" }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: $fullName
+  labels:
+    app.kubernetes.io/component: manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
+    control-plane: controller-manager
+  {{- include "unleasherator.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: unleasherator.rules
+      rules:
+        - alert: UnleasheratorReconcileErrors
+          expr: |
+            increase(controller_runtime_reconcile_errors_total{job="$jobName"}[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+            namespace: {{ .Release.Namespace }}
+          annotations:
+            summary: {{ "Unleasherator controller `{{ $labels.controller }}` fails to reconcile." }}
+            consequence: {{ "New or updated `{{ $labels.controller}}` resources may not be applied." }}
+            actions: {{ "Check the logs for the controller pod `{{ $labels.pod }}` for errors." }}
+        - alert: UnleasheratorReconcileLongerThan10Min
+          expr: |
+            rate(controller_runtime_reconcile_time_seconds_sum{job="$jobName"}[5m]) /
+            rate(controller_runtime_reconcile_time_seconds_count{job="$jobName"}[5m])
+            > 600
+          for: 10m
+          labels:
+            severity: warning
+            namespace: {{ .Release.Namespace }}
+          annotations:
+            summary: {{ "Unleasherator `{{ $labels.controller }}` controller takes longer than 10 minutes to reconcile." }}
+            consequence: {{ "New or updated `{{ $labels.controller}}` resources may appear to be stuck ." }}
+            actions: {{ "Check the logs for the controller pod `{{ $labels.pod }}` for errors." }}
+        - alert: UnleasheratorBacklogNotDrained
+          expr: |
+            rate(workqueue_depth{job="$jobName"}[15m]) > 0
+          for: 15m
+          labels:
+            severity: critical
+            namespace: {{ .Release.Namespace }}
+          annotations:
+            summary: {{ "Unleasherator `{{ $labels.name }}` controller backlog is not getting drained; an indication that reconcile loop may be stuck." }}
+            consequence: {{ "New or updated `{{ $labels.controller}}` resources may not be created or updated properly." }}
+            actions: {{ "Check the logs for the controller pod `{{ $labels.pod }}` for errors." }}
+{{ end }}
+{{ end }}
