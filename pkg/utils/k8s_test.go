@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -100,6 +101,78 @@ func TestSecretEnvVar(t *testing.T) {
 			got := SecretEnvVar(tt.nameArg, tt.secretName, tt.secretKey)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("SecretEnvVar() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDeploymentIsReady(t *testing.T) {
+	tests := []struct {
+		name       string
+		deployment *appsv1.Deployment
+		expected   bool
+	}{
+		{
+			name: "Deployment is ready",
+			deployment: &appsv1.Deployment{
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentProgressing,
+							Status: corev1.ConditionTrue,
+							Reason: "NewReplicaSetAvailable",
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Deployment is not ready",
+			deployment: &appsv1.Deployment{
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentProgressing,
+							Status: corev1.ConditionTrue,
+							Reason: "NewReplicaSetCreated",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Deployment failed",
+			deployment: &appsv1.Deployment{
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentProgressing,
+							Status: corev1.ConditionFalse,
+							Reason: "ProgressDeadlineExceeded",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "No conditions",
+			deployment: &appsv1.Deployment{
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeploymentIsReady(tt.deployment)
+			if got != tt.expected {
+				t.Errorf("DeploymentIsReady() = %v, want %v", got, tt.expected)
 			}
 		})
 	}
