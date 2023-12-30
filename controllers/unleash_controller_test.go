@@ -32,7 +32,47 @@ func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1
 	return unsetConditionLastTransitionTime(unleash.Status.Conditions), nil
 }
 
+func getDeployment(k8sClient client.Client, ctx context.Context, namespacedName client.ObjectKey, deployment *appsv1.Deployment) error {
+	return k8sClient.Get(ctx, namespacedName, deployment)
+}
+
+func setDeploymentStatusFailed(deployment *appsv1.Deployment) {
+	deployment.Status.Conditions = []appsv1.DeploymentCondition{
+		{
+			Type:    appsv1.DeploymentProgressing,
+			Status:  corev1.ConditionFalse,
+			Reason:  "ProgressDeadlineExceeded",
+			Message: `Progress deadline exceeded.`,
+			LastUpdateTime: metav1.Time{
+				Time: time.Now(),
+			},
+			LastTransitionTime: metav1.Time{
+				Time: time.Now(),
+			},
+		},
+	}
+}
+
+func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
+	deployment.Status.Conditions = []appsv1.DeploymentCondition{
+		{
+			Type:    appsv1.DeploymentProgressing,
+			Status:  corev1.ConditionTrue,
+			Reason:  "NewReplicaSetAvailable",
+			Message: `ReplicaSet "fake-abc123" has successfully progressed.`,
+			LastUpdateTime: metav1.Time{
+				Time: time.Now(),
+			},
+			LastTransitionTime: metav1.Time{
+				Time: time.Now(),
+			},
+		},
+	}
+}
+
 var _ = Describe("Unleash controller", func() {
+	deploymentTimeout = time.Second * 1
+
 	const (
 		UnleashNamespace = "default"
 		UnleashVersion   = "v5.1.2"
@@ -140,6 +180,40 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
+		It("Should fail if Deployment rollout is not complete", func() {
+			ctx := context.Background()
+
+			By("By creating a new Unleash")
+			unleash := unleashResource("test-unleash-rollout-fail", UnleashNamespace, unleashv1.UnleashSpec{
+
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By faking Deployment status as failed")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusFailed(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that Unleash is failed")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: "Deployment rollout timed out",
+			}))
+			Expect(createdUnleash.IsReady()).To(BeFalse())
+			Expect(createdUnleash.Status.Reconciled).To(BeFalse())
+			Expect(createdUnleash.Status.Connected).To(BeFalse())
+
+			By("By cleaning up the Unleash")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
+
 		PIt("Should fail when it cannot connect to Unleash")
 
 		It("Should succeed when it can connect to Unleash", func() {
@@ -153,6 +227,13 @@ var _ = Describe("Unleash controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
+			By("By faking Deployment status as available")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that Unleash is connected")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
@@ -221,6 +302,13 @@ var _ = Describe("Unleash controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
+			By("By faking Deployment status as available")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that Unleash is connected")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
