@@ -8,11 +8,13 @@ import (
 	"github.com/nais/unleasherator/pkg/utils"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	autoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -28,6 +30,8 @@ const (
 	DefaultUnleashPort = 4242
 	// DefaultUnleashPortName is the default port name used for the Unleash deployment
 	DefaultUnleashPortName = "http"
+	// DefaultUnleashContainerName is the default container name used for the Unleash deployment
+	DefaultUnleashContainerName = "unleash"
 )
 
 const (
@@ -236,7 +240,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 							PeriodSeconds:       10,
 						},
 						Image:           ImageForUnleash(unleash),
-						Name:            "unleash",
+						Name:            DefaultUnleashContainerName,
 						ImagePullPolicy: corev1.PullAlways,
 						// Ensure restrictive context for the container
 						// More info: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
@@ -580,4 +584,51 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 	}
 
 	return envVars, nil
+}
+
+func VerticalPodAutoscalerForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*autoscalingv1.VerticalPodAutoscaler, error) {
+	labels := labelsForUnleash(unleash.GetName())
+
+	updateModeRecreate := autoscalingv1.UpdateModeRecreate
+
+	conainerPolicies := []autoscalingv1.ContainerResourcePolicy{
+		{
+			ContainerName: DefaultUnleashContainerName,
+			MinAllowed:    unleash.Spec.VerticalPodAutoscaler.MinAllowed,
+			MaxAllowed:    unleash.Spec.VerticalPodAutoscaler.MaxAllowed,
+		},
+	}
+
+	if unleash.Spec.VerticalPodAutoscaler.ExtraPolicies != nil {
+		conainerPolicies = append(conainerPolicies, unleash.Spec.VerticalPodAutoscaler.ExtraPolicies...)
+	}
+
+	vpa := &autoscalingv1.VerticalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      unleash.Name,
+			Namespace: unleash.Namespace,
+			Labels:    labels,
+		},
+		Spec: autoscalingv1.VerticalPodAutoscalerSpec{
+			TargetRef: &v1.CrossVersionObjectReference{
+				Kind:       "Deployment",
+				Name:       unleash.Name,
+				APIVersion: "apps/v1",
+			},
+			UpdatePolicy: &autoscalingv1.PodUpdatePolicy{
+				UpdateMode:  &updateModeRecreate,
+				MinReplicas: &unleash.Spec.Size,
+			},
+			ResourcePolicy: &autoscalingv1.PodResourcePolicy{
+				ContainerPolicies: conainerPolicies,
+			},
+		},
+	}
+
+	// Set the ownerRef for the NetworkPolicy
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
+	if err := ctrl.SetControllerReference(unleash, vpa, scheme); err != nil {
+		return nil, err
+	}
+	return vpa, nil
 }

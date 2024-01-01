@@ -20,6 +20,7 @@ require (
 	google.golang.org/protobuf v1.32.0
 	k8s.io/api v0.28.5
 	k8s.io/apimachinery v0.28.5
+	k8s.io/autoscaler/vertical-pod-autoscaler v0.14.0
 	k8s.io/client-go v0.28.5
 	sigs.k8s.io/controller-runtime v0.16.3
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20230513180526-af986b86bcca
