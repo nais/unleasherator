@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,6 +31,7 @@ import (
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/utils"
 )
 
 const (
@@ -40,6 +42,9 @@ const (
 )
 
 var (
+	deploymentTimeout = 5 * time.Minute
+	requeueAfter      = 1 * time.Hour
+
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -205,28 +210,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	res, err = r.reconcileSecrets(ctx, unleash)
 	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets"); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
-	} else if res.Requeue {
-		return res, nil
-	}
-
-	res, err = r.reconcileDeployment(ctx, unleash)
-	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment"); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
-	} else if res.Requeue {
-		return res, nil
-	}
-
-	res, err = r.reconcileService(ctx, unleash)
-	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); err != nil {
-			return ctrl.Result{}, err
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
 		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
@@ -235,8 +220,28 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	res, err = r.reconcileNetworkPolicy(ctx, unleash)
 	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
-			return ctrl.Result{}, err
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
+		}
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
+	res, err = r.reconcileDeployment(ctx, unleash)
+	if err != nil {
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
+		}
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
+	res, err = r.reconcileService(ctx, unleash)
+	if err != nil {
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
 		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
@@ -245,8 +250,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	res, err = r.reconcileIngresses(ctx, unleash)
 	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses"); err != nil {
-			return ctrl.Result{}, err
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
 		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
@@ -255,8 +260,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	res, err = r.reconcileServiceMonitor(ctx, unleash)
 	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); err != nil {
-			return ctrl.Result{}, err
+		if statsusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); statsusErr != nil {
+			return ctrl.Result{}, statsusErr
 		}
 		return ctrl.Result{}, err
 	} else if res.Requeue {
@@ -270,6 +275,19 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Wait for Deployment rollout to finish before testing connection This is to
+	// avoid testing connection to the previous instance if the Deployment is not
+	// ready yet. Delay requeue to avoid tying up the reconciler since waiting is
+	// done in the same reconcile loop.
+	log.Info("Waiting for Deployment rollout to finish")
+	err = r.waitForDeployment(ctx, deploymentTimeout, req.NamespacedName)
+	if err != nil {
+		if statusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Deployment rollout timed out"); statusErr != nil {
+			return ctrl.Result{RequeueAfter: deploymentTimeout}, statusErr
+		}
+		return ctrl.Result{RequeueAfter: deploymentTimeout}, err
+	}
+
 	// Set the reconcile status of the Unleash instance to available
 	log.Info("Successfully reconciled Unleash resources")
 	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
@@ -279,8 +297,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Test connection to Unleash instance
 	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
-		if err := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); err != nil {
-			return ctrl.Result{}, err
+		if statusErr := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); statusErr != nil {
+			return ctrl.Result{}, statusErr
 		}
 
 		return ctrl.Result{}, err
@@ -288,19 +306,18 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set the connection status of the Unleash instance to available
 	log.Info("Successfully connected to Unleash instance", "version", stats.VersionOSS)
-	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
-	if err != nil {
-		return ctrl.Result{}, err
+	statusErr := r.updateStatusConnectionSuccess(ctx, unleash, stats)
+	if statusErr != nil {
+		return ctrl.Result{}, statusErr
 	}
 
 	// Publish the Unleash instance to federation if enabled
-	err = r.publish(ctx, unleash)
-	if err != nil {
+	if err = r.publish(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	log.Info("Reconciliation of Unleash finished")
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // publish the Unleash instance to pubsub if federation is enabled.
@@ -530,8 +547,6 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, nil
 	}
 
-	// update prometheus metrics
-
 	return ctrl.Result{}, nil
 }
 
@@ -675,6 +690,23 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 	return ctrl.Result{}, nil
+}
+
+// waitForDeployment will wait for the deployment to be available
+func (r *UnleashReconciler) waitForDeployment(ctx context.Context, timeout time.Duration, key types.NamespacedName) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	err := wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
+		deployment := &appsv1.Deployment{}
+		if err := r.Client.Get(ctx, key, deployment); err != nil {
+			return false, err
+		}
+
+		return utils.DeploymentIsReady(deployment), nil
+	})
+
+	return err
 }
 
 // testConnection will test the connection to the Unleash instance
