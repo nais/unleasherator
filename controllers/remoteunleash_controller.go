@@ -72,7 +72,7 @@ type RemoteUnleashFederation struct {
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Info("Starting reconciliation of RemoteUnleash")
 	remoteUnleash := &unleashv1.RemoteUnleash{}
@@ -242,7 +242,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Info("Successfully connected to Unleash")
 	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
@@ -254,7 +254,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Cont
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, err error, message string) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
 	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
@@ -266,7 +266,7 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Conte
 }
 
 func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Info("Successfully reconciled RemoteUnleash")
 	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
@@ -278,7 +278,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Conte
 }
 
 func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, err error, message string) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Error(err, fmt.Sprintf("%s for RemoteUnleash", message))
 	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
@@ -290,7 +290,7 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 }
 
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
 		log.Error(err, "Failed to get RemoteUnleash")
@@ -329,7 +329,7 @@ func (r *RemoteUnleashReconciler) doFinalizerOperationsForToken(remoteUnleash *u
 }
 
 func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error {
-	log := log.FromContext(ctx).WithName("FederationSubscribe")
+	log := log.FromContext(ctx).WithName("subscribe")
 
 	if !r.Federation.Enabled {
 		log.Info("Federation is disabled, not consuming pubsub messages")
