@@ -43,7 +43,7 @@ func (s *subscriber) Subscribe(ctx context.Context, handler Handler) error {
 
 	log.Info("waiting for messages")
 	return s.subscription.Receive(cctx, func(ctx context.Context, msg *pubsub.Message) {
-		log.Info("received message", "message", msg)
+		log.Info("received message")
 		if err := s.handleMessage(ctx, msg, handler); err != nil {
 			log.Error(err, "nack message")
 			msg.Nack()
