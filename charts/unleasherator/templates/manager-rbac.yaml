@@ -3,6 +3,7 @@ kind: ClusterRole
 metadata:
   name: {{ include "unleasherator.fullname" . }}-manager-role
   labels:
+    app: unleasherator
   {{- include "unleasherator.labels" . | nindent 4 }}
 rules:
 - apiGroups:
@@ -208,6 +209,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "unleasherator.fullname" . }}-manager-rolebinding
   labels:
+    app: unleasherator
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator

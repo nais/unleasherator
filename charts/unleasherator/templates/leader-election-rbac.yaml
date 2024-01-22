@@ -3,6 +3,7 @@ kind: Role
 metadata:
   name: {{ include "unleasherator.fullname" . }}-leader-election-role
   labels:
+    app: unleasherator
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
@@ -46,6 +47,7 @@ kind: RoleBinding
 metadata:
   name: {{ include "unleasherator.fullname" . }}-leader-election-rolebinding
   labels:
+    app: unleasherator
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator

@@ -9,10 +9,10 @@ namespace: unleasherator-system
 namePrefix: unleasherator-
 
 # Labels to add to all resources and selectors.
-#labels:
-#- includeSelectors: true
-#  pairs:
-#    someName: someValue
+labels:
+- includeSelectors: false
+  pairs:
+    app: unleasherator
 
 resources:
 - ../crd

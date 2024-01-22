@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
+    app: unleasherator
     app.kubernetes.io/component: manager
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
@@ -17,6 +18,7 @@ spec:
   template:
     metadata:
       labels:
+        app: unleasherator
         control-plane: controller-manager
       {{- include "unleasherator.selectorLabels" . | nindent 8 }}
       annotations:
