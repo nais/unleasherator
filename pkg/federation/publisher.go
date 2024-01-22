@@ -32,7 +32,7 @@ func (p *publisher) Close() error {
 // Publish publishes the given Unleash instance to the federation topic using the provided API token.
 // Returns an error if the message could not be published.
 func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error {
-	log := log.FromContext(ctx).WithName("publisher")
+	log := log.FromContext(ctx).WithName("publish")
 
 	instance := UnleashFederationInstance(unleash, apiToken)
 	payload, err := proto.Marshal(instance)
