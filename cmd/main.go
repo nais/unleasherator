@@ -37,11 +37,6 @@ func init() {
 }
 
 func main() {
-	var configFile string
-	flag.StringVar(&configFile, "config", "",
-		"The controller will load its initial configuration from this file. "+
-			"Omit this flag to use the default configuration values. "+
-			"Command-line flags override configuration from this file.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -60,16 +55,9 @@ func main() {
 	ctx, cancel := context.WithCancel(signalHandlerContext)
 	defer cancel()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
 
-	options := ctrl.Options{Scheme: scheme}
-	if configFile != "" {
-		options, err = options.AndFrom(ctrl.ConfigFile().AtPath(configFile))
-		if err != nil {
-			setupLog.Error(err, "unable to load the config file")
-			os.Exit(1)
-		}
-	}
+	options := cfg.ManagerOptions(scheme)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
@@ -120,6 +108,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.OperatorNamespace,
+		Timeout:           cfg.Timeout,
 		Federation: controllers.RemoteUnleashFederation{
 			Enabled:     cfg.Federation.IsEnabled() && subscriber != nil,
 			ClusterName: cfg.Federation.ClusterName,
@@ -131,11 +120,12 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.ApiTokenReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		Recorder:           mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace:  cfg.OperatorNamespace,
-		ApiTokenNameSuffix: cfg.ApiTokenNameSuffix,
+		Client:                mgr.GetClient(),
+		Scheme:                mgr.GetScheme(),
+		Recorder:              mgr.GetEventRecorderFor("api-token-controller"),
+		OperatorNamespace:     cfg.OperatorNamespace,
+		ApiTokenNameSuffix:    cfg.ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled: cfg.Features.ApiTokenUpdateEnabled,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)

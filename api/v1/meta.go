@@ -32,6 +32,9 @@ const (
 	UnleashSecretNamePrefix = "unleasherator"
 	UnleashSecretTokenKey   = "token"
 
-	ApiTokenSecretTokenEnv  = "UNLEASH_SERVER_API_TOKEN"
-	ApiTokenSecretServerEnv = "UNLEASH_SERVER_API_URL"
+	ApiTokenSecretTokenEnv    = "UNLEASH_SERVER_API_TOKEN"
+	ApiTokenSecretServerEnv   = "UNLEASH_SERVER_API_URL"
+	ApiTokenSecretEnvEnv      = "UNLEASH_SERVER_API_ENV"
+	ApiTokenSecretTypeEnv     = "UNLEASH_SERVER_API_TYPE"
+	ApiTokenSecretProjectsEnv = "UNLEASH_SERVER_API_PROJECTS"
 )

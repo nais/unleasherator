@@ -7,6 +7,7 @@ import (
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/config"
 	"github.com/nais/unleasherator/pkg/federation"
 	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/unleashclient"
@@ -55,6 +56,7 @@ type RemoteUnleashReconciler struct {
 	Scheme            *runtime.Scheme
 	Recorder          record.EventRecorder
 	OperatorNamespace string
+	Timeout           config.TimeoutConfig
 	Federation        RemoteUnleashFederation
 }
 
@@ -73,27 +75,82 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	log := log.FromContext(ctx)
 
 	log.Info("Starting reconciliation of RemoteUnleash")
-
 	remoteUnleash := &unleashv1.RemoteUnleash{}
 
 	err := r.Get(ctx, req.NamespacedName, remoteUnleash)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("RemoteUnleash resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
+			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get RemoteUnleash")
 		return ctrl.Result{}, err
 	}
 
-	// Set status to unknown if not set
+	// Check if marked for deletion
+	if remoteUnleash.GetDeletionTimestamp() != nil {
+		log.Info("RemoteUnleash marked for deletion")
+		if controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
+			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
+
+			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "Finalizing",
+				Message: "Performing finalizer options",
+			})
+
+			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+				log.Error(err, "Failed to update RemoteUnleash status")
+				return ctrl.Result{}, err
+			}
+
+			r.doFinalizerOperationsForToken(remoteUnleash)
+
+			if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+				log.Error(err, "Failed to get RemoteUnleash")
+				return ctrl.Result{}, err
+			}
+
+			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Finalizing",
+				Message: fmt.Sprintf("Finalizer operations for RemoteUnleash %s name were successfully accomplished", remoteUnleash.Name),
+			})
+
+			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+				log.Error(err, "Failed to update Unleash status")
+				return ctrl.Result{}, err
+			}
+
+			log.Info("Removing finalizer from RemoteUnleash after successfully perform the operations")
+			if ok := controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer); !ok {
+				log.Error(err, "Failed to remove finalizer from RemoteUnleash")
+				return ctrl.Result{Requeue: true}, err
+			}
+
+			if err = r.Update(ctx, remoteUnleash); err != nil {
+				log.Error(err, "Failed to update RemoteUnleash to remove finalizer")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{Requeue: false}, nil
+	}
+
+	// Set status to unknown if no status is set
 	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
-		if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
+		log.Info("Setting status to unknown for RemoteUnleash")
+
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
-		}); err != nil {
+		})
+
+		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+			log.Error(err, "Failed to update RemoteUnleash status")
 			return ctrl.Result{}, err
 		}
 
@@ -106,9 +163,10 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
 		log.Info("Adding finalizer to RemoteUnleash")
+
 		if ok := controllerutil.AddFinalizer(remoteUnleash, tokenFinalizer); !ok {
 			log.Error(err, "Failed to add finalizer to RemoteUnleash")
-			return ctrl.Result{Requeue: true}, err
+			return ctrl.Result{}, err
 		}
 
 		if err = r.Update(ctx, remoteUnleash); err != nil {
@@ -122,51 +180,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Check if marked for deletion
-	if remoteUnleash.GetDeletionTimestamp() != nil {
-		if controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
-			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
-
-			if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "Finalizing",
-				Message: "Performing finalizer operations",
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			r.doFinalizerOperationsForToken(remoteUnleash)
-
-			if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
-				log.Error(err, "Failed to get RemoteUnleash")
-				return ctrl.Result{}, err
-			}
-
-			if err := r.updateStatus(ctx, remoteUnleash, nil, metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
-				Status:  metav1.ConditionTrue,
-				Reason:  "Finalizing",
-				Message: "Finalizer operations completed",
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			log.Info("Removing finalizer from RemoteUnleash")
-			if ok := controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer); !ok {
-				log.Error(err, "Failed to remove finalizer from RemoteUnleash")
-				return ctrl.Result{Requeue: true}, err
-			}
-
-			if err = r.Update(ctx, remoteUnleash); err != nil {
-				log.Error(err, "Failed to update RemoteUnleash to remove finalizer")
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Get admin token from secret
+	// Get admin token from RemoteUnleash secret
 	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to get admin token secret"); err != nil {
@@ -203,6 +217,11 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+		log.Error(err, "Failed to get RemoteUnleash")
+		return ctrl.Result{}, err
+	}
+
 	stats, _, err := unleashClient.GetInstanceAdminStats()
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, stats, err, fmt.Sprintf("Failed to connect to Unleash instance statistics endpoint on host %s", remoteUnleash.URL())); err != nil {
@@ -215,7 +234,11 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set RemoteUnleash status to connected
 	err = r.updateStatusConnectionSuccess(ctx, stats, remoteUnleash)
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, err
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
@@ -320,7 +343,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
-			if !hasValue(r.Federation.ClusterName, clusters) {
+			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
 				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
 				return nil
 			}
@@ -328,22 +351,17 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			switch status {
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, not implemented yet")
-				remoteUnleashReceived.WithLabelValues("removed", "error").Inc()
+				remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
 				return nil
 
 			case pb.Status_Provisioned:
 				log.Info("Received Status_Provisioned")
 
-				const kubernetesWriteTimeout = time.Second * 5
-				timeoutContext, cancel := context.WithTimeout(ctx, kubernetesWriteTimeout)
-				defer cancel()
+				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
+				defer secretCancel()
 
-				adminSecretErr := utils.UpsertObject(timeoutContext, r.Client, adminSecret)
-				remoteUnleashesErr := utils.UpsertAllObjects(timeoutContext, r.Client, remoteUnleashes)
-
-				err := errors.Join(adminSecretErr, remoteUnleashesErr)
-				if err != nil {
-					remoteUnleashReceived.WithLabelValues("provisioned", "error").Inc()
+				if err := utils.UpsertObject(secretCtx, r.Client, adminSecret); err != nil {
+					remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
 					if !retriableError(err) {
 						permanentError = err
@@ -351,10 +369,29 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return err
 				}
 
+				objectsCtx, objectsCancel := r.Timeout.WriteContext(ctx)
+				defer objectsCancel()
+
+				if err := utils.UpsertAllObjects(objectsCtx, r.Client, remoteUnleashes); len(err) > 0 {
+					for _, err := range err {
+						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
+
+						if namespaceNotFoundError(err) {
+							log.Info(fmt.Sprintf("Namespace %s not found for RemoteUnleash %s", err.(*apierrors.StatusError).ErrStatus.Details.Name, remoteUnleashes[0].GetName()))
+							continue
+						} else {
+							if !retriableError(err) {
+								permanentError = err
+							}
+							return err
+						}
+					}
+				}
+
 				remoteUnleashReceived.WithLabelValues("provisioned", "success").Inc()
 				return nil
 			default:
-				remoteUnleashReceived.WithLabelValues("unknown", "error").Inc()
+				remoteUnleashReceived.WithLabelValues("unknown", "failed").Inc()
 				log.Error(fmt.Errorf("unknown status: %s", status), "Received unknown status")
 				return nil
 			}
@@ -371,6 +408,12 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// namespaceNotFoundError returns true if the error is a namespace not found error.
+func namespaceNotFoundError(err error) bool {
+	var statusErr *apierrors.StatusError
+	return errors.As(err, &statusErr) && statusErr.ErrStatus.Reason == metav1.StatusReasonNotFound && statusErr.ErrStatus.Details.Kind == "namespaces"
 }
 
 // SetupWithManager sets up the controller with the Manager.

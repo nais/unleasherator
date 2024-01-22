@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: {{ include "unleasherator.fullname" . }}-controller-manager
   labels:
+    app: unleasherator
     app.kubernetes.io/component: manager
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
@@ -17,6 +18,7 @@ spec:
   template:
     metadata:
       labels:
+        app: unleasherator
         control-plane: controller-manager
       {{- include "unleasherator.selectorLabels" . | nindent 8 }}
       annotations:
@@ -39,8 +41,7 @@ spec:
                 values:
                 - linux
       containers:
-      - args: {{- toYaml .Values.controllerManager.manager.args | nindent 8 }}
-        command:
+      - command:
         - /manager
         env:
         - name: API_TOKEN_NAME_SUFFIX
@@ -57,10 +58,32 @@ spec:
         - name: FEDERATION_PUBSUB_SUBSCRIPTION
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubSubscription
             }}
+        - name: FEATURE_API_TOKEN_UPDATE_ENABLED
+          value: {{ quote .Values.controllerManager.manager.env.featureApiTokenUpdateEnabled
+            }}
+        - name: HTTPS_PROXY
+          value: {{ quote .Values.controllerManager.manager.env.httpsProxy }}
+        - name: NO_PROXY
+          value: {{ quote .Values.controllerManager.manager.env.noProxy }}
         - name: OPERATOR_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ quote .Values.controllerManager.manager.env.googleApplicationCredentials
+            }}
+        - name: HEALTH_PROBE_BIND_ADDRESS
+          value: {{ quote .Values.controllerManager.manager.env.healthProbeBindAddress
+            }}
+        - name: METRICS_BIND_ADDRESS
+          value: {{ quote .Values.controllerManager.manager.env.metricsBindAddress }}
+        - name: WEBHOOK_PORT
+          value: {{ quote .Values.controllerManager.manager.env.webhookPort }}
+        - name: LEADER_ELECTION_ENABLED
+          value: {{ quote .Values.controllerManager.manager.env.leaderElectionEnabled }}
+        - name: LEADER_ELECTION_RESOURCE_NAME
+          value: {{ quote .Values.controllerManager.manager.env.leaderElectionResourceName
+            }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag
@@ -84,9 +107,9 @@ spec:
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
         volumeMounts:
-        - mountPath: /controller_manager_config.yaml
-          name: manager-config
-          subPath: controller_manager_config.yaml
+        - mountPath: /var/secrets/google
+          name: controller-manager-gcp
+          readOnly: true
       - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
@@ -109,6 +132,9 @@ spec:
       serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:
-      - configMap:
-          name: {{ include "unleasherator.fullname" . }}-manager-config
-        name: manager-config
+      - name: controller-manager-gcp
+        secret:
+          items:
+          - key: service-account-credentials.json
+            path: service-account-credentials.json
+          secretName: {{ include "unleasherator.fullname" . }}-controller-manager-gcp

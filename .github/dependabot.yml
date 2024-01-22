@@ -8,9 +8,31 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Oslo"
+    groups:
+      k8s-core:
+        patterns:
+          - "k8s.io/*"
+      k8s-controller:
+        patterns:
+          - "sigs.k8s.io/controller-runtime/*"
+          - "sigs.k8s.io/controller-tools/*"
+      prometheus:
+        patterns:
+          - "github.com/prometheus/*"
+      build-test:
+        patterns:
+          - "github.com/arttor/helmify/cmd/helmify"
+          - "github.com/golangci/golangci-lint/cmd/golangci-lint"
+          - "github.com/onsi/ginkgo/v2"
+          - "github.com/jarcoal/httpmock"
+          - "github.com/onsi/gomega"
+          - "github.com/stretchr/testify"
     ignore:
-      # These pacakges are dependent on the Kubernetes version we are targeting
+      # These packages are dependent on the Kubernetes version we are targeting
       - dependency-name: "k8s.io/api"
         update-types: ["version-update:semver-minor"]
       - dependency-name: "k8s.io/apimachinery"
@@ -26,8 +48,18 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Oslo"
+    groups:
+      actions:
+        patterns:
+          - "*"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Oslo"

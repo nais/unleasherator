@@ -1,12 +1,14 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -138,4 +140,59 @@ func promCounterVecVal(cv *prometheus.CounterVec, lvs ...string) (float64, error
 
 func promCounterVecFlush(cv *prometheus.CounterVec) {
 	cv.Reset()
+}
+
+func apiTokenEventually(ctx context.Context, apiTokenLookup types.NamespacedName, apiTokenCreated *unleashv1.ApiToken) func() ([]metav1.Condition, error) {
+	return func() ([]metav1.Condition, error) {
+		err := k8sClient.Get(ctx, apiTokenLookup, apiTokenCreated)
+		if err != nil {
+			return nil, err
+		}
+
+		unsetConditionLastTransitionTime(apiTokenCreated.Status.Conditions)
+
+		return apiTokenCreated.Status.Conditions, nil
+	}
+}
+
+func apiTokenSuccessCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "API token successfully created",
+	}
+}
+
+func apiTokenSecretEventually(ctx context.Context, name types.NamespacedName, secret *v1.Secret) func() (map[string][]byte, error) {
+	return func() (map[string][]byte, error) {
+		err := k8sClient.Get(ctx, name, secret)
+		if err != nil {
+			return nil, err
+		}
+
+		return secret.Data, err
+	}
+}
+
+func remoteUnleashEventually(ctx context.Context, remoteUNleashLookup types.NamespacedName, remoteUnleashCreated *unleashv1.RemoteUnleash) func() ([]metav1.Condition, error) {
+	return func() ([]metav1.Condition, error) {
+		err := k8sClient.Get(ctx, remoteUNleashLookup, remoteUnleashCreated)
+		if err != nil {
+			return nil, err
+		}
+
+		unsetConditionLastTransitionTime(remoteUnleashCreated.Status.Conditions)
+
+		return remoteUnleashCreated.Status.Conditions, nil
+	}
+}
+
+func remoteUnleashSuccessCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeConnected,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Successfully connected to Unleash",
+	}
 }

@@ -31,6 +31,35 @@ values:
     computed:
       template: |
         iam.gke.io/gcp-service-account: "{{ .Env.unleasherator_service_account }}"
+  # Features
+  controllerManager.manager.env.featureApiTokenUpdateEnabled:
+    config:
+      type: bool
+  # Onprem stuff
+  controllerManagerGcp.serviceAccountCredentialsJson:
+    computed:
+      template: '{{ if eq .Kind "onprem" }}{{ .Env.unleasherator_service_account_key | quote }}{{ else }}"{}"{{ end }}'
+  controllerManager.manager.env.googleApplicationCredentials:
+    computed:
+      template: '/var/secrets/google/service-account-credentials.json'
+    ignoreKind:
+      - management
+      - tenant
+      - legacy
+  controllerManager.manager.env.httpsProxy:
+    computed:
+      template: 'http://webproxy-nais.nav.no:8088'
+    ignoreKind:
+      - management
+      - tenant
+      - legacy
+  controllerManager.manager.env.noProxy:
+    computed:
+      template: 'localhost,127.0.0.1,10.254.0.1,.local,.adeo.no,.nav.no,.aetat.no,.devillo.no,.oera.no,.nais.io,.aivencloud.com'
+    ignoreKind:
+      - management
+      - tenant
+      - legacy
   # Image overrides
   controllerManager.manager.image.tag:
     config:

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-controller-manager-gcp
+  labels:
+    app: unleasherator
+  {{- include "unleasherator.labels" . | nindent 4 }}
+data:
+  service-account-credentials.json: {{ required "controllerManagerGcp.serviceAccountCredentialsJson is required" .Values.controllerManagerGcp.serviceAccountCredentialsJson | b64enc
+    | quote }}
+type: opaque

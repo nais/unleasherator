@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -16,8 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/config"
 	mockfederation "github.com/nais/unleasherator/pkg/federation/mockfediration"
 	//+kubebuilder:scaffold:imports
 )
@@ -46,7 +49,7 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.JSONEncoder()))
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
@@ -78,10 +81,16 @@ var _ = BeforeSuite(func() {
 	Expect(k8sClient).NotTo(BeNil())
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:             scheme.Scheme,
-		MetricsBindAddress: "0", // disable firewall prompt on mac
+		Scheme: scheme.Scheme,
+		Metrics: server.Options{
+			BindAddress: "0", // disable firewall prompt on mac
+		},
 	})
 	Expect(err).ToNot(HaveOccurred())
+
+	timeout := config.TimeoutConfig{
+		Write: time.Duration(5) * time.Second,
+	}
 
 	err = (&UnleashReconciler{
 		Client:            k8sManager.GetClient(),
@@ -99,6 +108,7 @@ var _ = BeforeSuite(func() {
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: operatorNamespace,
+		Timeout:           timeout,
 		Federation: RemoteUnleashFederation{
 			Enabled:     true,
 			ClusterName: "test-cluster",
@@ -109,10 +119,11 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
-		Client:             k8sManager.GetClient(),
-		Scheme:             k8sManager.GetScheme(),
-		OperatorNamespace:  operatorNamespace,
-		ApiTokenNameSuffix: ApiTokenNameSuffix,
+		Client:                k8sManager.GetClient(),
+		Scheme:                k8sManager.GetScheme(),
+		OperatorNamespace:     operatorNamespace,
+		ApiTokenNameSuffix:    ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled: true,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

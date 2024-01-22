@@ -22,13 +22,13 @@ env:
 
 jobs:
   meta:
-    name: Metadata
+    name: Metadata Charts
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       name: ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -54,43 +54,43 @@ jobs:
           cat ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save Chart Metadata
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           name: chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}/Chart.yaml
 
       - name: Save Chart Values
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           name: chart-values
           path: |
             ./charts/${{ steps.name.outputs.name }}/values.yaml
 
       - name: Save CRDs Chart Metadata
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           name: crds-chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}-crds/Chart.yaml
 
   lint-test:
-    name: Lint and test
+    name: Lint and test Charts
     runs-on: ubuntu-latest-16-cores
     needs: meta
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Restore Chart Metadata
-        uses: actions/download-artifact@v3.0.2
+        uses: actions/download-artifact@v4.1.1
         with:
           name: chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore CRDs Chart Metadata
-        uses: actions/download-artifact@v3.0.2
+        uses: actions/download-artifact@v4.1.1
         with:
           name: crds-chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}-crds
@@ -100,13 +100,13 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           check-latest: true
 
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.4.0
+        uses: helm/chart-testing-action@v2.6.1
 
       - name: Run chart-testing (list-changed)
         id: list-changed
@@ -124,15 +124,15 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@v1.8.0
 
-      - uses: docker/setup-buildx-action@v2
-      - uses: docker/metadata-action@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/metadata-action@v5
         id: metadata
         with:
           images: |
             ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           tags: |
             type=raw,value=main
-      - uses: docker/build-push-action@v4
+      - uses: docker/build-push-action@v5
         with:
           context: .
           tags: ${{ steps.metadata.outputs.tags }}
@@ -162,28 +162,28 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    name: Build and push
+    name: Build and push Charts
     runs-on: ubuntu-latest
     needs: [meta, lint-test]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Restore Chart Metadata
-        uses: actions/download-artifact@v3.0.2
+        uses: actions/download-artifact@v4.1.1
         with:
           name: chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore Chart Values
-        uses: actions/download-artifact@v3.0.2
+        uses: actions/download-artifact@v4.1.1
         with:
           name: chart-values
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore CRDs Chart Metadata
-        uses: actions/download-artifact@v3.0.2
+        uses: actions/download-artifact@v4.1.1
         with:
           name: crds-chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}-crds
@@ -191,14 +191,14 @@ jobs:
       - id: auth
         if: github.actor != 'dependabot[bot]'
         name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1.1.1
+        uses: google-github-actions/auth@v2.0.1
         with:
           workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.SERVICE_ACCOUNT }}
           token_format: access_token
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v1
+        uses: google-github-actions/setup-gcloud@v2
 
       - name: Log in to Google Artifact Registry
         if: github.actor != 'dependabot[bot]'
@@ -215,7 +215,7 @@ jobs:
           helm package ./charts/${{ needs.meta.outputs.name }}-crds -d ./charts/${{ needs.meta.outputs.name }}-crds
           helm package ./charts/${{ needs.meta.outputs.name }} -d ./charts/${{ needs.meta.outputs.name }}
 
-      - name: Push Chart
+      - name: Push Charts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           helm push ./charts/${{ needs.meta.outputs.name }}-crds/*.tgz oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}

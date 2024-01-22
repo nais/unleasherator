@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/nais/unleasherator:main
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.25.0
+ENVTEST_K8S_VERSION = 1.28.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -116,9 +116,7 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 
 ##@ Deployment
 
-ifndef ignore-not-found
-	ignore-not-found = false
-endif
+IGNORE_NOT_FOUND ?= false
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
@@ -126,7 +124,7 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=${IGNORE_NOT_FOUND} -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
@@ -144,7 +142,7 @@ logs: manifests kustomize ## Show logs for controller in the K8s cluster specifi
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/localhost | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/localhost | kubectl delete --ignore-not-found=${IGNORE_NOT_FOUND} -f -
 
 ##@ Build Dependencies
 

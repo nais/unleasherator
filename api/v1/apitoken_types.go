@@ -1,6 +1,10 @@
 package unleash_nais_io_v1
 
 import (
+	"strings"
+
+	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -35,17 +39,17 @@ type ApiTokenSpec struct {
 	// Type is the type of token to create. Valid values are "CLIENT" and "FRONTEND".
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Enum=CLIENT;FRONTEND
-	// +kubebuilder:default=CLIENT
+	// +kubebuilder:default="CLIENT"
 	Type string `json:"type,omitempty"`
 
 	// Environment is the environment to create the token for.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default=development
+	// +kubebuilder:default="development"
 	Environment string `json:"environment,omitempty"`
 
 	// Projects is the list of projects to create the token for.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={"*"}
+	// +kubebuilder:default={"default"}
 	Projects []string `json:"projects,omitempty"`
 }
 
@@ -96,11 +100,11 @@ type ApiTokenList struct {
 	Items           []ApiToken `json:"items"`
 }
 
-// UnleashClientName returns the name of the Unleash client for this token.
+// ApiTokenName returns the name of the Unleash client for this token.
 // The name is the same as the token name, but with a suffix. This is to avoid
 // name collisions between multiple Unleasherator instances operating on the same
 // Unleash instance.
-func (t *ApiToken) UnleashClientName(suffix string) string {
+func (t *ApiToken) ApiTokenName(suffix string) string {
 	return t.Name + "-" + suffix
 }
 
@@ -109,6 +113,21 @@ func (t *ApiToken) NamespacedName() types.NamespacedName {
 		Namespace: t.Namespace,
 		Name:      t.Name,
 	}
+}
+
+func (t *ApiToken) ApiTokenRequest(suffix string) unleashclient.ApiTokenRequest {
+	return unleashclient.ApiTokenRequest{
+		Username:    t.ApiTokenName(suffix),
+		Type:        t.Spec.Type,
+		Environment: t.Spec.Environment,
+		Projects:    t.Spec.Projects,
+	}
+}
+
+func (t *ApiToken) ApiTokenIsEqual(token *unleashclient.ApiToken) bool {
+	return strings.EqualFold(t.Spec.Type, token.Type) &&
+		t.Spec.Environment == token.Environment &&
+		utils.StringSliceEquals(t.Spec.Projects, token.Projects)
 }
 
 func init() {

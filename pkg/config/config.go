@@ -3,10 +3,14 @@ package config
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/nais/unleasherator/pkg/federation"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 const (
@@ -31,9 +35,42 @@ func (p *FederationMode) Set(value string) error {
 }
 
 type Config struct {
-	ApiTokenNameSuffix string `envconfig:"API_TOKEN_NAME_SUFFIX"`
-	OperatorNamespace  string `envconfig:"OPERATOR_NAMESPACE"`
-	Federation         FederationConfig
+	ApiTokenNameSuffix         string `envconfig:"API_TOKEN_NAME_SUFFIX"`
+	Federation                 FederationConfig
+	HealthProbeBindAddress     string `envconfig:"HEALTH_PROBE_BIND_ADDRESS" default:":8081"`
+	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
+	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
+	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
+	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE"`
+	Timeout                    TimeoutConfig
+	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
+	Features                   Features
+}
+
+type Features struct {
+	// UnleashTokenUpdate enables updating tokens in Unleash.
+	ApiTokenUpdateEnabled bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
+}
+
+func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
+	return manager.Options{
+		Scheme:           scheme,
+		LeaderElection:   c.LeaderElectionEnabled,
+		LeaderElectionID: c.LeaderElectionResourceName,
+		Metrics: server.Options{
+			BindAddress: c.MetricsBindAddress,
+		},
+		HealthProbeBindAddress: c.HealthProbeBindAddress,
+	}
+}
+
+type TimeoutConfig struct {
+	// WriteSeconds is the maximum number of seconds to wait for a write operation to complete.
+	Write time.Duration `envconfig:"TIMEOUT_WRITE" default:"10s"`
+}
+
+func (t *TimeoutConfig) WriteContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, t.Write)
 }
 
 type FederationConfig struct {

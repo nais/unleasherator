@@ -1,0 +1,65 @@
+{
+  "tokens": [
+    {
+      "secret": "default:development.00000",
+      "tokenName": "token-default",
+      "type": "client",
+      "project": "default",
+      "projects": [
+        "default"
+      ],
+      "environment": "development",
+      "expiresAt": null,
+      "createdAt": "2023-12-08T09:23:19.962Z",
+      "alias": null,
+      "seenAt": null,
+      "username": "token-default"
+    },
+    {
+      "secret": "*:production.00000",
+      "tokenName": "token-wildcard",
+      "type": "client",
+      "project": "*",
+      "projects": [
+        "*"
+      ],
+      "environment": "production",
+      "expiresAt": null,
+      "createdAt": "2023-12-07T08:58:25.547Z",
+      "alias": null,
+      "seenAt": null,
+      "username": "token-wildcard"
+    },
+    {
+      "secret": "project-a:development.00000",
+      "tokenName": "token-multi-projects",
+      "type": "client",
+      "project": "project-a",
+      "projects": [
+        "project-a",
+        "project-b"
+      ],
+      "environment": "development",
+      "expiresAt": null,
+      "createdAt": "2023-12-07T08:58:25.547Z",
+      "alias": null,
+      "seenAt": null,
+      "username": "token-multi-projects"
+    },
+    {
+      "secret": "*:*.00000",
+      "tokenName": "admin",
+      "type": "admin",
+      "project": "*",
+      "projects": [
+        "*"
+      ],
+      "environment": "*",
+      "expiresAt": null,
+      "createdAt": "2023-05-31T06:54:22.698Z",
+      "alias": null,
+      "seenAt": "2023-12-11T09:10:52.906Z",
+      "username": "admin"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ kind: ClusterRole
 metadata:
   name: {{ include "unleasherator.fullname" . }}-proxy-role
   labels:
+    app: unleasherator
     app.kubernetes.io/component: kube-rbac-proxy
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
@@ -26,6 +27,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ include "unleasherator.fullname" . }}-proxy-rolebinding
   labels:
+    app: unleasherator
     app.kubernetes.io/component: kube-rbac-proxy
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
