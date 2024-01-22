@@ -75,7 +75,7 @@ type ApiTokenReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("apitoken")
 
 	log.Info("Starting reconciliation of ApiToken")
 	token := &unleashv1.ApiToken{}
@@ -321,7 +321,7 @@ func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unle
 
 // updateStatusSuccess will set the status condition as created and reset the failed status condition
 func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *unleashv1.ApiToken) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("apitoken")
 	log.Info("Successfully created ApiToken")
 
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeCreated).Set(1.0)
@@ -354,7 +354,7 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 
 // updateStatusFailed will set the status condition as failed, but not reset the created status condition
 func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, err error, reason, message string) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("apitoken")
 
 	if err != nil {
 		log.Error(err, fmt.Sprintf("%s for ApiToken", message))

@@ -94,8 +94,7 @@ type UnleashFederation struct {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
 func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
-
+	log := log.FromContext(ctx).WithName("unleash")
 	log.Info("Starting reconciliation of Unleash")
 
 	unleash := &unleashv1.Unleash{}
@@ -366,7 +365,7 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 
 // reconcileServiceMonitor will ensure that the required ServiceMonitor is created
 func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	newServiceMonitor, err := resources.ServiceMonitorForUnleash(unleash, r.Scheme)
 	if err != nil {
@@ -421,7 +420,7 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 
 // reconcileNetworkPolicy will ensure that the required network policy is created
 func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	newNetPol, err := resources.NetworkPolicyForUnleash(unleash, r.Scheme, r.OperatorNamespace)
 	if err != nil {
@@ -479,7 +478,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 
 // reconcileIngress will ensure that the required ingress is created
 func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unleashv1.Unleash, ingress *unleashv1.UnleashIngressConfig, nameSuffix string) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	newIngress, err := resources.IngressForUnleash(unleash, ingress, nameSuffix, r.Scheme)
 	if err != nil {
@@ -552,7 +551,7 @@ func (r *UnleashReconciler) reconcileIngresses(ctx context.Context, unleash *unl
 
 // reconcileSecrets will ensure that the required secrets are created
 func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	// Check if operator secret already exists, if not create a new one
 	operatorSecret := &corev1.Secret{}
@@ -603,7 +602,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 
 // reconcileDeployment will ensure that the required deployment is created
 func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
 	if err != nil {
@@ -641,7 +640,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 
 // reconcileService will ensure that the Service for the Unleash instance is created
 func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	newSvc, err := resources.ServiceForUnleash(unleash, r.Scheme)
 	if err != nil {
@@ -710,7 +709,7 @@ func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, un
 }
 
 func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	if verr, ok := err.(*resources.ValidationError); ok {
 		message = fmt.Sprintf("%s: %s", message, verr.Error())
@@ -735,7 +734,7 @@ func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, u
 }
 
 func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
 	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
@@ -747,7 +746,7 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 }
 
 func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
-	log := log.FromContext(ctx)
+	log := log.FromContext(ctx).WithName("unleash")
 
 	switch status.Type {
 	case unleashv1.UnleashStatusConditionTypeReconciled:
