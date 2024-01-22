@@ -55,7 +55,7 @@ func main() {
 	ctx, cancel := context.WithCancel(signalHandlerContext)
 	defer cancel()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
 
 	options := cfg.ManagerOptions(scheme)
 
