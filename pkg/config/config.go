@@ -45,6 +45,13 @@ type Config struct {
 	Timeout                    TimeoutConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
 	Features                   Features
+	OpenTelemetry              OpenTelemetryConfig
+}
+
+type OpenTelemetryConfig struct {
+	TracesExporter        string `envconfig:"OTEL_TRACES_EXPORTER" default:"stdout"`
+	ExporterOtelpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://tempo-distributor.nais-system:4317"`
+	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"grpc"`
 }
 
 type Features struct {

@@ -8,8 +8,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
+
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -23,7 +22,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/controllers"
 	"github.com/nais/unleasherator/pkg/config"
-	"github.com/nais/unleasherator/pkg/utils"
+	"github.com/nais/unleasherator/pkg/o11y"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -60,17 +59,11 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
 
-	exp, err := utils.NewStdoutTraceExporter(ctx)
+	tp, err := o11y.InitTracing(ctx, cfg)
 	if err != nil {
-		setupLog.Error(err, "unable to create stdout trace exporter")
-		os.Exit(1)
+		setupLog.Error(err, "unable to initialize tracing")
 	}
-
-	tp := utils.NewTraceProvider(exp)
 	defer func() { _ = tp.Shutdown(ctx) }()
-
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
 	options := cfg.ManagerOptions(scheme)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
