@@ -8,6 +8,8 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -21,6 +23,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/controllers"
 	"github.com/nais/unleasherator/pkg/config"
+	"github.com/nais/unleasherator/pkg/utils"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -57,8 +60,19 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
 
-	options := cfg.ManagerOptions(scheme)
+	exp, err := utils.NewStdoutTraceExporter(ctx)
+	if err != nil {
+		setupLog.Error(err, "unable to create stdout trace exporter")
+		os.Exit(1)
+	}
 
+	tp := utils.NewTraceProvider(exp)
+	defer func() { _ = tp.Shutdown(ctx) }()
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+
+	options := cfg.ManagerOptions(scheme)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -99,6 +113,7 @@ func main() {
 			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
 			Publisher: publisher,
 		},
+		Tracer: tp.Tracer("unleash-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)

@@ -1,6 +1,7 @@
 package unleashclient
 
 import (
+	"context"
 	"net/http"
 )
 
@@ -47,9 +48,9 @@ type HealthResult struct {
 }
 
 // GetHealth returns the health of the Unleash instance.
-func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
+func (c *Client) GetHealth(ctx context.Context) (*HealthResult, *http.Response, error) {
 	health := &HealthResult{}
-	res, err := c.HTTPGet(HealthEndpoint, health)
+	res, err := c.HTTPGet(ctx, HealthEndpoint, health)
 
 	if err != nil {
 		return health, res, err
@@ -60,10 +61,10 @@ func (c *Client) GetHealth() (*HealthResult, *http.Response, error) {
 }
 
 // GetInstanceAdminStats returns instance admin stats (admin only endpoint - requires admin token).
-func (c *Client) GetInstanceAdminStats() (*InstanceAdminStatsResult, *http.Response, error) {
+func (c *Client) GetInstanceAdminStats(ctx context.Context) (*InstanceAdminStatsResult, *http.Response, error) {
 	adminStats := &InstanceAdminStatsResult{}
 
-	res, err := c.HTTPGet(InstanceAdminStatsEndpoint, adminStats)
+	res, err := c.HTTPGet(ctx, InstanceAdminStatsEndpoint, adminStats)
 	if err != nil {
 		return adminStats, res, err
 	}
@@ -101,10 +102,10 @@ type ApiTokenRequest struct {
 
 // CreateAPIToken creates a new API token (admin only endpoint - requires admin token).
 // https://docs.getunleash.io/reference/api/unleash/create-api-token
-func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
+func (c *Client) CreateAPIToken(ctx context.Context, req ApiTokenRequest) (*ApiToken, error) {
 	res := &ApiToken{}
 
-	_, err := c.HTTPPost(ApiTokensEndpoint, req, res)
+	_, err := c.HTTPPost(ctx, ApiTokensEndpoint, req, res)
 	if err != nil {
 		return res, err
 	}
@@ -114,10 +115,10 @@ func (c *Client) CreateAPIToken(req ApiTokenRequest) (*ApiToken, error) {
 
 // GetAllAPITokens returns all API tokens.
 // https://docs.getunleash.io/reference/api/unleash/get-all-api-tokens
-func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
+func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
 	res := &ApiTokenResult{}
 
-	_, err := c.HTTPGet(ApiTokensEndpoint, &res)
+	_, err := c.HTTPGet(ctx, ApiTokensEndpoint, &res)
 	if err != nil {
 		return res, err
 	}
@@ -126,8 +127,8 @@ func (c *Client) GetAllAPITokens() (*ApiTokenResult, error) {
 }
 
 // GetAPIToken returns an API token with the given username.
-func (c *Client) GetAPIToken(userName string) (*ApiToken, error) {
-	tokens, err := c.GetAllAPITokens()
+func (c *Client) GetAPIToken(ctx context.Context, userName string) (*ApiToken, error) {
+	tokens, err := c.GetAllAPITokens(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,15 +143,15 @@ func (c *Client) GetAPIToken(userName string) (*ApiToken, error) {
 }
 
 // CheckAPITokenExists checks if an API token with the given username exists.
-func (c *Client) CheckAPITokenExists(userName string) (bool, error) {
-	token, err := c.GetAPIToken(userName)
+func (c *Client) CheckAPITokenExists(ctx context.Context, userName string) (bool, error) {
+	token, err := c.GetAPIToken(ctx, userName)
 	exists := token != nil
 
 	return exists, err
 }
 
-func (c *Client) DeleteApiToken(tokenString string) error {
-	err := c.HTTPDelete(ApiTokensEndpoint, tokenString)
+func (c *Client) DeleteApiToken(ctx context.Context, tokenString string) error {
+	err := c.HTTPDelete(ctx, ApiTokensEndpoint, tokenString)
 
 	if err != nil {
 		return err

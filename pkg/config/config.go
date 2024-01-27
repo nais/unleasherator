@@ -54,9 +54,10 @@ type Features struct {
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 	return manager.Options{
-		Scheme:           scheme,
-		LeaderElection:   c.LeaderElectionEnabled,
-		LeaderElectionID: c.LeaderElectionResourceName,
+		Scheme:                  scheme,
+		LeaderElection:          c.LeaderElectionEnabled,
+		LeaderElectionNamespace: c.OperatorNamespace,
+		LeaderElectionID:        c.LeaderElectionResourceName,
 		Metrics: server.Options{
 			BindAddress: c.MetricsBindAddress,
 		},

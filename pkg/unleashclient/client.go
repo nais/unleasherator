@@ -2,12 +2,15 @@ package unleashclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Client struct {
@@ -17,7 +20,8 @@ type Client struct {
 }
 
 func NewClient(instanceUrl string, apiToken string) (*Client, error) {
-	return NewClientWithHttpClient(instanceUrl, apiToken, &http.Client{})
+	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	return NewClientWithHttpClient(instanceUrl, apiToken, &client)
 }
 
 func NewClientWithHttpClient(instanceUrl string, apiToken string, httpClient *http.Client) (*Client, error) {
@@ -45,11 +49,11 @@ func (c *Client) requestURL(requestPath string) *url.URL {
 	return req
 }
 
-func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
+func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "GET"
 
-	req, err := http.NewRequest(requestMethod, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, nil)
 
 	if err != nil {
 		return nil, err
@@ -80,11 +84,11 @@ func (c *Client) HTTPGet(requestPath string, v any) (*http.Response, error) {
 	return res, nil
 }
 
-func (c *Client) HTTPDelete(requestPath string, item string) error {
+func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string) error {
 	requestURL := c.requestURL(fmt.Sprintf("%s/%s", requestPath, item)).String()
 	requestMethod := "DELETE"
 
-	req, err := http.NewRequest(requestMethod, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, nil)
 
 	if err != nil {
 		return err
@@ -102,7 +106,7 @@ func (c *Client) HTTPDelete(requestPath string, item string) error {
 	return nil
 }
 
-func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) {
+func (c *Client) HTTPPost(ctx context.Context, requestPath string, p, v any) (*http.Response, error) {
 	requestURL := c.requestURL(requestPath).String()
 	requestMethod := "POST"
 	requestBody, err := json.Marshal(p)
@@ -110,7 +114,7 @@ func (c *Client) HTTPPost(requestPath string, p, v any) (*http.Response, error) 
 		return nil, err
 	}
 
-	req, err := http.NewRequest(requestMethod, requestURL, bytes.NewBuffer(requestBody))
+	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, bytes.NewBuffer(requestBody))
 
 	if err != nil {
 		return nil, err

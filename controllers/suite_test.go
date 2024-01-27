@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -101,6 +102,7 @@ var _ = BeforeSuite(func() {
 			Enabled:   true,
 			Publisher: mockPublisher,
 		},
+		Tracer: otel.Tracer("unleash-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
