@@ -100,19 +100,13 @@ values:
         - "{{ .Env.management_lb_internal_ip }}"
     ignoreKind:
       - management
-  networkPolicy.otelpServiceEndpoint:
+  networkPolicy.grafanaTempo.enabled:
     computed:
-      template: |
-        - to:
-          - namespaceSelector:
-              "kubernetes\.io/metadata\.name": nais-system
-            podSelector:
-              matchLabels:
-                "app\.kubernetes\.io/component": distributor
-                "app\.kubernetes\.io/instance": tempo
-                "app\.kubernetes\.io/name": tempo
-          ports:
-            - port: 4317
-              protocol: TCP
+      template: true
+    ignoreKind:
+      - legacy
+  networkPolicy.grafanaTempo.namespace:
+    computed:
+      template: nais-system
     ignoreKind:
       - legacy
