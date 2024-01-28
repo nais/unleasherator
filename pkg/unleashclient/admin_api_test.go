@@ -1,6 +1,7 @@
 package unleashclient
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -119,7 +120,7 @@ func TestClient_GetAPIToken(t *testing.T) {
 			Username:    "token-default",
 		}
 
-		token, err := client.GetAPIToken("token-default")
+		token, err := client.GetAPIToken(context.Background(), "token-default")
 		assert.NoError(t, err)
 		assert.Equal(t, expectedToken, token)
 	})
@@ -136,7 +137,7 @@ func TestClient_GetAPIToken(t *testing.T) {
 			Username:    "token-wildcard",
 		}
 
-		token, err := client.GetAPIToken("token-wildcard")
+		token, err := client.GetAPIToken(context.Background(), "token-wildcard")
 		assert.NoError(t, err)
 		assert.Equal(t, expectedToken, token)
 	})
@@ -153,20 +154,20 @@ func TestClient_GetAPIToken(t *testing.T) {
 			Username:    "token-multi-projects",
 		}
 
-		token, err := client.GetAPIToken("token-multi-projects")
+		token, err := client.GetAPIToken(context.Background(), "token-multi-projects")
 		assert.NoError(t, err)
 		assert.Equal(t, expectedToken, token)
 	})
 
 	t.Run("Token does not exist", func(t *testing.T) {
-		token, err := client.GetAPIToken("non-existent-user")
+		token, err := client.GetAPIToken(context.Background(), "non-existent-user")
 		assert.NoError(t, err)
 		assert.Nil(t, token)
 	})
 }
 
 func TestClient_CreateAPIToken(t *testing.T) {
-	client, err := NewClient("http://unleash.example.com", "token")
+	client, err := NewClientWithHttpClient("http://unleash.example.com", "token", http.DefaultClient)
 	assert.NoError(t, err)
 
 	t.Run("Should create token for default project", func(t *testing.T) {
@@ -199,7 +200,7 @@ func TestClient_CreateAPIToken(t *testing.T) {
 			Username:    "my-token-default",
 		}
 
-		token, err := client.CreateAPIToken(tokenRequest)
+		token, err := client.CreateAPIToken(context.Background(), tokenRequest)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedToken, token)
 	})

@@ -180,7 +180,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
 			log.Info("Performing Finalizer Operations for ApiToken before deletion")
-			r.doFinalizerOperationsForToken(token, apiClient, log)
+			r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
 
 			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
 				log.Error(err, "Failed to get ApiToken")
@@ -215,7 +215,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Check if token exists in Unleash
 	log.Info("Fetching token from Unleash for ApiToken")
-	apiToken, err := apiClient.GetAPIToken(token.ApiTokenName(r.ApiTokenNameSuffix))
+	apiToken, err := apiClient.GetAPIToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
 	if err != nil {
 		log.Error(err, "Failed to get token from Unleash")
 		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists in Unleash"); err != nil {
@@ -227,7 +227,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Create token if it does not exist in Unleash
 	if apiToken == nil {
 		log.Info("Creating token in Unleash for ApiToken")
-		apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
+		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
 		if err != nil {
 			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to create token in Unleash"); err != nil {
 				return ctrl.Result{}, err
@@ -244,7 +244,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 		if r.ApiTokenUpdateEnabled {
 			log.Info("Deleting old token in Unleash for ApiToken")
-			err = apiClient.DeleteApiToken(token.ApiTokenName(r.ApiTokenNameSuffix))
+			err = apiClient.DeleteApiToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
 			if err != nil {
 				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
 					return ctrl.Result{}, err
@@ -253,7 +253,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 
 			log.Info("Creating new token in Unleash for ApiToken")
-			apiToken, err = apiClient.CreateAPIToken(token.ApiTokenRequest(r.ApiTokenNameSuffix))
+			apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
 			if err != nil {
 				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to create new token in Unleash"); err != nil {
 					return ctrl.Result{}, err
@@ -387,9 +387,9 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 }
 
 // doFinalizerOperationsForToken will delete the ApiToken from Unleash
-func (r *ApiTokenReconciler) doFinalizerOperationsForToken(token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
+func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
 	tokenName := token.ApiTokenName(r.ApiTokenNameSuffix)
-	err := unleashClient.DeleteApiToken(tokenName)
+	err := unleashClient.DeleteApiToken(ctx, tokenName)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", tokenName))
 	}

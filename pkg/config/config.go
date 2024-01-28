@@ -45,6 +45,13 @@ type Config struct {
 	Timeout                    TimeoutConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
 	Features                   Features
+	OpenTelemetry              OpenTelemetryConfig
+}
+
+type OpenTelemetryConfig struct {
+	TracesExporter        string `envconfig:"OTEL_TRACES_EXPORTER" default:"stdout"`
+	ExporterOtelpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://localhost:4317"`
+	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"http"`
 }
 
 type Features struct {
@@ -54,9 +61,10 @@ type Features struct {
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 	return manager.Options{
-		Scheme:           scheme,
-		LeaderElection:   c.LeaderElectionEnabled,
-		LeaderElectionID: c.LeaderElectionResourceName,
+		Scheme:                  scheme,
+		LeaderElection:          c.LeaderElectionEnabled,
+		LeaderElectionNamespace: c.OperatorNamespace,
+		LeaderElectionID:        c.LeaderElectionResourceName,
 		Metrics: server.Options{
 			BindAddress: c.MetricsBindAddress,
 		},

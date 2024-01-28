@@ -45,6 +45,9 @@ controllerManager:
       leaderElectionResourceName: 509984d3.nais.io
       metricsBindAddress: 127.0.0.1:8080
       noProxy: ""
+      otelExporterOtlpEndpoint: http://localhost:4317
+      otelExporterOtlpProtocol: grpc
+      otelTracesExporter: none
       webhookPort: "9443"
     image:
       repository: ghcr.io/nais/unleasherator

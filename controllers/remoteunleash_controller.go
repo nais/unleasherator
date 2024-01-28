@@ -222,7 +222,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	stats, _, err := unleashClient.GetInstanceAdminStats()
+	stats, _, err := unleashClient.GetInstanceAdminStats(ctx)
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, stats, err, fmt.Sprintf("Failed to connect to Unleash instance statistics endpoint on host %s", remoteUnleash.URL())); err != nil {
 			return ctrl.Result{}, err
