@@ -41,11 +41,16 @@ type Config struct {
 	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
 	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
 	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
-	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE"`
+	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE" required:"true"`
+	Log                        LogConfig
 	Timeout                    TimeoutConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
 	Features                   Features
 	OpenTelemetry              OpenTelemetryConfig
+}
+
+type LogConfig struct {
+	Level string `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 type OpenTelemetryConfig struct {
