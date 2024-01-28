@@ -55,13 +55,13 @@ func newTraceExporter(ctx context.Context, config *config.Config) (sdktrace.Span
 	case "stdout":
 		return newStdoutTraceExporter(ctx)
 	case "otlp":
-		switch config.OpenTelemetry.ExporterOtelpProtocol {
+		switch config.OpenTelemetry.ExporterOtlpProtocol {
 		case "grpc":
-			return newOtelpGrpcTraceExporter(ctx, config)
+			return newOtlpGrpcTraceExporter(ctx, config)
 		case "http":
-			return newOtelpHttpTraceExporter(ctx, config)
+			return newOtlpHttpTraceExporter(ctx, config)
 		default:
-			return nil, fmt.Errorf("unsupported otelp exporter protocol %q", config.OpenTelemetry.ExporterOtelpProtocol)
+			return nil, fmt.Errorf("unsupported otlp exporter protocol %q", config.OpenTelemetry.ExporterOtlpProtocol)
 		}
 	case "none":
 		return nil, nil
@@ -74,10 +74,10 @@ func newStdoutTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) 
 	return stdouttrace.New(stdouttrace.WithPrettyPrint())
 }
 
-func newOtelpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
-	return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(config.OpenTelemetry.ExporterOtelpEndpoint))
+func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
+	return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(config.OpenTelemetry.ExporterOtlpEndpoint))
 }
 
-func newOtelpHttpTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
-	return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(config.OpenTelemetry.ExporterOtelpEndpoint))
+func newOtlpHttpTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
+	return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(config.OpenTelemetry.ExporterOtlpEndpoint))
 }

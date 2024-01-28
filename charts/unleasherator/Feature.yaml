@@ -28,7 +28,7 @@ values:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
   controllerManager.manager.env.otelTracesExporter:
     computed:
-      template: '{{ if eq .Kind "management" }}otelp{{ else }}none{{ end }}'
+      template: '{{ if eq .Kind "management" }}otlp{{ else }}none{{ end }}'
   controllerManager.manager.env.otelExporterOtlpEndpoint:
     computed:
       template: 'http://tempo-distributor.nais-system:4317'
@@ -100,7 +100,7 @@ values:
         - "{{ .Env.management_lb_internal_ip }}"
     ignoreKind:
       - management
-  networkPolicy.otelpServiceEndpoint:
+  networkPolicy.otlpServiceEndpoint:
     computed:
       template: |
         - to:
