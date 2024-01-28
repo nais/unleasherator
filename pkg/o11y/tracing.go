@@ -16,26 +16,9 @@ import (
 )
 
 func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerProvider, error) {
-	var exp sdktrace.SpanExporter
 	var tp *sdktrace.TracerProvider
-	var err error
 
-	switch config.OpenTelemetry.TracesExporter {
-	case "stdout":
-		exp, err = newStdoutTraceExporter(ctx)
-	case "otlp":
-		switch config.OpenTelemetry.ExporterOtelpProtocol {
-		case "grpc":
-			exp, err = newOtelpGrpcTraceExporter(ctx, config)
-		case "http":
-			exp, err = newOtelpHttpTraceExporter(ctx, config)
-		default:
-			err = fmt.Errorf("unsupported otelp exporter protocol %q", config.OpenTelemetry.ExporterOtelpProtocol)
-		}
-	case "none":
-	default:
-		err = fmt.Errorf("unsupported traces exporter %q", config.OpenTelemetry.TracesExporter)
-	}
+	exp, err := newTraceExporter(ctx, config)
 
 	if err != nil {
 		return nil, err
@@ -53,21 +36,38 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 		return nil, err
 	}
 
-	if config.OpenTelemetry.TracesExporter == "none" {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(r),
-		)
-	} else {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(exp),
-			sdktrace.WithResource(r),
-		)
+	tp = sdktrace.NewTracerProvider(
+		sdktrace.WithResource(r),
+	)
+
+	if config.OpenTelemetry.TracesExporter != "none" {
+		tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exp))
 	}
 
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
 	return tp, nil
+}
+
+func newTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
+	switch config.OpenTelemetry.TracesExporter {
+	case "stdout":
+		return newStdoutTraceExporter(ctx)
+	case "otlp":
+		switch config.OpenTelemetry.ExporterOtelpProtocol {
+		case "grpc":
+			return newOtelpGrpcTraceExporter(ctx, config)
+		case "http":
+			return newOtelpHttpTraceExporter(ctx, config)
+		default:
+			return nil, fmt.Errorf("unsupported otelp exporter protocol %q", config.OpenTelemetry.ExporterOtelpProtocol)
+		}
+	case "none":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported traces exporter %q", config.OpenTelemetry.TracesExporter)
+	}
 }
 
 func newStdoutTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
