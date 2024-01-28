@@ -30,6 +30,10 @@ spec:
       - port: 53
         protocol: TCP
   {{- end }}
+  {{- if .Values.networkPolicy.otelpServiceEndpoint }}
+  {{- .Values.networkPolicy.otelpServiceEndpoint | toYaml | nindent 2 }}
+  {{- end }}
+
   {{- if .Values.networkPolicy.allowAllNamespaces }}
   - to:
     - namespaceSelector: {}

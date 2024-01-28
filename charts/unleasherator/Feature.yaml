@@ -34,7 +34,7 @@ values:
       template: 'http://tempo-distributor.nais-system:4317'
   controllerManager.manager.env.otelExporterOtlpProtocol:
     computed:
-      template: 'http'
+      template: 'grpc'
   # Service account
   controllerManager.serviceAccount.annotations:
     computed:
@@ -74,24 +74,45 @@ values:
     config:
       type: string
   # NetPol
+  networkPolicy.enabled:
+    computed:
+      template: '{{ne .Kind "onprem"}}'
   networkPolicy.allowDNS:
     computed:
       template: "true"
+    ignoreKind:
+      - onprem
   networkPolicy.allowedNamespaces:
     computed:
       template: |
         - bifrost-unleash
+    ignoreKind:
+      - onprem
+      - tenant
   networkPolicy.apiServerCIDR:
     computed:
       template: '"{{ .Env.apiserver_endpoint }}/32"'
     ignoreKind:
       - onprem
-  networkPolicy.enabled:
-    computed:
-      template: '{{ne .Kind "onprem"}}'
   networkPolicy.extraOutboundIPs:
     computed:
       template: |
         - "{{ .Env.management_lb_internal_ip }}"
     ignoreKind:
       - management
+  networkPolicy.otelpServiceEndpoint:
+    computed:
+      template: |
+        - to:
+          - namespaceSelector:
+              kubernetes.io/metadata.name: nais-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/component: distributor
+                app.kubernetes.io/instance: tempo
+                app.kubernetes.io/name: tempo
+          ports:
+            - port: 4317
+              protocol: TCP
+    ignoreKind:
+      - legacy
