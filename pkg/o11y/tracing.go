@@ -3,6 +3,7 @@ package o11y
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/nais/unleasherator/pkg/config"
 	"go.opentelemetry.io/otel"
@@ -75,7 +76,18 @@ func newStdoutTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) 
 }
 
 func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
-	return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(config.OpenTelemetry.ExporterOtlpEndpoint))
+	url, err := url.Parse(config.OpenTelemetry.ExporterOtlpEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	hostport := fmt.Sprintf("%s:%s", url.Hostname(), url.Port())
+
+	if url.Scheme == "http" {
+		return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(hostport), otlptracegrpc.WithInsecure())
+	} else {
+		return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(hostport))
+	}
 }
 
 func newOtlpHttpTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
