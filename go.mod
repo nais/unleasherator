@@ -15,10 +15,12 @@ require (
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/stretchr/testify v1.8.4
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.47.0
 	go.opentelemetry.io/otel v1.22.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.22.0
 	go.opentelemetry.io/otel/sdk v1.22.0
-	google.golang.org/api v0.157.0
+	go.opentelemetry.io/otel/trace v1.22.0
+	google.golang.org/api v0.159.0
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.32.0
 	k8s.io/api v0.29.1
@@ -43,13 +45,10 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.0 // indirect
 	github.com/macabu/inamedparam v0.1.2 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	go-simpler.org/sloglint v0.1.2 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.47.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.47.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.22.0 // indirect
 	go.opentelemetry.io/otel/metric v1.22.0 // indirect
-	go.opentelemetry.io/otel/trace v1.22.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.0.0 // indirect
 )
 
