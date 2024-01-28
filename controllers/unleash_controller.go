@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -101,7 +102,7 @@ type UnleashFederation struct {
 func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	id := controller.ReconcileIDFromContext(ctx)
 
-	ctx, span := r.Tracer.Start(ctx, "Reconcile", trace.WithAttributes(
+	ctx, span := r.Tracer.Start(ctx, "Reconcile Unleash", trace.WithAttributes(
 		attribute.String("reconcile.id", string(id)),
 		attribute.String("reconcile.namespace", req.Namespace),
 		attribute.String("reconcile.name", req.Name),
@@ -343,6 +344,9 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 		log.Info("Federation is disabled, skipping publishing")
 		return nil
 	}
+
+	ctx, span := r.Tracer.Start(ctx, "Publish Federation")
+	defer span.End()
 
 	log.Info("Publishing Unleash instance to federation")
 	// Count the number of Unleash instances published
@@ -709,7 +713,7 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 // testConnection will test the connection to the Unleash instance
 func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
-	ctx, span := r.Tracer.Start(ctx, "TestConnection")
+	ctx, span := r.Tracer.Start(ctx, "Test Connection")
 	defer span.End()
 
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
@@ -729,7 +733,7 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 		return nil, err
 	}
 
-	span.SetAttributes(attribute.Int("http.status_code", res.StatusCode))
+	span.SetAttributes(semconv.HTTPStatusCodeKey.Int(res.StatusCode))
 
 	if res.StatusCode != http.StatusOK {
 		span.RecordError(err)
