@@ -28,9 +28,9 @@ func TestNewTraceExporter(t *testing.T) {
 	t.Run("otlp exporter with grpc protocol", func(t *testing.T) {
 		cfg := &config.Config{
 			OpenTelemetry: config.OpenTelemetryConfig{
-				TracesExporter:        "otlp",
-				ExporterOtelpEndpoint: "localhost:4317",
-				ExporterOtelpProtocol: "grpc",
+				TracesExporter:       "otlp",
+				ExporterOtlpEndpoint: "localhost:4317",
+				ExporterOtlpProtocol: "grpc",
 			},
 		}
 
@@ -43,9 +43,9 @@ func TestNewTraceExporter(t *testing.T) {
 	t.Run("otlp exporter with http protocol", func(t *testing.T) {
 		cfg := &config.Config{
 			OpenTelemetry: config.OpenTelemetryConfig{
-				TracesExporter:        "otlp",
-				ExporterOtelpEndpoint: "localhost:4317",
-				ExporterOtelpProtocol: "http",
+				TracesExporter:       "otlp",
+				ExporterOtlpEndpoint: "localhost:4317",
+				ExporterOtlpProtocol: "http",
 			},
 		}
 
@@ -82,11 +82,11 @@ func TestNewTraceExporter(t *testing.T) {
 		assert.EqualError(t, err, fmt.Sprintf("unsupported traces exporter %q", cfg.OpenTelemetry.TracesExporter))
 	})
 
-	t.Run("unsupported otelp exporter protocol", func(t *testing.T) {
+	t.Run("unsupported otlp exporter protocol", func(t *testing.T) {
 		cfg := &config.Config{
 			OpenTelemetry: config.OpenTelemetryConfig{
-				TracesExporter:        "otlp",
-				ExporterOtelpProtocol: "invalid",
+				TracesExporter:       "otlp",
+				ExporterOtlpProtocol: "invalid",
 			},
 		}
 
@@ -94,6 +94,6 @@ func TestNewTraceExporter(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, exporter)
-		assert.EqualError(t, err, fmt.Sprintf("unsupported otelp exporter protocol %q", cfg.OpenTelemetry.ExporterOtelpProtocol))
+		assert.EqualError(t, err, fmt.Sprintf("unsupported otlp exporter protocol %q", cfg.OpenTelemetry.ExporterOtlpProtocol))
 	})
 }

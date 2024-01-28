@@ -62,6 +62,7 @@ func main() {
 	tp, err := o11y.InitTracing(ctx, cfg)
 	if err != nil {
 		setupLog.Error(err, "unable to initialize tracing")
+		os.Exit(1)
 	}
 	defer func() { _ = tp.Shutdown(ctx) }()
 

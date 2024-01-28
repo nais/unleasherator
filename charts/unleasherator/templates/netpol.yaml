@@ -30,8 +30,8 @@ spec:
       - port: 53
         protocol: TCP
   {{- end }}
-  {{- if .Values.networkPolicy.otelpServiceEndpoint }}
-  {{- .Values.networkPolicy.otelpServiceEndpoint | toYaml | nindent 2 }}
+  {{- if .Values.networkPolicy.otlpServiceEndpoint }}
+  {{- .Values.networkPolicy.otlpServiceEndpoint | toYaml | nindent 2 }}
   {{- end }}
   {{- if .Values.networkPolicy.allowAllNamespaces }}
   - to:
