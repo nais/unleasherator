@@ -84,6 +84,14 @@ spec:
         - name: LEADER_ELECTION_RESOURCE_NAME
           value: {{ quote .Values.controllerManager.manager.env.leaderElectionResourceName
             }}
+        - name: OTEL_TRACES_EXPORTER
+          value: {{ quote .Values.controllerManager.manager.env.otelTracesExporter }}
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: {{ quote .Values.controllerManager.manager.env.otelExporterOtlpEndpoint
+            }}
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: {{ quote .Values.controllerManager.manager.env.otelExporterOtlpProtocol
+            }}
         - name: KUBERNETES_CLUSTER_DOMAIN
           value: {{ quote .Values.kubernetesClusterDomain }}
         image: {{ .Values.controllerManager.manager.image.repository }}:{{ .Values.controllerManager.manager.image.tag

@@ -50,8 +50,8 @@ type Config struct {
 
 type OpenTelemetryConfig struct {
 	TracesExporter        string `envconfig:"OTEL_TRACES_EXPORTER" default:"stdout"`
-	ExporterOtelpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://tempo-distributor.nais-system:4317"`
-	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"grpc"`
+	ExporterOtelpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://localhost:4317"`
+	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"http"`
 }
 
 type Features struct {

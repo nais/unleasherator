@@ -26,6 +26,15 @@ values:
   controllerManager.manager.env.federationPubsubTopic:
     computed:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
+  controllerManager.manager.env.otelTracesExporter:
+    computed:
+      template: '{{ if eq .Kind "management" }}otelp{{ else }}none{{ end }}'
+  controllerManager.manager.env.otelExporterOtlpEndpoint:
+    computed:
+      template: 'http://tempo-distributor.nais-system:4317'
+  controllerManager.manager.env.otelExporterOtlpProtocol:
+    computed:
+      template: 'http'
   # Service account
   controllerManager.serviceAccount.annotations:
     computed:

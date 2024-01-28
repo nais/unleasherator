@@ -17,6 +17,7 @@ import (
 
 func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerProvider, error) {
 	var exp sdktrace.SpanExporter
+	var tp *sdktrace.TracerProvider
 	var err error
 
 	switch config.OpenTelemetry.TracesExporter {
@@ -31,6 +32,7 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 		default:
 			err = fmt.Errorf("unsupported otelp exporter protocol %q", config.OpenTelemetry.ExporterOtelpProtocol)
 		}
+	case "none":
 	default:
 		err = fmt.Errorf("unsupported traces exporter %q", config.OpenTelemetry.TracesExporter)
 	}
@@ -39,9 +41,27 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 		return nil, err
 	}
 
-	tp, err := NewTraceProvider(exp)
+	r, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName("Unleasherator"),
+		),
+	)
+
 	if err != nil {
 		return nil, err
+	}
+
+	if config.OpenTelemetry.TracesExporter == "none" {
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithResource(r),
+		)
+	} else {
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(r),
+		)
 	}
 
 	otel.SetTracerProvider(tp)
@@ -60,24 +80,4 @@ func newOtelpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdkt
 
 func newOtelpHttpTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
 	return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(config.OpenTelemetry.ExporterOtelpEndpoint))
-}
-
-func NewTraceProvider(exp sdktrace.SpanExporter) (*sdktrace.TracerProvider, error) {
-	// Ensure default SDK resources and the required service name are set.
-	r, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("Unleasherator"),
-		),
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(r),
-	), nil
 }
