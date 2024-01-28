@@ -176,6 +176,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set status to unknown if no status is set
 	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
+		span.AddEvent("Setting status as unknown for Unleash")
 		log.Info("Setting status as unknown for Unleash")
 		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
 			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
@@ -197,6 +198,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
+		span.AddEvent("Adding finalizer for Unleash")
 		log.Info("Adding finalizer for Unleash")
 
 		if ok := controllerutil.AddFinalizer(unleash, unleashFinalizer); !ok {
@@ -217,6 +219,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var res ctrl.Result
 
+	span.AddEvent("Reconciling Unleash resources")
 	res, err = r.reconcileSecrets(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)

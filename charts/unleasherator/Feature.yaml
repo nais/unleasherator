@@ -105,12 +105,12 @@ values:
       template: |
         - to:
           - namespaceSelector:
-              kubernetes.io/metadata.name: nais-system
+              "kubernetes.io/metadata.name": nais-system
             podSelector:
               matchLabels:
-                app.kubernetes.io/component: distributor
-                app.kubernetes.io/instance: tempo
-                app.kubernetes.io/name: tempo
+                "app.kubernetes.io/component": distributor
+                "app.kubernetes.io/instance": tempo
+                "app.kubernetes.io/name": tempo
           ports:
             - port: 4317
               protocol: TCP

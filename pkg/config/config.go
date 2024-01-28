@@ -49,9 +49,9 @@ type Config struct {
 }
 
 type OpenTelemetryConfig struct {
-	TracesExporter        string `envconfig:"OTEL_TRACES_EXPORTER" default:"stdout"`
+	TracesExporter        string `envconfig:"OTEL_TRACES_EXPORTER" default:"none"`
 	ExporterOtelpEndpoint string `envconfig:"OTEL_EXPORTER_OTLP_ENDPOINT" default:"http://localhost:4317"`
-	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"http"`
+	ExporterOtelpProtocol string `envconfig:"OTEL_EXPORTER_OTLP_PROTOCOL" default:"grpc"`
 }
 
 type Features struct {
