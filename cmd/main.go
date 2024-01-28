@@ -9,6 +9,7 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -73,10 +74,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.OperatorNamespace == "" {
-		setupLog.Error(err, "unable to get OPERATOR_NAMESPACE from environment")
-		os.Exit(1)
-	}
+	// Wrap the manager HTTP client with OpenTelemetry instrumentation
+	httpCLient := mgr.GetHTTPClient()
+	httpCLient.Transport = otelhttp.NewTransport(httpCLient.Transport)
 
 	subscriber, err := cfg.PubsubSubscriber(ctx)
 	if err != nil {
