@@ -30,8 +30,18 @@ spec:
       - port: 53
         protocol: TCP
   {{- end }}
-  {{- if .Values.networkPolicy.otelpServiceEndpoint }}
-  {{- .Values.networkPolicy.otelpServiceEndpoint | toYaml | nindent 2 }}
+  {{- if and .Values.networkPolicy.grafanaTempo .Values.networkPolicy.grafanaTempo.enabled }}
+  - to:
+    - namespaceSelector:
+        kubernetes.io/metadata.name: {{ .Values.networkPolicy.grafanaTempo.namespace }}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/component: distributor
+          app.kubernetes.io/instance: tempo
+          app.kubernetes.io/name: tempo
+    ports:
+      - port: 4317
+        protocol: TCP
   {{- end }}
   {{- if .Values.networkPolicy.allowAllNamespaces }}
   - to:

@@ -11,15 +11,6 @@ networkPolicy:
   extraOutboundIPs:
     - 1.2.3.4
     - 4.5.6.7
-  otelpServiceEndpoint:
-  - to:
-    - namespaceSelector:
-        "kubernetes.io/metadata.name": nais-system
-      podSelector:
-        matchLabels:
-          "app.kubernetes.io/component": distributor
-          "app.kubernetes.io/instance": tempo
-          "app.kubernetes.io/name": tempo
-    ports:
-      - port: 4317
-        protocol: TCP
+  grafanaTempo:
+    enabled: true
+    namespace: foo
