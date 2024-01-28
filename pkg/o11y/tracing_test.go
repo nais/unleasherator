@@ -29,7 +29,22 @@ func TestNewTraceExporter(t *testing.T) {
 		cfg := &config.Config{
 			OpenTelemetry: config.OpenTelemetryConfig{
 				TracesExporter:       "otlp",
-				ExporterOtlpEndpoint: "localhost:4317",
+				ExporterOtlpEndpoint: "http://localhost:4317",
+				ExporterOtlpProtocol: "grpc",
+			},
+		}
+
+		exporter, err := newTraceExporter(ctx, cfg)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, exporter)
+	})
+
+	t.Run("otlp exporter with secure grpc protocol", func(t *testing.T) {
+		cfg := &config.Config{
+			OpenTelemetry: config.OpenTelemetryConfig{
+				TracesExporter:       "otlp",
+				ExporterOtlpEndpoint: "https://localhost:4317",
 				ExporterOtlpProtocol: "grpc",
 			},
 		}
@@ -44,7 +59,22 @@ func TestNewTraceExporter(t *testing.T) {
 		cfg := &config.Config{
 			OpenTelemetry: config.OpenTelemetryConfig{
 				TracesExporter:       "otlp",
-				ExporterOtlpEndpoint: "localhost:4317",
+				ExporterOtlpEndpoint: "http://localhost:4317",
+				ExporterOtlpProtocol: "http",
+			},
+		}
+
+		exporter, err := newTraceExporter(ctx, cfg)
+
+		assert.NoError(t, err)
+		assert.NotNil(t, exporter)
+	})
+
+	t.Run("otlp exporter with https protocol", func(t *testing.T) {
+		cfg := &config.Config{
+			OpenTelemetry: config.OpenTelemetryConfig{
+				TracesExporter:       "otlp",
+				ExporterOtlpEndpoint: "https://localhost:4317",
 				ExporterOtlpProtocol: "http",
 			},
 		}
