@@ -14,7 +14,8 @@ networkPolicy:
   otelpServiceEndpoint:
   - to:
     - namespaceSelector:
-        "kubernetes.io/metadata.name": nais-system
+        matchLabels:
+          "kubernetes.io/metadata.name": nais-system
       podSelector:
         matchLabels:
           "app.kubernetes.io/component": distributor
