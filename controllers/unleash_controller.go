@@ -721,7 +721,6 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 	}
 
 	stats, res, err := client.GetInstanceAdminStats(ctx)
-	fmt.Printf("res: %v\n", res)
 
 	if err != nil {
 		span.RecordError(err)
