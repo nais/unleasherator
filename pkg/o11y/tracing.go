@@ -84,7 +84,16 @@ func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktr
 		return nil, err
 	}
 
-	hostport := fmt.Sprintf("%s:%s", url.Hostname(), url.Port())
+	port := url.Port()
+	if port == "" {
+		if url.Scheme == "http" {
+			port = "80"
+		} else {
+			port = "443"
+		}
+	}
+
+	hostport := fmt.Sprintf("%s:%s", url.Hostname(), port)
 
 	if url.Scheme == "http" {
 		return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(hostport), otlptracegrpc.WithInsecure())

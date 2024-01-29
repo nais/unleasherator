@@ -22,6 +22,15 @@ spec:
     to:
     - fqdns:
       - private.googleapis.com
+  {{- if .Values.networkPolicy.otelpExternalEndpoint }}
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - fqdns:
+      - {{ .Values.networkPolicy.otelpExternalEndpoint }}
+  {{- end }}
+
   podSelector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
