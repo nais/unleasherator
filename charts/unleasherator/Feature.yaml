@@ -32,13 +32,18 @@ values:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
   controllerManager.manager.env.otelTracesExporter:
     computed:
-      template: '{{ if eq .Kind "management" }}otlp{{ else }}none{{ end }}'
+      template: 'otlp'
   controllerManager.manager.env.otelExporterOtlpEndpoint:
     computed:
-      template: 'http://tempo-distributor.nais-system:4317'
+      template: |
+        {{ if eq .Kind "management" }}
+          http://tempo-distributor.nais-system:4317
+        {{ else }}
+          https://tempo.{{ .Tenant.Name }}.cloud.nais.io
+        {{ end }}
   controllerManager.manager.env.otelExporterOtlpProtocol:
     computed:
-      template: 'grpc'
+      template: '{{ if eq .Kind "management" }}grpc{{ else }}http{{ end }}'
   # Service account
   controllerManager.serviceAccount.annotations:
     computed:
@@ -93,6 +98,7 @@ values:
     ignoreKind:
       - onprem
       - tenant
+      - legacy
   networkPolicy.apiServerCIDR:
     computed:
       template: '"{{ .Env.apiserver_endpoint }}/32"'
@@ -101,9 +107,10 @@ values:
   networkPolicy.extraOutboundIPs:
     computed:
       template: |
-        - "{{ .Env.management_lb_internal_ip }}"
+        - '"{{ .Env.management_lb_internal_ip }}"'
     ignoreKind:
       - management
+      - onprem
   networkPolicy.otlpServiceEndpoint:
     computed:
       template: |
@@ -121,3 +128,11 @@ values:
               protocol: TCP
     ignoreKind:
       - legacy
+      - tenant
+      - onprem
+  networkPolicy.otelpExternalEndpoint:
+    computed:
+      template: 'tempo.{{ .Tenant.Name }}.cloud.nais.io'
+    ignoreKind:
+      - management
+      - onprem
