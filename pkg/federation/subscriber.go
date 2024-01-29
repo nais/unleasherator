@@ -99,6 +99,8 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 
 	instance := &pb.Instance{}
 	if err := proto.Unmarshal(msg.Data, instance); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		log.Error(err, "unmarshal message")
 		return err
 	}
