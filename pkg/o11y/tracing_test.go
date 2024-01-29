@@ -127,3 +127,40 @@ func TestNewTraceExporter(t *testing.T) {
 		assert.EqualError(t, err, fmt.Sprintf("unsupported otlp exporter protocol %q", cfg.OpenTelemetry.ExporterOtlpProtocol))
 	})
 }
+
+func TestHostportSchemeFromUrl(t *testing.T) {
+	tests := []struct {
+		name     string
+		rawUrl   string
+		expected string
+	}{
+		{
+			name:     "HTTP URL without port",
+			rawUrl:   "http://example.com",
+			expected: "example.com:80, http",
+		},
+		{
+			name:     "HTTPS URL without port",
+			rawUrl:   "https://example.com",
+			expected: "example.com:443, https",
+		},
+		{
+			name:     "URL with custom port",
+			rawUrl:   "http://example.com:8080",
+			expected: "example.com:8080, http",
+		},
+		{
+			name:     "URL with custom port and HTTPS scheme",
+			rawUrl:   "https://example.com:8443",
+			expected: "example.com:8443, https",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hostport, scheme, err := hostportSchemeFromUrl(test.rawUrl)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expected, fmt.Sprintf("%s, %s", hostport, scheme))
+		})
+	}
+}
