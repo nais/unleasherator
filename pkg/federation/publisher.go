@@ -34,6 +34,16 @@ func (p *publisher) Close() error {
 	return p.client.Close()
 }
 
+func (p *publisher) otelSpanOptions(msg *pubsub.Message) []trace.SpanStartOption {
+	return []trace.SpanStartOption{
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			semconv.MessagingSystemGCPPubsub,
+			semconv.MessagingDestinationName(p.topic.ID()),
+		),
+	}
+}
+
 // Publish publishes the given Unleash instance to the federation topic using the provided API token.
 // Returns an error if the message could not be published.
 func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error {
@@ -55,18 +65,12 @@ func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, api
 	}
 
 	// Set pubsub information on span
-	spanOpts := []trace.SpanStartOption{
-		trace.WithSpanKind(trace.SpanKindProducer),
-		trace.WithAttributes(
-			semconv.MessagingSystemGCPPubsub,
-			semconv.MessagingDestinationName(p.topic.ID()),
-		),
-	}
+	spanOpts := p.otelSpanOptions(msg)
 
 	// Inject trace context into message attributes
 	otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(msg.Attributes))
 
-	_, span := otel.Tracer("publish").Start(ctx, "Send PubSub", spanOpts...)
+	ctx, span := otel.Tracer("publish").Start(ctx, "Send PubSub", spanOpts...)
 	defer span.End()
 
 	msgId, err := p.topic.Publish(ctx, msg).Get(ctx)
