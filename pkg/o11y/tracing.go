@@ -78,10 +78,10 @@ func newStdoutTraceExporter(ctx context.Context) (sdktrace.SpanExporter, error) 
 	return stdouttrace.New(stdouttrace.WithPrettyPrint())
 }
 
-func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
-	url, err := url.Parse(config.OpenTelemetry.ExporterOtlpEndpoint)
+func hostportSchemeFromUrl(rawUrl string) (string, string, error) {
+	url, err := url.Parse(rawUrl)
 	if err != nil {
-		return nil, err
+		return "", "", err
 	}
 
 	port := url.Port()
@@ -92,10 +92,16 @@ func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktr
 			port = "443"
 		}
 	}
+	return fmt.Sprintf("%s:%s", url.Hostname(), port), url.Scheme, nil
+}
 
-	hostport := fmt.Sprintf("%s:%s", url.Hostname(), port)
+func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
+	hostport, scheme, err := hostportSchemeFromUrl(config.OpenTelemetry.ExporterOtlpEndpoint)
+	if err != nil {
+		return nil, err
+	}
 
-	if url.Scheme == "http" {
+	if scheme == "http" {
 		return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(hostport), otlptracegrpc.WithInsecure())
 	} else {
 		return otlptracegrpc.New(ctx, otlptracegrpc.WithEndpoint(hostport))
@@ -103,5 +109,14 @@ func newOtlpGrpcTraceExporter(ctx context.Context, config *config.Config) (sdktr
 }
 
 func newOtlpHttpTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {
-	return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(config.OpenTelemetry.ExporterOtlpEndpoint))
+	hostport, scheme, err := hostportSchemeFromUrl(config.OpenTelemetry.ExporterOtlpEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	if scheme == "http" {
+		return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(hostport), otlptracehttp.WithInsecure())
+	} else {
+		return otlptracehttp.New(ctx, otlptracehttp.WithEndpoint(hostport))
+	}
 }
