@@ -10,10 +10,14 @@ values:
   controllerManager.manager.env.apiTokenNameSuffix:
     computed:
       template: '"{{ .Env.name }}"'
+    config:
+      type: string
   # Federation
   controllerManager.manager.env.clusterName:
     computed:
       template: '"{{ .Env.name }}"'
+    config:
+      type: string
   controllerManager.manager.env.federationPubsubGcpProjectId:
     computed:
       template: '"{{ .Env.unleasherator_pubsub_project_id }}"'
