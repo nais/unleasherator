@@ -107,7 +107,7 @@ values:
   networkPolicy.extraOutboundIPs:
     computed:
       template: |
-        - '"{{ .Env.management_lb_internal_ip }}"'
+        - "{{ .Env.management_lb_internal_ip }}"
     ignoreKind:
       - management
       - onprem
