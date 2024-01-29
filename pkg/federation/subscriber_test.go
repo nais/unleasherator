@@ -18,7 +18,7 @@ import (
 
 func TestSubscriber_Subscribe(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	podNamespace := "my-ns"
+	namespace := "my-ns"
 	apiToken := "test"
 	unleashName := "test"
 
@@ -31,7 +31,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	defer c.Close()
 
 	// Create a new subscriber.
-	subscriber := NewSubscriber(c, subscription, podNamespace)
+	subscriber := NewSubscriber(c, subscription, namespace)
 
 	received := make(chan bool)
 	finished := false
@@ -68,7 +68,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
 		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
-			assert.Equal(t, podNamespace, adminSecret.GetNamespace())
+			assert.Equal(t, namespace, adminSecret.GetNamespace())
 			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecret.GetName())
 			assert.Equal(t, apiToken, adminSecret.StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
@@ -96,7 +96,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 }
 
 func TestSubscriber_handleMessage(t *testing.T) {
-	var podNamespace = "unleasherator-system"
+	var namespace = "unleasherator-system"
 
 	instance := &pb.Instance{
 		Name:       "test-instance",
@@ -128,7 +128,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{podNamespace: podNamespace}
+	subscriber := &subscriber{namespace: namespace}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
@@ -145,7 +145,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecret)
 	assert.True(t, strings.HasPrefix(capturedAdminSecret.Name, "unleasherator-"+instance.Name+"-"))
-	assert.Equal(t, podNamespace, capturedAdminSecret.Namespace)
+	assert.Equal(t, namespace, capturedAdminSecret.Namespace)
 	assert.Equal(t, instance.SecretToken, capturedAdminSecret.StringData["admin"])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)

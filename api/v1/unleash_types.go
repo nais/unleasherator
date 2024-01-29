@@ -290,9 +290,9 @@ func (u *Unleash) NamespacedNameWithSuffix(suffix string) types.NamespacedName {
 	}
 }
 
-func (u *Unleash) NamespacedOperatorSecretName(podNamespace string) types.NamespacedName {
+func (u *Unleash) NamespacedOperatorSecretName(namespace string) types.NamespacedName {
 	return types.NamespacedName{
-		Namespace: podNamespace,
+		Namespace: namespace,
 		Name:      u.GetOperatorSecretName(),
 	}
 }
@@ -324,10 +324,10 @@ func (u *Unleash) PublicWebURL() string {
 	return fmt.Sprintf("https://%s", u.Spec.WebIngress.Host)
 }
 
-func (u *Unleash) AdminToken(ctx context.Context, client client.Client, podNamespace string) ([]byte, error) {
+func (u *Unleash) AdminToken(ctx context.Context, client client.Client, namespace string) ([]byte, error) {
 	secret := &corev1.Secret{}
 
-	err := client.Get(ctx, u.NamespacedOperatorSecretName(podNamespace), secret)
+	err := client.Get(ctx, u.NamespacedOperatorSecretName(namespace), secret)
 	if err != nil {
 		return nil, err
 	}
@@ -335,8 +335,8 @@ func (u *Unleash) AdminToken(ctx context.Context, client client.Client, podNames
 	return secret.Data[UnleashSecretTokenKey], nil
 }
 
-func (u *Unleash) ApiClient(ctx context.Context, client client.Client, podNamespace string) (*unleashclient.Client, error) {
-	token, err := u.AdminToken(ctx, client, podNamespace)
+func (u *Unleash) ApiClient(ctx context.Context, client client.Client, namespace string) (*unleashclient.Client, error) {
+	token, err := u.AdminToken(ctx, client, namespace)
 	if err != nil {
 		return nil, err
 	}

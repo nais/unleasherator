@@ -343,8 +343,8 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
-			if !utils.StringInSlice(r.ClusterName, clusters) {
-				log.Info("Ignoring message, not for this cluster", "cluster", r.ClusterName, "clusters", clusters)
+			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
+				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
 				return nil
 			}
 

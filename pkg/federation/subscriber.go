@@ -24,7 +24,7 @@ type Handler func(ctx context.Context, remoteUnleash []*unleashv1.RemoteUnleash,
 type subscriber struct {
 	client       *pubsub.Client
 	subscription *pubsub.Subscription
-	podNamespace string
+	namespace    string
 }
 
 // Close the pubsub client.
@@ -71,16 +71,16 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	}
 
 	secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.podNamespace, instance.SecretToken)
+	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
 	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), adminSecret.GetName(), adminSecret.GetNamespace())
 
 	return handler(ctx, remoteUnleashes, adminSecret, instance.Clusters, instance.Status)
 }
 
-func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, podNamespace string) Subscriber {
+func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string) Subscriber {
 	return &subscriber{
 		client:       client,
 		subscription: subscription,
-		podNamespace: podNamespace,
+		namespace:    namespace,
 	}
 }
