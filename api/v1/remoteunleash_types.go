@@ -132,9 +132,9 @@ func (u *RemoteUnleash) AdminSecretNamespacedName() types.NamespacedName {
 }
 
 // AdminToken returns the admin API token for the Unleash instance.
-func (u *RemoteUnleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
-	// operatorNamespace is not used, and is only here to satisfy the interface of UnleashInstance.
-	_ = operatorNamespace
+func (u *RemoteUnleash) AdminToken(ctx context.Context, client client.Client, podNamespace string) ([]byte, error) {
+	// podNamespace is not used, and is only here to satisfy the interface of UnleashInstance.
+	_ = podNamespace
 
 	secret := &v1.Secret{}
 	if err := client.Get(ctx, u.AdminSecretNamespacedName(), secret); err != nil {
@@ -145,8 +145,8 @@ func (u *RemoteUnleash) AdminToken(ctx context.Context, client client.Client, op
 }
 
 // ApiClient returns an Unleash API client for the Unleash instance.
-func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
-	token, err := u.AdminToken(ctx, client, operatorNamespace)
+func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, podNamespace string) (*unleashclient.Client, error) {
+	token, err := u.AdminToken(ctx, client, podNamespace)
 	if err != nil {
 		return nil, err
 	}

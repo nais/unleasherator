@@ -41,7 +41,9 @@ type Config struct {
 	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
 	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
 	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
-	OperatorNamespace          string `envconfig:"OPERATOR_NAMESPACE" required:"true"`
+	ClusterName                string `envconfig:"CLUSTER_NAME" required:"true"`
+	PodName                    string `envconfig:"POD_NAME" required:"true"`
+	PodNamespace               string `envconfig:"POD_NAMESPACE" required:"true"`
 	Log                        LogConfig
 	Timeout                    TimeoutConfig
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
@@ -68,7 +70,7 @@ func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 	return manager.Options{
 		Scheme:                  scheme,
 		LeaderElection:          c.LeaderElectionEnabled,
-		LeaderElectionNamespace: c.OperatorNamespace,
+		LeaderElectionNamespace: c.PodNamespace,
 		LeaderElectionID:        c.LeaderElectionResourceName,
 		Metrics: server.Options{
 			BindAddress: c.MetricsBindAddress,
@@ -87,7 +89,6 @@ func (t *TimeoutConfig) WriteContext(ctx context.Context) (context.Context, cont
 }
 
 type FederationConfig struct {
-	ClusterName        string         `envconfig:"FEDERATION_CLUSTER_NAME"`
 	Mode               FederationMode `envconfig:"FEDERATION_PUBSUB_MODE"`
 	PubsubProjectID    string         `envconfig:"FEDERATION_PUBSUB_GCP_PROJECT_ID"`
 	PubsubTopic        string         `envconfig:"FEDERATION_PUBSUB_TOPIC"`
@@ -116,7 +117,7 @@ func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, e
 
 	subscription := c.pubsubSubscription(ctx, client)
 
-	return federation.NewSubscriber(client, subscription, c.OperatorNamespace), nil
+	return federation.NewSubscriber(client, subscription, c.PodNamespace), nil
 }
 
 func (c *Config) PubsubPublisher(ctx context.Context) (federation.Publisher, error) {

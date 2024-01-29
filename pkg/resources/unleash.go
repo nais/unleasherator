@@ -350,7 +350,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 }
 
 // NetworkPolicyForUnleash returns the NetworkPolicy for the Unleash Deployment
-func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, operatorNamespace string) (*networkingv1.NetworkPolicy, error) {
+func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, podNamespace string) (*networkingv1.NetworkPolicy, error) {
 	labels := labelsForUnleash(unleash.GetName())
 
 	np := &networkingv1.NetworkPolicy{
@@ -374,7 +374,7 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 						{
 							NamespaceSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
-									"kubernetes.io/metadata.name": operatorNamespace,
+									"kubernetes.io/metadata.name": podNamespace,
 								},
 							},
 						},

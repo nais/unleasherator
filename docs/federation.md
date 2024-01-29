@@ -42,7 +42,7 @@ For Unleasherator to be able to create the Unleash instance, it needs to be conf
 
 | Name                                                         | Description                                                           | Default |
 | ------------------------------------------------------------ | --------------------------------------------------------------------- | ------- |
-| `controllerManager.manager.env.federationClusterName`        | Cluster name                                                          | `""`    |
+| `controllerManager.manager.env.clusterName`                  | Cluster name                                                          | `""`    |
 | `controllerManager.manager.env.federationPubsubMode`         | Federation mode, either `"publish"`, `"subscribe"` or `""` (disabled) | `""`    |
 | `controllerManager.manager.env.federationPubsubGcpProjectId` | GCP project ID for PubSub topic                                       | `""`    |
 | `controllerManager.manager.env.federationPubsubSubscription` | PubSub subscription ID                                                | `""`    |

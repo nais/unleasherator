@@ -102,7 +102,7 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
-		OperatorNamespace: cfg.OperatorNamespace,
+		OperatorNamespace: cfg.PodNamespace,
 		Federation: controllers.UnleashFederation{
 			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
 			Publisher: publisher,
@@ -116,11 +116,11 @@ func main() {
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
-		OperatorNamespace: cfg.OperatorNamespace,
+		OperatorNamespace: cfg.PodNamespace,
 		Timeout:           cfg.Timeout,
 		Federation: controllers.RemoteUnleashFederation{
 			Enabled:     cfg.Federation.IsEnabled() && subscriber != nil,
-			ClusterName: cfg.Federation.ClusterName,
+			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
 		},
 	}
@@ -132,7 +132,7 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Recorder:              mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace:     cfg.OperatorNamespace,
+		OperatorNamespace:     cfg.PodNamespace,
 		ApiTokenNameSuffix:    cfg.ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled: cfg.Features.ApiTokenUpdateEnabled,
 	}).SetupWithManager(mgr); err != nil {

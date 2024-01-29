@@ -29,7 +29,7 @@ import (
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
-const operatorNamespace = "default"
+const podNamespace = "default"
 
 var (
 	cfg                     *rest.Config
@@ -96,7 +96,7 @@ var _ = BeforeSuite(func() {
 	err = (&UnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: operatorNamespace,
+		OperatorNamespace: podNamespace,
 		Recorder:          k8sManager.GetEventRecorderFor("unleash-controller"),
 		Federation: UnleashFederation{
 			Enabled:   true,
@@ -109,7 +109,7 @@ var _ = BeforeSuite(func() {
 	remoteUnleashReconciler = &RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
-		OperatorNamespace: operatorNamespace,
+		OperatorNamespace: podNamespace,
 		Timeout:           timeout,
 		Federation: RemoteUnleashFederation{
 			Enabled:     true,
@@ -123,7 +123,7 @@ var _ = BeforeSuite(func() {
 	err = (&ApiTokenReconciler{
 		Client:                k8sManager.GetClient(),
 		Scheme:                k8sManager.GetScheme(),
-		OperatorNamespace:     operatorNamespace,
+		OperatorNamespace:     podNamespace,
 		ApiTokenNameSuffix:    ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled: true,
 	}).SetupWithManager(k8sManager)

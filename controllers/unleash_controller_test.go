@@ -115,7 +115,7 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedInstanceSecretName(), instanceSecret)).Should(Succeed())
 
 			operatorSecret := &corev1.Secret{}
-			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedOperatorSecretName(operatorNamespace), operatorSecret)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedOperatorSecretName(podNamespace), operatorSecret)).Should(Succeed())
 
 			networkPolicy := &networkingv1.NetworkPolicy{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), networkPolicy)).Should(Succeed())

@@ -30,6 +30,9 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
 			semconv.ServiceName("Unleasherator"),
+			semconv.ServiceInstanceID(config.PodName),
+			semconv.ServiceNamespace(config.PodNamespace),
+			semconv.K8SClusterName(config.ClusterName),
 		),
 	)
 
