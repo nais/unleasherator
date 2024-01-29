@@ -76,13 +76,13 @@ func TestUnleashNamespacedOperatorSecretName(t *testing.T) {
 		},
 	}
 
-	operatorNamespace := "operator-namespace"
+	namespace := "operator-namespace"
 	expected := types.NamespacedName{
-		Namespace: operatorNamespace,
+		Namespace: namespace,
 		Name:      unleash.GetOperatorSecretName(),
 	}
 
-	assert.Equal(t, unleash.NamespacedOperatorSecretName(operatorNamespace), expected, "Unexpected NamespacedName for operator secret")
+	assert.Equal(t, unleash.NamespacedOperatorSecretName(namespace), expected, "Unexpected NamespacedName for operator secret")
 }
 
 func TestUnleashNamespacedInstanceSecretName(t *testing.T) {

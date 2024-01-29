@@ -11,7 +11,7 @@ values:
     computed:
       template: '"{{ .Env.name }}"'
   # Federation
-  controllerManager.manager.env.federationClusterName:
+  controllerManager.manager.env.clusterName:
     computed:
       template: '"{{ .Env.name }}"'
   controllerManager.manager.env.federationPubsubGcpProjectId:

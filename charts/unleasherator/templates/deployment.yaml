@@ -46,8 +46,8 @@ spec:
         env:
         - name: API_TOKEN_NAME_SUFFIX
           value: {{ quote .Values.controllerManager.manager.env.apiTokenNameSuffix }}
-        - name: FEDERATION_CLUSTER_NAME
-          value: {{ quote .Values.controllerManager.manager.env.federationClusterName }}
+        - name: CLUSTER_NAME
+          value: {{ quote .Values.controllerManager.manager.env.clusterName }}
         - name: FEDERATION_PUBSUB_MODE
           value: {{ quote .Values.controllerManager.manager.env.federationPubsubMode }}
         - name: FEDERATION_PUBSUB_GCP_PROJECT_ID
@@ -65,10 +65,14 @@ spec:
           value: {{ quote .Values.controllerManager.manager.env.httpsProxy }}
         - name: NO_PROXY
           value: {{ quote .Values.controllerManager.manager.env.noProxy }}
-        - name: OPERATOR_NAMESPACE
+        - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: {{ quote .Values.controllerManager.manager.env.googleApplicationCredentials
             }}

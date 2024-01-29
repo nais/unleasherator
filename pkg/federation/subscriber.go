@@ -22,9 +22,9 @@ type Subscriber interface {
 type Handler func(ctx context.Context, remoteUnleash []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
-	client            *pubsub.Client
-	subscription      *pubsub.Subscription
-	operatorNamespace string
+	client       *pubsub.Client
+	subscription *pubsub.Subscription
+	namespace    string
 }
 
 // Close the pubsub client.
@@ -71,16 +71,16 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	}
 
 	secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.operatorNamespace, instance.SecretToken)
+	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
 	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), adminSecret.GetName(), adminSecret.GetNamespace())
 
 	return handler(ctx, remoteUnleashes, adminSecret, instance.Clusters, instance.Status)
 }
 
-func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, operatorNamespace string) Subscriber {
+func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string) Subscriber {
 	return &subscriber{
-		client:            client,
-		subscription:      subscription,
-		operatorNamespace: operatorNamespace,
+		client:       client,
+		subscription: subscription,
+		namespace:    namespace,
 	}
 }
