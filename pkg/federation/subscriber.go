@@ -38,12 +38,17 @@ func (s *subscriber) Close() error {
 }
 
 func (s *subscriber) otelSpanOptions(msg *pubsub.Message) []trace.SpanStartOption {
+	// This is only ever nil in tests.
+	subId := ""
+	if s.subscription != nil {
+		subId = s.subscription.ID()
+	}
+
 	return []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			semconv.MessagingSystemGCPPubsub,
-			//@TODO this broke the tests, fix it
-			//semconv.MessagingDestinationName(s.subscription.ID()),
+			semconv.MessagingDestinationName(subId),
 			semconv.MessagingMessageID(msg.ID),
 		),
 	}
