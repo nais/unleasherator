@@ -32,8 +32,8 @@ controllerManager:
         type: RuntimeDefault
     env:
       apiTokenNameSuffix: unleasherator
-      featureApiTokenUpdateEnabled: "false"
       clusterName: ""
+      featureApiTokenUpdateEnabled: "false"
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""
       federationPubsubSubscription: ""
