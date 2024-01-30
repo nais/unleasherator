@@ -123,6 +123,7 @@ func main() {
 			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
 		},
+		Tracer: tp.Tracer("remoteunleash-controller"),
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
@@ -135,6 +136,7 @@ func main() {
 		OperatorNamespace:     cfg.PodNamespace,
 		ApiTokenNameSuffix:    cfg.ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled: cfg.Features.ApiTokenUpdateEnabled,
+		Tracer:                tp.Tracer("apitoken-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)

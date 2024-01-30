@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +23,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -33,6 +31,7 @@ import (
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/pkg/o11y"
 	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
@@ -100,16 +99,11 @@ type UnleashFederation struct {
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
 func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	id := controller.ReconcileIDFromContext(ctx)
-
-	ctx, span := r.Tracer.Start(ctx, "Reconcile Unleash", trace.WithAttributes(
-		attribute.String("reconcile.id", string(id)),
-		attribute.String("reconcile.namespace", req.Namespace),
-		attribute.String("reconcile.name", req.Name),
-	))
+	spanOpts := o11y.ReconcilerAttributes(ctx, req)
+	ctx, span := r.Tracer.Start(ctx, "Reconcile Unleash", spanOpts...)
 	defer span.End()
 
-	log := log.FromContext(ctx).WithName("unleash")
+	log := log.FromContext(ctx).WithName("unleash").WithValues("TraceID", span.SpanContext().TraceID())
 	log.Info("Starting reconciliation of Unleash")
 
 	unleash := &unleashv1.Unleash{}
@@ -220,7 +214,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var res ctrl.Result
 
-	span.AddEvent("Reconciling Unleash resources")
+	span.AddEvent("Reconciling Secrets")
 	res, err = r.reconcileSecrets(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -233,6 +227,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling Deployment")
 	res, err = r.reconcileDeployment(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -245,6 +240,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling Service")
 	res, err = r.reconcileService(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -257,6 +253,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling NetworkPolicy")
 	res, err = r.reconcileNetworkPolicy(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -269,6 +266,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling Ingresses")
 	res, err = r.reconcileIngresses(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -281,6 +279,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling ServiceMonitor")
 	res, err = r.reconcileServiceMonitor(ctx, unleash)
 	if err != nil {
 		span.RecordError(err)
@@ -300,14 +299,11 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// Set the reconcile status of the Unleash instance to available
-	span.AddEvent("Successfully reconciled all Unleash resources")
-	log.Info("Successfully reconciled all Unleash resources")
 	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	// Test connection to Unleash instance
+	span.AddEvent("Testing connection to Unleash instance")
 	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); err != nil {
@@ -317,8 +313,9 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	span.SetAttributes(attribute.String("unleash.version", stats.VersionOSS))
+
 	// Set the connection status of the Unleash instance to available
-	log.Info("Successfully connected to Unleash instance", "version", stats.VersionOSS)
 	err = r.updateStatusConnectionSuccess(ctx, unleash, stats)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -713,13 +710,8 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 // testConnection will test the connection to the Unleash instance
 func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
-	ctx, span := r.Tracer.Start(ctx, "Test Connection")
-	defer span.End()
-
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		log.Error(err, "Failed to set up client for Unleash")
 		return nil, err
 	}
@@ -727,22 +719,14 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 	stats, res, err := client.GetInstanceAdminStats(ctx)
 
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
 		return nil, err
 	}
 
-	span.SetAttributes(semconv.HTTPStatusCodeKey.Int(res.StatusCode))
-
 	if res.StatusCode != http.StatusOK {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
 		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
 		return nil, err
 	}
-
-	span.SetAttributes(attribute.String("unleash.version", stats.VersionOSS))
 
 	return stats, nil
 }

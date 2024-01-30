@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/o11y"
 	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,6 +60,8 @@ type ApiTokenReconciler struct {
 	// tokens in Unleash are immutable. This is a feature flag that
 	// can be enabled in the operator config.
 	ApiTokenUpdateEnabled bool
+
+	Tracer trace.Tracer
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens,verbs=get;list;watch;create;update;patch;delete
@@ -65,21 +69,15 @@ type ApiTokenReconciler struct {
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ApiToken object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithName("apitoken")
+	spanOpts := o11y.ReconcilerAttributes(ctx, req)
+	ctx, span := r.Tracer.Start(ctx, "Reconcile ApiToken", spanOpts...)
+	defer span.End()
 
+	log := log.FromContext(ctx).WithName("apitoken").WithValues("TraceID", span.SpanContext().TraceID())
 	log.Info("Starting reconciliation of ApiToken")
-	token := &unleashv1.ApiToken{}
 
+	token := &unleashv1.ApiToken{}
 	err := r.Get(ctx, req.NamespacedName, token)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
@@ -114,6 +112,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(token, tokenFinalizer) {
+		span.AddEvent("Adding finalizer to ApiToken")
 		log.Info("Adding finalizer to ApiToken")
 
 		if ok := controllerutil.AddFinalizer(token, tokenFinalizer); !ok {
@@ -226,6 +225,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Create token if it does not exist in Unleash
 	if apiToken == nil {
+		span.AddEvent("Creating token in Unleash")
 		log.Info("Creating token in Unleash for ApiToken")
 		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
 		if err != nil {
@@ -239,10 +239,10 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Update token if it differs from the desired state
 	// Tokens in Unleash are immutable, so we need to delete the old token and create a new one
 	if apiToken != nil && !token.ApiTokenIsEqual(apiToken) {
-		log.Info(fmt.Sprintf("Token in Kubernetes: type=%s, environment=%s, projects=%s", token.Spec.Type, token.Spec.Environment, token.Spec.Projects))
-		log.Info(fmt.Sprintf("Token in Unleash: type=%s, environment=%s, projects=%s", apiToken.Type, apiToken.Environment, apiToken.Projects))
+		span.AddEvent("Updating token in Unleash")
 
 		if r.ApiTokenUpdateEnabled {
+			span.AddEvent("Deleting old token in Unleash")
 			log.Info("Deleting old token in Unleash for ApiToken")
 			err = apiClient.DeleteApiToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
 			if err != nil {
@@ -252,6 +252,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, err
 			}
 
+			span.AddEvent("Creating new token in Unleash")
 			log.Info("Creating new token in Unleash for ApiToken")
 			apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
 			if err != nil {
@@ -265,13 +266,14 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	span.AddEvent("Fetching token secret")
 	secret := resources.ApiTokenSecret(unleash, token, apiToken)
 	if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
 		log.Error(err, "Failed to set controller reference on token secret")
 		return ctrl.Result{}, err
 	}
 
-	// Delete existing token secret if it exists
+	span.AddEvent("Deleting existing token secret")
 	log.Info("Deleting existing token secret for ApiToken")
 	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
@@ -280,7 +282,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Create new token secret in Kubernetes
+	span.AddEvent("Creating token secret")
 	log.Info("Creating token secret for ApiToken")
 	if err := r.Create(ctx, secret); err != nil {
 		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {

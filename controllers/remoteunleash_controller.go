@@ -9,10 +9,12 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/pkg/config"
 	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/pkg/o11y"
 	"github.com/nais/unleasherator/pkg/pb"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/nais/unleasherator/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -58,6 +60,7 @@ type RemoteUnleashReconciler struct {
 	OperatorNamespace string
 	Timeout           config.TimeoutConfig
 	Federation        RemoteUnleashFederation
+	Tracer            trace.Tracer
 }
 
 type RemoteUnleashFederation struct {
@@ -72,11 +75,14 @@ type RemoteUnleashFederation struct {
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithName("remoteunleash")
+	spanOpts := o11y.ReconcilerAttributes(ctx, req)
+	ctx, span := r.Tracer.Start(ctx, "Reconcile RemoteUnleash", spanOpts...)
+	defer span.End()
 
+	log := log.FromContext(ctx).WithName("remoteunleash").WithValues("TraceID", span.SpanContext().TraceID())
 	log.Info("Starting reconciliation of RemoteUnleash")
-	remoteUnleash := &unleashv1.RemoteUnleash{}
 
+	remoteUnleash := &unleashv1.RemoteUnleash{}
 	err := r.Get(ctx, req.NamespacedName, remoteUnleash)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
