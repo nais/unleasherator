@@ -116,6 +116,7 @@ var _ = BeforeSuite(func() {
 			ClusterName: "test-cluster",
 			Subscriber:  mockSubscriber,
 		},
+		Tracer: otel.Tracer("remoteunleash-controller"),
 	}
 	err = remoteUnleashReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -126,6 +127,7 @@ var _ = BeforeSuite(func() {
 		OperatorNamespace:     namespace,
 		ApiTokenNameSuffix:    ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled: true,
+		Tracer:                otel.Tracer("apitoken-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
