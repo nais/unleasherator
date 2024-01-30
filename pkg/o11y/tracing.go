@@ -20,29 +20,16 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 	var tp *sdktrace.TracerProvider
 
 	exp, err := newTraceExporter(ctx, config)
-
 	if err != nil {
 		return nil, err
 	}
 
-	r, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("Unleasherator"),
-			semconv.ServiceInstanceID(config.PodName),
-			semconv.ServiceNamespace(config.PodNamespace),
-			semconv.K8SClusterName(config.ClusterName),
-		),
-	)
-
+	r, err := resourceFromConfig(config)
 	if err != nil {
 		return nil, err
 	}
 
-	tp = sdktrace.NewTracerProvider(
-		sdktrace.WithResource(r),
-	)
+	tp = sdktrace.NewTracerProvider(sdktrace.WithResource(r))
 
 	if config.OpenTelemetry.TracesExporter != "none" {
 		tp.RegisterSpanProcessor(sdktrace.NewBatchSpanProcessor(exp))
@@ -52,6 +39,19 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
 	return tp, nil
+}
+
+func resourceFromConfig(config *config.Config) (*resource.Resource, error) {
+	return resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceName(fmt.Sprintf("unleasherator-%s", config.ClusterName)),
+			semconv.ServiceInstanceID(config.PodName),
+			semconv.ServiceNamespace(config.PodNamespace),
+			semconv.K8SClusterName(config.ClusterName),
+		),
+	)
 }
 
 func newTraceExporter(ctx context.Context, config *config.Config) (sdktrace.SpanExporter, error) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/nais/unleasherator/pkg/config"
 	"github.com/stretchr/testify/assert"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 )
 
 func TestNewTraceExporter(t *testing.T) {
@@ -162,5 +163,33 @@ func TestHostportSchemeFromUrl(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, fmt.Sprintf("%s, %s", hostport, scheme))
 		})
+	}
+}
+func TestResourceFromConfig(t *testing.T) {
+	cfg := &config.Config{
+		ClusterName:  "test-cluster",
+		PodName:      "test-pod",
+		PodNamespace: "test-namespace",
+	}
+
+	resource, err := resourceFromConfig(cfg)
+	assert.NoError(t, err)
+
+	for _, attribute := range resource.Attributes() {
+		switch attribute.Key {
+		case semconv.ServiceNameKey:
+			assert.Equal(t, "unleasherator-test-cluster", attribute.Value.AsString())
+		case semconv.ServiceInstanceIDKey:
+			assert.Equal(t, "test-pod", attribute.Value.AsString())
+		case semconv.ServiceNamespaceKey:
+			assert.Equal(t, "test-namespace", attribute.Value.AsString())
+		case semconv.K8SClusterNameKey:
+			assert.Equal(t, "test-cluster", attribute.Value.AsString())
+		case semconv.TelemetrySDKNameKey:
+		case semconv.TelemetrySDKLanguageKey:
+		case semconv.TelemetrySDKVersionKey:
+		default:
+			assert.Fail(t, fmt.Sprintf("unexpected attribute %q", attribute.Key))
+		}
 	}
 }
