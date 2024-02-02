@@ -664,10 +664,12 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			log.Error(err, "Failed to update Deployment", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 			return ctrl.Result{}, err
 		}
-	}
 
-	log.Info("Skip reconcile: Deployment already up to date", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
-	return ctrl.Result{}, nil
+		return ctrl.Result{}, nil
+	} else {
+		log.Info("Skip reconcile: Deployment already up to date", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
+		return ctrl.Result{}, nil
+	}
 }
 
 // reconcileService will ensure that the Service for the Unleash instance is created
