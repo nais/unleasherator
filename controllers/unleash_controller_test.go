@@ -13,10 +13,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/pkg/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
@@ -49,6 +53,66 @@ var _ = Describe("Unleash controller", func() {
 
 	AfterEach(func() {
 		httpmock.DeactivateAndReset()
+	})
+
+	Context("When comparing Unleash deployments", func() {
+		It("Should return true for equal deployments", func() {
+			ctx := context.Background()
+
+			unleash := unleashResource("test-unleash", UnleashNamespace, unleashv1.UnleashSpec{
+				Size:        100,
+				CustomImage: "foo/bar:latest",
+				Prometheus: unleashv1.UnleashPrometheusConfig{
+					Enabled: true,
+				},
+				Database:      unleashv1.UnleashDatabaseConfig{URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false"},
+				WebIngress:    unleashv1.UnleashIngressConfig{},
+				ApiIngress:    unleashv1.UnleashIngressConfig{},
+				NetworkPolicy: unleashv1.UnleashNetworkPolicyConfig{},
+				ExtraEnvVars: []corev1.EnvVar{
+					{Name: "foo", Value: "bar"},
+				},
+				ExtraVolumes: []corev1.Volume{
+					{Name: "foo", VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							Medium: "Memory",
+						},
+					}},
+				},
+				ExtraVolumeMounts: []corev1.VolumeMount{
+					{Name: "foo", MountPath: "/foo"},
+				},
+				ExtraContainers: []corev1.Container{
+					{Name: "foo", Image: "foo/bar:latest"},
+				},
+				ExistingServiceAccountName: "foo",
+				Resources: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
+						"cpu":    resource.MustParse("100m"),
+						"memory": resource.MustParse("128Mi"),
+					},
+					Requests: corev1.ResourceList{
+						"cpu":    resource.MustParse("100m"),
+						"memory": resource.MustParse("128Mi"),
+					},
+				},
+				Federation: unleashv1.UnleashFederationConfig{},
+			})
+
+			existingDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme)
+			Expect(err).To(BeNil())
+			existingDep.ObjectMeta.OwnerReferences = []metav1.OwnerReference{}
+			Expect(k8sClient.Create(ctx, existingDep)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, unleash.NamespacedName(), existingDep)).Should(Succeed())
+
+			newDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme)
+			Expect(err).To(BeNil())
+			newDep.ObjectMeta.OwnerReferences = []metav1.OwnerReference{}
+
+			Expect(equality.Semantic.DeepDerivative(newDep.Spec, existingDep.Spec)).To(BeTrue())
+			Expect(equality.Semantic.DeepDerivative(newDep.Labels, existingDep.Labels)).To(BeTrue())
+			Expect(k8sClient.Delete(ctx, existingDep)).Should(Succeed())
+		})
 	})
 
 	Context("When creating a Unleash", func() {
