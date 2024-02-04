@@ -178,6 +178,13 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
+			Strategy: appsv1.DeploymentStrategy{
+				Type: "RollingUpdate",
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxSurge:       &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+				},
+			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: ls,
 			},
@@ -227,13 +234,16 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
-									Path: "/health",
-									Port: intstr.FromInt(DefaultUnleashPort),
+									Path:   "/health",
+									Port:   intstr.FromInt(DefaultUnleashPort),
+									Scheme: corev1.URISchemeHTTP,
 								},
 							},
 							InitialDelaySeconds: 5,
 							TimeoutSeconds:      10,
 							PeriodSeconds:       10,
+							SuccessThreshold:    1,
+							FailureThreshold:    3,
 						},
 						Image:           ImageForUnleash(unleash),
 						Name:            "unleash",
@@ -263,6 +273,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: DefaultUnleashPort,
 							Name:          DefaultUnleashPortName,
+							Protocol:      corev1.ProtocolTCP,
 						}},
 						// Command: []string{"unleash", "-m=64", "-o", "modern", "-v"},
 						// Secret environment variables
