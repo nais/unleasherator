@@ -35,15 +35,10 @@ values:
       template: 'otlp'
   controllerManager.manager.env.otelExporterOtlpEndpoint:
     computed:
-      template: |
-        {{ if eq .Kind "management" }}
-          http://tempo-distributor.nais-system:4317
-        {{ else }}
-          https://tempo.{{ .Tenant.Name }}.cloud.nais.io
-        {{ end }}
+      template: '"{{ .Env.otel_otlp_endpoint }}"'
   controllerManager.manager.env.otelExporterOtlpProtocol:
     computed:
-      template: '{{ if eq .Kind "management" }}grpc{{ else }}http{{ end }}'
+      template: '"{{ .Env.otel_otlp_protocol }}"'
   # Service account
   controllerManager.serviceAccount.annotations:
     computed:
@@ -108,31 +103,6 @@ values:
     computed:
       template: |
         - "{{ .Env.management_lb_internal_ip }}"
-    ignoreKind:
-      - management
-      - onprem
-  networkPolicy.otlpServiceEndpoint:
-    computed:
-      template: |
-        - to:
-          - namespaceSelector:
-              matchLabels:
-                kubernetes.io/metadata.name: nais-system
-            podSelector:
-              matchLabels:
-                app.kubernetes.io/component: distributor
-                app.kubernetes.io/instance: tempo
-                app.kubernetes.io/name: tempo
-          ports:
-            - port: 4317
-              protocol: TCP
-    ignoreKind:
-      - legacy
-      - tenant
-      - onprem
-  networkPolicy.otelpExternalEndpoint:
-    computed:
-      template: 'tempo.{{ .Tenant.Name }}.cloud.nais.io'
     ignoreKind:
       - management
       - onprem
