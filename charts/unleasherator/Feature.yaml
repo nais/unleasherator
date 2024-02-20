@@ -32,7 +32,7 @@ values:
       template: '"{{ .Env.unleasherator_pubsub_topic }}"'
   controllerManager.manager.env.otelTracesExporter:
     computed:
-      template: 'otlp'
+      template: '"{{ if ne .Env.otel_otlp_endpoint "" }}otlp{{ else }}none{{ end }}"'
   controllerManager.manager.env.otelExporterOtlpEndpoint:
     computed:
       template: '"{{ .Env.otel_otlp_endpoint }}"'
