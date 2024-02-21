@@ -41,64 +41,73 @@ type Unleash struct {
 }
 
 // UnleashSpec defines the desired state of Unleash
+// UnleashSpec represents the specification for an Unleash deployment.
 type UnleashSpec struct {
-	// Size is the size of the unleash deployment
+	// Size is the size of the Unleash deployment.
 	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
 
-	// CustomImage points to a customImage, this overrides all other version settings
-	// Use at your own risk
+	// CustomImage points to a custom image, which overrides all other version settings.
+	// Use at your own risk.
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
 
-	// Prometheus defines the prometheus metrics collection configuration
+	// Prometheus defines the Prometheus metrics collection configuration.
 	// +kubebuilder:validation:Optional
 	Prometheus UnleashPrometheusConfig `json:"prometheus,omitempty"`
 
-	// Database is the database configuration
+	// Database is the database configuration.
 	// +kubebuilder:validation:Required
 	Database UnleashDatabaseConfig `json:"database,omitempty"`
 
-	// WebIngress defines the ingress configuration for the web interface
+	// WebIngress defines the ingress configuration for the web interface.
 	// +kubebuilder:validation:Optional
 	WebIngress UnleashIngressConfig `json:"webIngress,omitempty"`
 
-	// ApiIngress defines the ingress for the endpoints of Unleash
+	// ApiIngress defines the ingress for the endpoints of Unleash.
 	// +kubebuilder:validation:Optional
 	ApiIngress UnleashIngressConfig `json:"apiIngress,omitempty"`
 
-	// NetworkPolicy defines the network policy configuration
+	// NetworkPolicy defines the network policy configuration.
 	// +kubebuilder:validation:Optional
 	NetworkPolicy UnleashNetworkPolicyConfig `json:"networkPolicy,omitempty"`
 
-	// ExtraEnv is a list of extra environment variables to add to the deployment
+	// ExtraEnvVars is a list of extra environment variables to add to the deployment.
 	// +kubebuilder:validation:Optional
 	ExtraEnvVars []corev1.EnvVar `json:"extraEnvVars,omitempty"`
 
-	// ExtraVolumeMounts is a list of extra volume mounts to add to the deployment
+	// ExtraVolumes is a list of extra volume mounts to add to the deployment.
 	// +kubebuilder:validation:Optional
 	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty"`
 
-	// ExtraVolumeMounts is a list of extra volume mounts to add to the deployment
+	// ExtraVolumeMounts is a list of extra volume mounts to add to the deployment.
 	// +kubebuilder:validation:Optional
 	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty"`
 
-	// ExtraContainers is a list of extra containers to add to the deployment
+	// ExtraContainers is a list of extra containers to add to the deployment.
 	// +kubebuilder:validation:Optional
 	ExtraContainers []corev1.Container `json:"extraContainers,omitempty"`
 
-	// ExistingServiceAccountName is the name of an already existing Kubernetes service account
+	// ExistingServiceAccountName is the name of an already existing Kubernetes service account.
 	// +kubebuilder:validation:Optional
 	ExistingServiceAccountName string `json:"existingServiceAccountName,omitempty"`
 
-	// Resources are the resource requests and limits for the unleash deployment
+	// Resources are the resource requests and limits for the Unleash deployment.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default:={requests: {cpu: "300m", memory: "256Mi"}, limits: { memory: "512Mi"}}
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
-	// Federation is the configuration for Unleash federation
+	// Federation is the configuration for Unleash federation.
 	// +kubebuilder:validation:Optional
 	Federation UnleashFederationConfig `json:"federation,omitempty"`
+
+	// PodAnnotations are additional annotations to add to the Unleash pods.
+	// +kubebuilder:validation:Optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+
+	// PodLabels are additional labels to add to the Unleash pods.
+	// +kubebuilder:validation:Optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
 }
 
 // UnleashFederationConfig defines the configuration for Unleash federation

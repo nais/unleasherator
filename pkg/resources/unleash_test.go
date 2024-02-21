@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/stretchr/testify/assert"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -50,6 +51,26 @@ func TestDeploymentForUnleash(t *testing.T) {
 	if err != nil {
 		t.Error("expected no when database is configured, got", err)
 	}
+
+	u.Spec.PodLabels = map[string]string{
+		"app": "unleash",
+		"env": "dev",
+	}
+
+	u.Spec.PodAnnotations = map[string]string{
+		"prometheus.io/scrape": "true",
+		"prometheus.io/port":   "4242",
+	}
+
+	deploy, err := DeploymentForUnleash(u, scheme.Scheme)
+	if err != nil {
+		t.Error("unexpected error", err)
+	}
+
+	assert.Equal(t, deploy.Spec.Template.Labels["app"], "unleash")
+	assert.Equal(t, deploy.Spec.Template.Labels["env"], "dev")
+	assert.Equal(t, deploy.Spec.Template.Annotations["prometheus.io/scrape"], "true")
+	assert.Equal(t, deploy.Spec.Template.Annotations["prometheus.io/port"], "4242")
 }
 
 func TestNetworkPolicyForUnleash(t *testing.T) {

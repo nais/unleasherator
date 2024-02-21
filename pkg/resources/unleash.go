@@ -163,6 +163,8 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 
 func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
 	ls := labelsForUnleash(unleash.GetName())
+	podLabels := podLabelsForUnleash(unleash.GetName(), unleash.Spec.PodLabels)
+	podAnnotations := podAnnotationsForUnleash(unleash.GetName(), unleash.Spec.PodAnnotations)
 	replicas := unleash.Spec.Size
 
 	envVars, err := envVarsForUnleash(unleash)
@@ -190,7 +192,8 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ls,
+					Labels:      podLabels,
+					Annotations: podAnnotations,
 				},
 				Spec: corev1.PodSpec{
 					// TODO(user): Uncomment the following code to configure the nodeAffinity expression
@@ -305,7 +308,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 	return dep, nil
 }
 
-// labelsForUnleash returns the labels for selecting the resources
+// labelsForUnleash returns global labels for Unleash resources.
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 func labelsForUnleash(instanceName string) map[string]string {
 	return map[string]string{
@@ -314,6 +317,29 @@ func labelsForUnleash(instanceName string) map[string]string {
 		"app.kubernetes.io/part-of":    "unleasherator",
 		"app.kubernetes.io/created-by": "controller-manager",
 	}
+}
+
+// podLabelsForUnleash returns labels for Unleash deployment pods.
+func podLabelsForUnleash(instanceName string, extraPodLabels map[string]string) map[string]string {
+	ls := labelsForUnleash(instanceName)
+	for k, v := range extraPodLabels {
+		ls[k] = v
+	}
+	return ls
+}
+
+// annotationsForUnleash returns global annotations for Unleash resources.
+func annotationsForUnleash(instanceName string) map[string]string {
+	return map[string]string{}
+}
+
+// podAnnotationsForUnleash returns annotations for Unleash deployment pods.
+func podAnnotationsForUnleash(instanceName string, extraPodAnnotations map[string]string) map[string]string {
+	an := annotationsForUnleash(instanceName)
+	for k, v := range extraPodAnnotations {
+		an[k] = v
+	}
+	return an
 }
 
 // IngressForUnleash returns the Ingress for Unleash Deployment

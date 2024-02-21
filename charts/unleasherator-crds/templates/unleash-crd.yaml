@@ -49,10 +49,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: UnleashSpec defines the desired state of Unleash
+            description: UnleashSpec defines the desired state of Unleash UnleashSpec
+              represents the specification for an Unleash deployment.
             properties:
               apiIngress:
-                description: ApiIngress defines the ingress for the endpoints of Unleash
+                description: ApiIngress defines the ingress for the endpoints of Unleash.
                 properties:
                   annotations:
                     additionalProperties:
@@ -91,11 +92,11 @@ spec:
                     type: object
                 type: object
               customImage:
-                description: CustomImage points to a customImage, this overrides all
-                  other version settings Use at your own risk
+                description: CustomImage points to a custom image, which overrides all
+                  other version settings. Use at your own risk.
                 type: string
               database:
-                description: Database is the database configuration
+                description: Database is the database configuration.
                 properties:
                   databaseName:
                     description: DatabaseName defines the name of the database to be
@@ -152,11 +153,11 @@ spec:
                 type: object
               existingServiceAccountName:
                 description: ExistingServiceAccountName is the name of an already existing
-                  Kubernetes service account
+                  Kubernetes service account.
                 type: string
               extraContainers:
                 description: ExtraContainers is a list of extra containers to add to
-                  the deployment
+                  the deployment.
                 items:
                   description: A single application container that you want to run within
                     a pod.
@@ -1444,8 +1445,8 @@ spec:
                   type: object
                 type: array
               extraEnvVars:
-                description: ExtraEnv is a list of extra environment variables to add
-                  to the deployment
+                description: ExtraEnvVars is a list of extra environment variables to
+                  add to the deployment.
                 items:
                   description: EnvVar represents an environment variable present in
                     a Container.
@@ -1555,7 +1556,7 @@ spec:
                 type: array
               extraVolumeMounts:
                 description: ExtraVolumeMounts is a list of extra volume mounts to add
-                  to the deployment
+                  to the deployment.
                 items:
                   description: VolumeMount describes a mounting of a Volume within a
                     container.
@@ -1593,8 +1594,8 @@ spec:
                   type: object
                 type: array
               extraVolumes:
-                description: ExtraVolumeMounts is a list of extra volume mounts to add
-                  to the deployment
+                description: ExtraVolumes is a list of extra volume mounts to add to
+                  the deployment.
                 items:
                   description: Volume represents a named volume in a pod that may be
                     accessed by any container in the pod.
@@ -3221,7 +3222,7 @@ spec:
                   type: object
                 type: array
               federation:
-                description: Federation is the configuration for Unleash federation
+                description: Federation is the configuration for Unleash federation.
                 properties:
                   clusters:
                     description: Clusters are the clusters to federate to
@@ -3243,7 +3244,7 @@ spec:
                     type: string
                 type: object
               networkPolicy:
-                description: NetworkPolicy defines the network policy configuration
+                description: NetworkPolicy defines the network policy configuration.
                 properties:
                   allowAll:
                     default: false
@@ -3658,8 +3659,19 @@ spec:
                       type: object
                     type: array
                 type: object
+              podAnnotations:
+                additionalProperties:
+                  type: string
+                description: PodAnnotations are additional annotations to add to the
+                  Unleash pods.
+                type: object
+              podLabels:
+                additionalProperties:
+                  type: string
+                description: PodLabels are additional labels to add to the Unleash pods.
+                type: object
               prometheus:
-                description: Prometheus defines the prometheus metrics collection configuration
+                description: Prometheus defines the Prometheus metrics collection configuration.
                 properties:
                   enabled:
                     default: true
@@ -3674,7 +3686,7 @@ spec:
                     cpu: 300m
                     memory: 256Mi
                 description: Resources are the resource requests and limits for the
-                  unleash deployment
+                  Unleash deployment.
                 properties:
                   claims:
                     description: "Claims lists the names of resources, defined in spec.resourceClaims,
@@ -3721,12 +3733,12 @@ spec:
                 type: object
               size:
                 default: 1
-                description: Size is the size of the unleash deployment
+                description: Size is the size of the Unleash deployment.
                 format: int32
                 type: integer
               webIngress:
                 description: WebIngress defines the ingress configuration for the web
-                  interface
+                  interface.
                 properties:
                   annotations:
                     additionalProperties:
