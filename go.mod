@@ -9,8 +9,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jarcoal/httpmock v1.3.1
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/onsi/ginkgo/v2 v2.16.0
-	github.com/onsi/gomega v1.31.1
+	github.com/onsi/ginkgo/v2 v2.17.1
+	github.com/onsi/gomega v1.32.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/client_model v0.6.0
@@ -22,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.24.0
 	google.golang.org/api v0.169.0
 	google.golang.org/grpc v1.62.0
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 	k8s.io/api v0.29.2
 	k8s.io/apimachinery v0.29.2
 	k8s.io/client-go v0.29.2
