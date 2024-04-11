@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/nais/unleasherator:main
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.28.0
+ENVTEST_K8S_VERSION = 1.28.3
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -161,8 +161,8 @@ PROTOC ?= $(LOCALBIN)/protoc
 PROTOC_GEN ?= $(LOCALBIN)/protoc-gen-go
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v4.5.7
-PROTOBUF_VERSION ?= 23.3# without v-prefix
+KUSTOMIZE_VERSION ?= v5.1.1
+PROTOBUF_VERSION ?= 26.1# without v-prefix
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -239,4 +239,3 @@ $(PROTOC): $(LOCALBIN)
 	\
 	echo "Cleaning up..."; \
 	rm protoc-*.zip;
-
