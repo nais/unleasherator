@@ -47,10 +47,10 @@ jobs:
       - name: Set up Go environment
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.22"
           cache: false
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v4
         with:
           version: latest
           args: --timeout=5m
@@ -69,8 +69,7 @@ jobs:
       - name: Set up Go environment
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
-          use-latest: true
+          go-version: "1.22"
       - name: Install make
         run: sudo apt-get update && sudo apt-get install make
       - name: Generate code
