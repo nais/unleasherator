@@ -84,13 +84,13 @@ jobs:
           fetch-depth: 0
 
       - name: Restore Chart Metadata
-        uses: actions/download-artifact@v4.1.4
+        uses: actions/download-artifact@v4.1.5
         with:
           name: chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore CRDs Chart Metadata
-        uses: actions/download-artifact@v4.1.4
+        uses: actions/download-artifact@v4.1.5
         with:
           name: crds-chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}-crds
@@ -171,19 +171,19 @@ jobs:
           fetch-depth: 0
 
       - name: Restore Chart Metadata
-        uses: actions/download-artifact@v4.1.4
+        uses: actions/download-artifact@v4.1.5
         with:
           name: chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore Chart Values
-        uses: actions/download-artifact@v4.1.4
+        uses: actions/download-artifact@v4.1.5
         with:
           name: chart-values
           path: ./charts/${{ needs.meta.outputs.name }}
 
       - name: Restore CRDs Chart Metadata
-        uses: actions/download-artifact@v4.1.4
+        uses: actions/download-artifact@v4.1.5
         with:
           name: crds-chart-metadata
           path: ./charts/${{ needs.meta.outputs.name }}-crds
