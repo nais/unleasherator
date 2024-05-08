@@ -2,6 +2,7 @@ package unleashclient
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 )
 
@@ -118,7 +119,7 @@ func (c *Client) CreateAPIToken(ctx context.Context, req ApiTokenRequest) (*ApiT
 func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
 	res := &ApiTokenResult{}
 
-	_, err := c.HTTPGet(ctx, ApiTokensEndpoint, &res)
+	_, err := c.HTTPGet(ctx, ApiTokensEndpoint, res)
 	if err != nil {
 		return res, err
 	}
@@ -126,30 +127,29 @@ func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
 	return res, nil
 }
 
-// GetAPIToken returns an API token with the given username.
-func (c *Client) GetAPIToken(ctx context.Context, userName string) (*ApiToken, error) {
-	tokens, err := c.GetAllAPITokens(ctx)
+// GetAPITokenByName returns API tokens with the given username, there can be multiple tokens since the username is not unique.
+// https://docs.getunleash.io/reference/api/unleash/get-api-tokens-by-name
+func (c *Client) GetAPITokensByName(ctx context.Context, userName string) (*ApiTokenResult, error) {
+	res := &ApiTokenResult{}
+
+	_, err := c.HTTPGet(ctx, fmt.Sprintf("%s/%s", ApiTokensEndpoint, userName), res)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 
-	for _, t := range tokens.Tokens {
-		if t.Username == userName {
-			return &t, nil
-		}
-	}
-
-	return nil, nil
+	return res, nil
 }
 
 // CheckAPITokenExists checks if an API token with the given username exists.
 func (c *Client) CheckAPITokenExists(ctx context.Context, userName string) (bool, error) {
-	token, err := c.GetAPIToken(ctx, userName)
-	exists := token != nil
+	token, err := c.GetAPITokensByName(ctx, userName)
+	exists := len(token.Tokens) > 0
 
 	return exists, err
 }
 
+// DeleteApiToken deletes an API token with the given token string.
+// https://docs.getunleash.io/reference/api/unleash/delete-api-token
 func (c *Client) DeleteApiToken(ctx context.Context, tokenString string) error {
 	err := c.HTTPDelete(ctx, ApiTokensEndpoint, tokenString)
 

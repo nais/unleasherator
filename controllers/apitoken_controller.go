@@ -244,7 +244,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if r.ApiTokenUpdateEnabled {
 			span.AddEvent("Deleting old token in Unleash")
 			log.Info("Deleting old token in Unleash for ApiToken")
-			err = apiClient.DeleteApiToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
+			// @TODO check apiToken.Secret
+			err = apiClient.DeleteApiToken(ctx, apiToken.Secret)
 			if err != nil {
 				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
 					return ctrl.Result{}, err
