@@ -8,4 +8,8 @@ spec:
     spec:
       containers:
       - name: manager
+        image: unleasherator:latest
         imagePullPolicy: IfNotPresent
+        env:
+        - name: ENABLE_WEBHOOKS
+          value: "true"
