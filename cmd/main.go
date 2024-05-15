@@ -141,6 +141,12 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)
 	}
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = (&unleashv1.Unleash{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Unleash")
+			os.Exit(1)
+		}
+	}
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {

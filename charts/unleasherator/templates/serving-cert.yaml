@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-serving-cert
+  labels:
+  {{- include "unleasherator.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+  - '{{ include "unleasherator.fullname" . }}-SERVICE_NAME.SERVICE_NAMESPACE.svc'
+  - '{{ include "unleasherator.fullname" . }}-SERVICE_NAME.SERVICE_NAMESPACE.svc.{{
+    .Values.kubernetesClusterDomain }}'
+  issuerRef:
+    kind: Issuer
+    name: '{{ include "unleasherator.fullname" . }}-selfsigned-issuer'
+  secretName: webhook-server-cert

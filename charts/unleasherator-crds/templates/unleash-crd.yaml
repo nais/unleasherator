@@ -3,10 +3,24 @@ kind: CustomResourceDefinition
 metadata:
   name: unleashes.unleash.nais.io
   annotations:
+    cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "unleasherator-crds.fullname"
+      . }}-CERTIFICATE_NAMESPACE/CERTIFICATE_NAME'
     controller-gen.kubebuilder.io/version: v0.14.0
   labels:
   {{- include "unleasherator-crds.labels" . | nindent 4 }}
 spec:
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: webhook-service
+          namespace: '{{ .Release.Namespace }}s{{ .Release.Namespace }}y{{ .Release.Namespace
+            }}s{{ .Release.Namespace }}t{{ .Release.Namespace }}e{{ .Release.Namespace
+            }}m{{ .Release.Namespace }}'
+          path: /convert
+      conversionReviewVersions:
+      - v1
   group: unleash.nais.io
   names:
     kind: Unleash
