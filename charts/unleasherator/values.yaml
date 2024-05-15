@@ -33,6 +33,7 @@ controllerManager:
     env:
       apiTokenNameSuffix: unleasherator
       clusterName: ""
+      enableWebhooks: "false"
       featureApiTokenUpdateEnabled: "false"
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""

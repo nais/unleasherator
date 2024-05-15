@@ -79,6 +79,8 @@ spec:
         - name: HEALTH_PROBE_BIND_ADDRESS
           value: {{ quote .Values.controllerManager.manager.env.healthProbeBindAddress
             }}
+        - name: ENABLE_WEBHOOKS
+          value: {{ quote .Values.controllerManager.manager.env.enableWebhooks }}
         - name: METRICS_BIND_ADDRESS
           value: {{ quote .Values.controllerManager.manager.env.metricsBindAddress }}
         - name: WEBHOOK_PORT
