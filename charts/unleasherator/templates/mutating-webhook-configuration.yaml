@@ -3,7 +3,7 @@ kind: MutatingWebhookConfiguration
 metadata:
   name: {{ include "unleasherator.fullname" . }}-mutating-webhook-configuration
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "unleasherator.fullname" . }}-
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "unleasherator.fullname" . }}-CERTIFICATE_NAMESPACE/CERTIFICATE_NAME
   labels:
   {{- include "unleasherator.labels" . | nindent 4 }}
 webhooks:
