@@ -20,7 +20,7 @@ func newPubSub(ctx context.Context, namePrefix string) (srv *pstest.Server, conn
 	srv = pstest.NewServer()
 
 	// Connect to the server without using TLS.
-	conn, err = grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err = grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return
 	}
