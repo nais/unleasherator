@@ -13,6 +13,9 @@ updates:
       time: "09:00"
       timezone: "Europe/Oslo"
     groups:
+      otel:
+        patterns:
+          - "go.opentelemetry.io/*"
       k8s-core:
         patterns:
           - "k8s.io/*"
