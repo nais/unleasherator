@@ -3,6 +3,7 @@ package unleashclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -97,30 +98,31 @@ func TestApiTokenResult(t *testing.T) {
 func TestClient_GetAPIToken(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
-	httpmock.RegisterResponder("GET", "=~^/api/admin/api-tokens/.+\\z", func(req *http.Request) (*http.Response, error) {
-		tokenData, err := os.ReadFile("testdata/unleash-admin-api-get-tokens.json")
-		assert.NoError(t, err)
+	httpmock.RegisterResponder("GET", fmt.Sprintf("=~^%s/.+\\z", ApiTokensEndpoint),
+		func(req *http.Request) (*http.Response, error) {
+			tokenData, err := os.ReadFile("testdata/unleash-admin-api-get-tokens.json")
+			assert.NoError(t, err)
 
-		tokenResult := ApiTokenResult{}
-		err = json.Unmarshal(tokenData, &tokenResult)
-		assert.NoError(t, err)
+			tokenResult := ApiTokenResult{}
+			err = json.Unmarshal(tokenData, &tokenResult)
+			assert.NoError(t, err)
 
-		// Get token name from URL path
-		paths := strings.Split(req.URL.Path, "/")
-		name := paths[len(paths)-1]
+			// Get token name from URL path
+			paths := strings.Split(req.URL.Path, "/")
+			name := paths[len(paths)-1]
 
-		tokens := make([]ApiToken, 0)
-		for _, token := range tokenResult.Tokens {
-			if token.TokenName == name {
-				tokens = append(tokens, token)
+			tokens := make([]ApiToken, 0)
+			for _, token := range tokenResult.Tokens {
+				if token.TokenName == name {
+					tokens = append(tokens, token)
+				}
 			}
-		}
 
-		jsonData, err := json.Marshal(ApiTokenResult{Tokens: tokens})
-		assert.NoError(t, err)
+			jsonData, err := json.Marshal(ApiTokenResult{Tokens: tokens})
+			assert.NoError(t, err)
 
-		return httpmock.NewBytesResponse(200, jsonData), nil
-	})
+			return httpmock.NewBytesResponse(200, jsonData), nil
+		})
 
 	client, err := NewClient("http://unleash.example.com", "token")
 	assert.NoError(t, err)
@@ -180,7 +182,7 @@ func TestClient_GetAPIToken(t *testing.T) {
 	})
 
 	t.Run("Tokens with same name exists", func(t *testing.T) {
-		expectedTokens := ApiToken{
+		expectedToken := ApiToken{
 			Secret:      "project-a:development.00000",
 			TokenName:   "token-multi-projects",
 			Type:        "client",
@@ -212,7 +214,7 @@ func TestClient_CreateAPIToken(t *testing.T) {
 	t.Run("Should create token for default project", func(t *testing.T) {
 		httpmock.Activate()
 		defer httpmock.DeactivateAndReset()
-		httpmock.RegisterResponder("POST", "/api/admin/api-tokens", func(req *http.Request) (*http.Response, error) {
+		httpmock.RegisterResponder("POST", ApiTokensEndpoint, func(req *http.Request) (*http.Response, error) {
 			jsonData, err := os.ReadFile("testdata/unleash-admin-api-create-token-default.json")
 			if err != nil {
 				return httpmock.NewStringResponse(500, ""), err
@@ -242,5 +244,19 @@ func TestClient_CreateAPIToken(t *testing.T) {
 		token, err := client.CreateAPIToken(context.Background(), tokenRequest)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedToken, token)
+	})
+}
+func TestClient_DeleteApiToken(t *testing.T) {
+	client, err := NewClientWithHttpClient("http://unleash.example.com", "token", http.DefaultClient)
+	assert.NoError(t, err)
+	t.Run("Should delete API token", func(t *testing.T) {
+		httpmock.Activate()
+		defer httpmock.DeactivateAndReset()
+		httpmock.RegisterResponder("DELETE", fmt.Sprintf("%s/%s", ApiTokensEndpoint, "token-string"),
+			func(req *http.Request) (*http.Response, error) {
+				return httpmock.NewStringResponse(200, ""), nil
+			})
+		err := client.DeleteApiToken(context.Background(), "token-string")
+		assert.NoError(t, err)
 	})
 }

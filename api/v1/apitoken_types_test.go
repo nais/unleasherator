@@ -63,47 +63,198 @@ func TestApiToken_NamespacedName(t *testing.T) {
 	assert.Equal(t, expectedNamespacedName, actualNamespacedName)
 }
 func TestApiToken_IsEqual(t *testing.T) {
-	apiToken := &ApiToken{
-		Spec: ApiTokenSpec{
-			Type:        "CLIENT",
-			Environment: "development",
-			Projects:    []string{"project1", "project2"},
+	testCases := []struct {
+		name          string
+		apiToken      *ApiToken
+		unleashToken  unleashclient.ApiToken
+		expectedEqual bool
+	}{
+		{
+			name: "Token types are case different",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "client",
+				Environment: "development",
+				Projects:    []string{"project1", "project2"},
+			},
+			expectedEqual: true,
+		},
+		{
+			name: "Tokens are equal",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "client",
+				Environment: "development",
+				Projects:    []string{"project1", "project2"},
+			},
+			expectedEqual: true,
+		},
+		{
+			name: "Tokens have different types",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "FRONTEND",
+				Environment: "development",
+				Projects:    []string{"project1", "project2"},
+			},
+			expectedEqual: false,
+		},
+		{
+			name: "Tokens have different environments",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "production",
+				Projects:    []string{"project1", "project2"},
+			},
+			expectedEqual: false,
+		},
+		{
+			name: "Tokens have same projects but in different order",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"project2", "project1"},
+			},
+			expectedEqual: true,
+		},
+		{
+			name: "Tokens have different projects",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"project1", "project3"},
+			},
+			expectedEqual: false,
+		},
+		{
+			name: "Tokens are wildcards",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"*"},
+				},
+			},
+			unleashToken: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"*"},
+			},
+			expectedEqual: true,
 		},
 	}
 
-	unleashToken := &unleashclient.ApiToken{
-		Type:        "client",
-		Environment: "development",
-		Projects:    []string{"project1", "project2"},
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actualEqual := tc.apiToken.IsEqual(tc.unleashToken)
+			assert.Equal(t, tc.expectedEqual, actualEqual)
+		})
+	}
+}
+
+func TestApiToken_ExistsInList(t *testing.T) {
+	testCases := []struct {
+		name      string
+		apiToken  *ApiToken
+		tokenList []unleashclient.ApiToken
+		exists    bool
+	}{
+		{
+			name: "Token exists in the list",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			tokenList: []unleashclient.ApiToken{
+				{
+					Type:        "client",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+				{
+					Type:        "client",
+					Environment: "production",
+					Projects:    []string{"project3", "project4"},
+				},
+			},
+			exists: true,
+		},
+		{
+			name: "Token does not exist in the list",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "staging",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			tokenList: []unleashclient.ApiToken{
+				{
+					Type:        "client",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+				{
+					Type:        "client",
+					Environment: "production",
+					Projects:    []string{"project3", "project4"},
+				},
+			},
+			exists: false,
+		},
 	}
 
-	// Test when the token types are case different
-	apiToken.Spec.Type = "ClIeNt"
-	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens are equal
-	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens have different types
-	unleashToken.Type = "FRONTEND"
-	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens have different environments
-	unleashToken.Type = "CLIENT"
-	unleashToken.Environment = "production"
-	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens have same projects but in different order
-	unleashToken.Environment = "development"
-	unleashToken.Projects = []string{"project2", "project1"}
-	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens have different projects
-	unleashToken.Projects = []string{"project1", "project3"}
-	assert.False(t, apiToken.ApiTokenIsEqual(unleashToken))
-
-	// Test when the tokens are wildcards
-	apiToken.Spec.Projects = []string{"*"}
-	unleashToken.Projects = []string{"*"}
-	assert.True(t, apiToken.ApiTokenIsEqual(unleashToken))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			token, exists := tc.apiToken.ExistsInList(tc.tokenList)
+			assert.Equal(t, tc.exists, exists)
+			if exists {
+				assert.NotNil(t, token)
+			} else {
+				assert.Nil(t, token)
+			}
+		})
+	}
 }

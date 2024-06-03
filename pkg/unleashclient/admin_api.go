@@ -117,7 +117,7 @@ func (c *Client) CreateAPIToken(ctx context.Context, req ApiTokenRequest) (*ApiT
 // GetAllAPITokens returns all API tokens.
 // https://docs.getunleash.io/reference/api/unleash/get-all-api-tokens
 func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
-	res := &ApiTokenResult{}
+	res := &ApiTokenResult{Tokens: []ApiToken{}}
 
 	_, err := c.HTTPGet(ctx, ApiTokensEndpoint, res)
 	if err != nil {
@@ -130,7 +130,7 @@ func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
 // GetAPITokenByName returns API tokens with the given username, there can be multiple tokens since the username is not unique.
 // https://docs.getunleash.io/reference/api/unleash/get-api-tokens-by-name
 func (c *Client) GetAPITokensByName(ctx context.Context, userName string) (*ApiTokenResult, error) {
-	res := &ApiTokenResult{}
+	res := &ApiTokenResult{Tokens: []ApiToken{}}
 
 	_, err := c.HTTPGet(ctx, fmt.Sprintf("%s/%s", ApiTokensEndpoint, userName), res)
 	if err != nil {
