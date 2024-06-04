@@ -1,6 +1,7 @@
 package unleash_nais_io_v1
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nais/unleasherator/pkg/unleashclient"
@@ -130,6 +131,20 @@ func (t *ApiToken) IsEqual(token unleashclient.ApiToken) bool {
 	return strings.EqualFold(t.Spec.Type, token.Type) &&
 		t.Spec.Environment == token.Environment &&
 		utils.StringSliceEquals(t.Spec.Projects, token.Projects)
+}
+
+func (t *ApiToken) Diff(token unleashclient.ApiToken) string {
+	var diff []string
+	if !strings.EqualFold(t.Spec.Type, token.Type) {
+		diff = append(diff, fmt.Sprintf("Type: %s -> %s", t.Spec.Type, token.Type))
+	}
+	if t.Spec.Environment != token.Environment {
+		diff = append(diff, fmt.Sprintf("Environment: %s -> %s", t.Spec.Environment, token.Environment))
+	}
+	if !utils.StringSliceEquals(t.Spec.Projects, token.Projects) {
+		diff = append(diff, fmt.Sprintf("Projects: %v -> %v", t.Spec.Projects, token.Projects))
+	}
+	return strings.Join(diff, ", ")
 }
 
 // ExistsInList checks if the token equals any token in the list by comparing
