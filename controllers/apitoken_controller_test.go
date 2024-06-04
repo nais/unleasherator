@@ -46,7 +46,7 @@ var _ = Describe("ApiToken controller", func() {
 		httpmock.Activate()
 		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
 			httpmock.NewStringResponder(200, `{"versionOSS": "v5.1.2"}`))
-		httpmock.RegisterResponder("GET", unleashclient.ApiTokensEndpoint,
+		httpmock.RegisterResponder("GET", fmt.Sprintf("=~^%s/.+\\z", unleashclient.ApiTokensEndpoint),
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
 				resp, err := httpmock.NewJsonResponse(200, existingTokens)
@@ -96,15 +96,16 @@ var _ = Describe("ApiToken controller", func() {
 				defer GinkgoRecover()
 
 				urlPath := strings.Split(req.URL.Path, "/")
-				tokenName := urlPath[len(urlPath)-1]
+				tokenSecret := urlPath[len(urlPath)-1]
 
 				for i, token := range existingTokens.Tokens {
-					if token.Username == tokenName {
+					if token.Secret == tokenSecret {
 						existingTokens.Tokens = append(existingTokens.Tokens[:i], existingTokens.Tokens[i+1:]...)
-						break
+						return httpmock.NewStringResponse(200, ""), nil
 					}
 				}
 
+				Fail("Unknown token was attempted to be deleted")
 				return httpmock.NewStringResponse(200, ""), nil
 			})
 	})

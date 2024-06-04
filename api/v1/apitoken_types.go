@@ -124,10 +124,24 @@ func (t *ApiToken) ApiTokenRequest(suffix string) unleashclient.ApiTokenRequest 
 	}
 }
 
-func (t *ApiToken) ApiTokenIsEqual(token *unleashclient.ApiToken) bool {
+// IsEqual checks if the token equals another token by comparing the type,
+// environment, and projects attributes of the token.
+func (t *ApiToken) IsEqual(token unleashclient.ApiToken) bool {
 	return strings.EqualFold(t.Spec.Type, token.Type) &&
 		t.Spec.Environment == token.Environment &&
 		utils.StringSliceEquals(t.Spec.Projects, token.Projects)
+}
+
+// ExistsInList checks if the token equals any token in the list by comparing
+// the type, environment, and projects attributes of the token.
+// It returns the matching token and a boolean indicating if a match was found.
+func (t *ApiToken) ExistsInList(list []unleashclient.ApiToken) (*unleashclient.ApiToken, bool) {
+	for _, token := range list {
+		if t.IsEqual(token) {
+			return &token, true
+		}
+	}
+	return nil, false
 }
 
 func init() {

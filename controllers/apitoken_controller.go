@@ -175,6 +175,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Check if marked for deletion
+	// @TODO won't work if Unleash is unavailable
 	if token.GetDeletionTimestamp() != nil {
 		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
@@ -212,15 +213,41 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// Check if token exists in Unleash
+	// Get token(s) from Unleash
 	log.Info("Fetching token from Unleash for ApiToken")
-	apiToken, err := apiClient.GetAPIToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
+	apiTokens, err := apiClient.GetAPITokensByName(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
 	if err != nil {
 		log.Error(err, "Failed to get token from Unleash")
 		if err := r.updateStatusFailed(ctx, token, err, "TokenCheckFailed", "Failed to check if token exists in Unleash"); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
+	}
+
+	var apiToken *unleashclient.ApiToken
+
+	// Delete outdated tokens in Unleash
+	log.Info("Deleting outdated tokens in Unleash for ApiToken")
+	for _, t := range apiTokens.Tokens {
+		if !token.IsEqual(t) {
+			if r.ApiTokenUpdateEnabled {
+				span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
+				log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
+				err = apiClient.DeleteApiToken(ctx, t.Secret)
+				if err != nil {
+					if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
+						return ctrl.Result{}, err
+					}
+					return ctrl.Result{}, err
+				}
+			} else {
+				log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Token update is disabled in operator config")
+			}
+
+			continue
+		}
+
+		apiToken = &t
 	}
 
 	// Create token if it does not exist in Unleash
@@ -236,37 +263,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// Update token if it differs from the desired state
-	// Tokens in Unleash are immutable, so we need to delete the old token and create a new one
-	if apiToken != nil && !token.ApiTokenIsEqual(apiToken) {
-		span.AddEvent("Updating token in Unleash")
-
-		if r.ApiTokenUpdateEnabled {
-			span.AddEvent("Deleting old token in Unleash")
-			log.Info("Deleting old token in Unleash for ApiToken")
-			err = apiClient.DeleteApiToken(ctx, token.ApiTokenName(r.ApiTokenNameSuffix))
-			if err != nil {
-				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, err
-			}
-
-			span.AddEvent("Creating new token in Unleash")
-			log.Info("Creating new token in Unleash for ApiToken")
-			apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
-			if err != nil {
-				if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to create new token in Unleash"); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, err
-			}
-		} else {
-			log.Info("Token update is disabled in operator config")
-		}
-	}
-
-	span.AddEvent("Fetching token secret")
 	secret := resources.ApiTokenSecret(unleash, token, apiToken)
 	if err := controllerutil.SetControllerReference(token, secret, r.Scheme); err != nil {
 		log.Error(err, "Failed to set controller reference on token secret")
@@ -391,11 +387,25 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 // doFinalizerOperationsForToken will delete the ApiToken from Unleash
 func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
 	tokenName := token.ApiTokenName(r.ApiTokenNameSuffix)
-	err := unleashClient.DeleteApiToken(ctx, tokenName)
+	tokens, err := unleashClient.GetAPITokensByName(ctx, tokenName)
 	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", tokenName))
+		log.Error(err, fmt.Sprintf("Failed to get ApiToken %s from Unleash", tokenName))
+		return
 	}
-	log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", tokenName))
+
+	if tokens == nil || len(tokens.Tokens) == 0 {
+		log.Info(fmt.Sprintf("ApiToken %s not found in Unleash", tokenName))
+		return
+	}
+
+	for _, t := range tokens.Tokens {
+		log.Info(fmt.Sprintf("Deleting ApiToken %s from Unleash", t.TokenName))
+		err = unleashClient.DeleteApiToken(ctx, t.Secret)
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", t.TokenName))
+		}
+		log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", t.TokenName))
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

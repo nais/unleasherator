@@ -60,6 +60,32 @@
       "alias": null,
       "seenAt": "2023-12-11T09:10:52.906Z",
       "username": "admin"
+    },
+    {
+      "secret": "project-b:development.00000",
+      "tokenName": "token-duplicate",
+      "type": "client",
+      "project": "project-b",
+      "projects": [ "project-a", "project-b" ],
+      "environment": "development",
+      "expiresAt": null,
+      "createdAt": "2023-12-07T08:58:25.547Z",
+      "alias": null,
+      "seenAt": null,
+      "username": "token-multi-projects"
+    },
+    {
+      "secret": "project-c:development.00000",
+      "tokenName": "token-duplicate",
+      "type": "client",
+      "project": "project-c",
+      "projects": [ "project-c" ],
+      "environment": "development",
+      "expiresAt": null,
+      "createdAt": "2023-12-07T08:58:25.547Z",
+      "alias": null,
+      "seenAt": null,
+      "username": "token-multi-projects"
     }
   ]
 }
