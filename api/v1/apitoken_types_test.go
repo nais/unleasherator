@@ -258,3 +258,99 @@ func TestApiToken_ExistsInList(t *testing.T) {
 		})
 	}
 }
+func TestApiToken_Diff(t *testing.T) {
+	testCases := []struct {
+		name     string
+		apiToken *ApiToken
+		token    unleashclient.ApiToken
+		expected string
+	}{
+		{
+			name: "Type is different",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			token: unleashclient.ApiToken{
+				Type:        "FRONTEND",
+				Environment: "development",
+				Projects:    []string{"project1", "project2"},
+			},
+			expected: "Type: CLIENT -> FRONTEND",
+		},
+		{
+			name: "Environment is different",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			token: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "production",
+				Projects:    []string{"project1", "project2"},
+			},
+			expected: "Environment: development -> production",
+		},
+		{
+			name: "Projects are different",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			token: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"project3", "project4"},
+			},
+			expected: "Projects: [project1 project2] -> [project3 project4]",
+		},
+		{
+			name: "Multiple differences",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			token: unleashclient.ApiToken{
+				Type:        "FRONTEND",
+				Environment: "production",
+				Projects:    []string{"project3", "project4"},
+			},
+			expected: "Type: CLIENT -> FRONTEND, Environment: development -> production, Projects: [project1 project2] -> [project3 project4]",
+		},
+		{
+			name: "No differences",
+			apiToken: &ApiToken{
+				Spec: ApiTokenSpec{
+					Type:        "CLIENT",
+					Environment: "development",
+					Projects:    []string{"project1", "project2"},
+				},
+			},
+			token: unleashclient.ApiToken{
+				Type:        "CLIENT",
+				Environment: "development",
+				Projects:    []string{"project1", "project2"},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := tc.apiToken.Diff(tc.token)
+			assert.Equal(t, tc.expected, actual)
+		})
+	}
+}

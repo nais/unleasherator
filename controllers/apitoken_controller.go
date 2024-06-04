@@ -250,6 +250,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
+		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info(fmt.Sprintf("Token is outdated in Unleash. Token diff: %s", token.Diff(t)))
+
 		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
 		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
 
