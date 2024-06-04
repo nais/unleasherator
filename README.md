@@ -187,6 +187,8 @@ There's prometheus metrics covering <https://book.kubebuilder.io/reference/metri
 | unleasherator_unleash_status             | Gauge   | Status of Unleash instances                                 |
 | unleasherator_remoteunleash_status       | Gauge   | Status of RemoteUnleash instances                           |
 | unleasherator_api_token_status           | Gauge   | Status of ApiToken instances                                |
+| unleasherator_api_token_deleted_total    | Counter | Number of ApiTokens deleted from Unleash                    |
+| unleasherator_api_token_created_total    | Counter | Number of ApiTokens created in Unleash                      |
 | unleasherator_federation_published_total | Counter | Number of Unleash federation messages published with status |
 | unleasherator_federation_received_total  | Counter | Number of Unleash federation messages received with status  |
 

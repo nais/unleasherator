@@ -38,6 +38,22 @@ var (
 		},
 		[]string{"namespace", "name", "status"},
 	)
+
+	apiTokenDeletedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_apitoken_deleted_total",
+			Help: "Number of ApiTokens deleted from Unleash",
+		},
+		[]string{"namespace", "name"},
+	)
+
+	apiTokenCreatedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_apitoken_created_total",
+			Help: "Number of ApiTokens created in Unleash",
+		},
+		[]string{"namespace", "name"},
+	)
 )
 
 func init() {
@@ -234,6 +250,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
+		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
+		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
+
 		if !r.ApiTokenUpdateEnabled {
 			log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Token update is disabled in operator config")
 
@@ -245,7 +264,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
-		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
 		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
 		err = apiClient.DeleteApiToken(ctx, t.Secret)
 		if err != nil {
@@ -260,6 +278,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if apiToken == nil {
 		span.AddEvent("Creating token in Unleash")
 		log.Info("Creating token in Unleash for ApiToken")
+		apiTokenCreatedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
 		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
 		if err != nil {
 			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to create token in Unleash"); err != nil {
