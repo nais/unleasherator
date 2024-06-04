@@ -229,25 +229,31 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Delete outdated tokens in Unleash
 	log.Info("Deleting outdated tokens in Unleash for ApiToken")
 	for _, t := range apiTokens.Tokens {
-		if !token.IsEqual(t) {
-			if r.ApiTokenUpdateEnabled {
-				span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
-				log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
-				err = apiClient.DeleteApiToken(ctx, t.Secret)
-				if err != nil {
-					if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
-						return ctrl.Result{}, err
-					}
-					return ctrl.Result{}, err
-				}
-			} else {
-				log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Token update is disabled in operator config")
+		if token.IsEqual(t) {
+			apiToken = &t
+			continue
+		}
+
+		if !r.ApiTokenUpdateEnabled {
+			log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Token update is disabled in operator config")
+
+			// Set ApiToken so we don't create a new token if update is disabled
+			if apiToken == nil {
+				apiToken = &t
 			}
 
 			continue
 		}
 
-		apiToken = &t
+		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
+		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
+		err = apiClient.DeleteApiToken(ctx, t.Secret)
+		if err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Create token if it does not exist in Unleash
