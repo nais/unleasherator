@@ -132,7 +132,7 @@ jobs:
             ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           tags: |
             type=raw,value=main
-      - uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v6
         with:
           context: .
           tags: ${{ steps.metadata.outputs.tags }}
