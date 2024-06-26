@@ -28,9 +28,11 @@ func getApiToken(k8sClient client.Client, ctx context.Context, apiToken *unleash
 	return unsetConditionLastTransitionTime(apiToken.Status.Conditions), nil
 }
 
-var _ = Describe("ApiToken controller", func() {
-	existingTokens := unleashclient.ApiTokenResult{}
+var existingTokens = unleashclient.ApiTokenResult{
+	Tokens: []unleashclient.ApiToken{},
+}
 
+var _ = Describe("ApiToken controller", func() {
 	const (
 		ApiTokenNamespace = "default"
 		ApiTokenServerURL = "http://api-token-unleash.nais.io"
@@ -41,7 +43,7 @@ var _ = Describe("ApiToken controller", func() {
 	)
 
 	BeforeEach(func() {
-		existingTokens = unleashclient.ApiTokenResult{}
+		existingTokens.Tokens = []unleashclient.ApiToken{}
 
 		httpmock.Activate()
 		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
@@ -49,6 +51,8 @@ var _ = Describe("ApiToken controller", func() {
 		httpmock.RegisterResponder("GET", fmt.Sprintf("=~^%s/.+\\z", unleashclient.ApiTokensEndpoint),
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
+
+				fmt.Printf("path=%s tokens=%d\n", req.URL.Path, len(existingTokens.Tokens))
 				resp, err := httpmock.NewJsonResponse(200, existingTokens)
 
 				if err != nil {
@@ -372,6 +376,50 @@ var _ = Describe("ApiToken controller", func() {
 
 			By("By deleting the ApiToken")
 			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
+		})
+	})
+
+	Context("When dealing with duplicate Unleash tokens", func() {
+		It("Should count duplicate tokens", func() {
+			existingTokens.Tokens = []unleashclient.ApiToken{
+				{
+					Secret:      ApiTokenSecret,
+					Username:    "test-apitoken-duplicate-unleasherator",
+					Type:        "CLIENT",
+					Environment: "development",
+					Project:     "default",
+					Projects:    []string{"default"},
+					CreatedAt:   time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+				},
+				{
+					Secret:      ApiTokenSecret,
+					Username:    "test-apitoken-duplicate-unleasherator",
+					Type:        "CLIENT",
+					Environment: "development",
+					Project:     "default",
+					Projects:    []string{"default"},
+					CreatedAt:   time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC).Format(time.RFC3339),
+				},
+			}
+
+			ctx := context.Background()
+
+			apiTokenName := "test-apitoken-duplicate"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+
+			By("By creating a new RemoteUnleash")
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			By("By creating a new ApiToken")
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+
+			Expect(promGaugeVecVal(apiTokenExistingTokens, ApiTokenNamespace, apiTokenName, "development")).Should(Equal(2.0))
 		})
 	})
 })
