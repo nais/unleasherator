@@ -65,7 +65,7 @@ var (
 )
 
 func init() {
-	metrics.Registry.MustRegister(apiTokenStatus)
+	metrics.Registry.MustRegister(apiTokenStatus, apiTokenExistingTokens, apiTokenDeletedCounter, apiTokenCreatedCounter)
 }
 
 // ApiTokenReconciler reconciles a ApiToken object
