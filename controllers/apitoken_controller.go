@@ -306,22 +306,24 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	span.AddEvent("Deleting existing token secret")
-	log.Info("Deleting existing token secret for ApiToken")
-	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
-		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
+	span.AddEvent("Updating token secret")
+	log.Info("Updating existing token secret for ApiToken")
+	if err := r.Update(ctx, secret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to update existing token secret"); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
-	}
 
-	span.AddEvent("Creating token secret")
-	log.Info("Creating token secret for ApiToken")
-	if err := r.Create(ctx, secret); err != nil {
-		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
+		span.AddEvent("Creating token secret")
+		log.Info("Creating token secret for ApiToken")
+		if err := r.Create(ctx, secret); err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create new token secret"); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
 	}
 
 	// Set ApiToken status to success
