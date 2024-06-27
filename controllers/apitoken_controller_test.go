@@ -28,11 +28,7 @@ func getApiToken(k8sClient client.Client, ctx context.Context, apiToken *unleash
 	return unsetConditionLastTransitionTime(apiToken.Status.Conditions), nil
 }
 
-var existingTokens = unleashclient.ApiTokenResult{
-	Tokens: []unleashclient.ApiToken{},
-}
-
-var _ = Describe("ApiToken controller", func() {
+var _ = Describe("ApiToken controller", Ordered, func() {
 	const (
 		ApiTokenNamespace = "default"
 		ApiTokenServerURL = "http://api-token-unleash.nais.io"
@@ -41,6 +37,10 @@ var _ = Describe("ApiToken controller", func() {
 		timeout  = time.Second * 10
 		interval = time.Millisecond * 250
 	)
+
+	var existingTokens = unleashclient.ApiTokenResult{
+		Tokens: []unleashclient.ApiToken{},
+	}
 
 	BeforeEach(func() {
 		existingTokens.Tokens = []unleashclient.ApiToken{}
@@ -52,7 +52,7 @@ var _ = Describe("ApiToken controller", func() {
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
 
-				fmt.Printf("path=%s tokens=%d\n", req.URL.Path, len(existingTokens.Tokens))
+				fmt.Printf("GET path=%s tokens=%d\n", req.URL.Path, len(existingTokens.Tokens))
 				resp, err := httpmock.NewJsonResponse(200, existingTokens)
 
 				if err != nil {
@@ -64,6 +64,7 @@ var _ = Describe("ApiToken controller", func() {
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
 
+				fmt.Printf("POST path=%s tokens=%d\n", req.URL.Path, len(existingTokens.Tokens))
 				tokenRequest := unleashclient.ApiTokenRequest{}
 				if err := json.NewDecoder(req.Body).Decode(&tokenRequest); err != nil {
 					return httpmock.NewStringResponse(400, ""), nil
@@ -99,6 +100,7 @@ var _ = Describe("ApiToken controller", func() {
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
 
+				fmt.Printf("DELETE path=%s tokens=%d\n", req.URL.Path, len(existingTokens.Tokens))
 				urlPath := strings.Split(req.URL.Path, "/")
 				tokenSecret := urlPath[len(urlPath)-1]
 
@@ -381,6 +383,18 @@ var _ = Describe("ApiToken controller", func() {
 
 	Context("When dealing with duplicate Unleash tokens", func() {
 		It("Should count duplicate tokens", func() {
+			ctx := context.Background()
+
+			apiTokenName := "test-apitoken-duplicate"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+
+			By("By creating a new RemoteUnleash")
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
 			existingTokens.Tokens = []unleashclient.ApiToken{
 				{
 					Secret:      ApiTokenSecret,
@@ -402,22 +416,12 @@ var _ = Describe("ApiToken controller", func() {
 				},
 			}
 
-			ctx := context.Background()
-
-			apiTokenName := "test-apitoken-duplicate"
-			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
-
-			By("By creating a new RemoteUnleash")
-			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
-			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
-			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
-			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
-			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
-
 			By("By creating a new ApiToken")
 			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
 			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+
+			fmt.Printf("existingTokens=%+v\n", existingTokens)
 
 			Expect(promGaugeVecVal(apiTokenExistingTokens, ApiTokenNamespace, apiTokenName, "development")).Should(Equal(2.0))
 		})
