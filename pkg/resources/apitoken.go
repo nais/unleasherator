@@ -14,6 +14,9 @@ func ApiTokenSecret(unleash UnleashInstance, token *unleashv1.ApiToken, apiToken
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      token.Spec.SecretName,
 			Namespace: token.GetObjectMeta().GetNamespace(),
+			Annotations: map[string]string{
+				"reloader.stakater.com/match": "true",
+			},
 		},
 		Data: map[string][]byte{
 			unleashv1.ApiTokenSecretTokenEnv:    []byte(apiToken.Secret),
