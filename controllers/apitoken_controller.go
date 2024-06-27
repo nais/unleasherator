@@ -39,6 +39,14 @@ var (
 		[]string{"namespace", "name", "status"},
 	)
 
+	apiTokenExistingTokens = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_apitoken_existing_tokens",
+			Help: "Number of existing tokens in Unleash for ApiToken",
+		},
+		[]string{"namespace", "name", "environment"},
+	)
+
 	apiTokenDeletedCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_apitoken_deleted_total",
@@ -241,6 +249,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	var apiToken *unleashclient.ApiToken
+	log.WithValues("tokens", len(apiTokens.Tokens), "unleashApiTokenName", token.ApiTokenName(r.ApiTokenNameSuffix)).Info("Fetched tokens from Unleash for ApiToken")
+	apiTokenExistingTokens.WithLabelValues(token.Namespace, token.Name, token.Spec.Environment).Set(float64(len(apiTokens.Tokens)))
 
 	// Delete outdated tokens in Unleash
 	log.Info("Deleting outdated tokens in Unleash for ApiToken")
