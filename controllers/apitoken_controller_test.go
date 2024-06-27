@@ -364,6 +364,8 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE %s", fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint))]).Should(Equal(1))
 			Expect(promCounterVecVal(apiTokenDeletedCounter, ApiTokenNamespace, apiTokenName)).Should(Equal(1.0))
 			Expect(promCounterVecVal(apiTokenCreatedCounter, ApiTokenNamespace, apiTokenName)).Should(Equal(2.0))
+			Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenSecret)).Should(Succeed())
+			Expect(apiTokenSecret.Data[unleashv1.ApiTokenSecretEnvEnv]).Should(Equal([]byte("production")))
 
 			By("By updating the ApiToken with a new project")
 			apiTokenCreated.Spec.Projects = []string{"project1", "project2", "project3"}
@@ -375,6 +377,8 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE %s", fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint))]).Should(Equal(2))
 			Expect(promCounterVecVal(apiTokenDeletedCounter, ApiTokenNamespace, apiTokenName)).Should(Equal(2.0))
 			Expect(promCounterVecVal(apiTokenCreatedCounter, ApiTokenNamespace, apiTokenName)).Should(Equal(3.0))
+			Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenSecret)).Should(Succeed())
+			Expect(apiTokenSecret.Data[unleashv1.ApiTokenSecretProjectsEnv]).Should(Equal([]byte("project1,project2,project3")))
 
 			By("By deleting the ApiToken")
 			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
