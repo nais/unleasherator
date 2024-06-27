@@ -48,6 +48,9 @@ func TestApiTokenSecret(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-secret",
 			Namespace: "default",
+			Annotations: map[string]string{
+				"reloader.stakater.com/match": "true",
+			},
 		},
 		Data: map[string][]byte{
 			unleashv1.ApiTokenSecretTokenEnv:    []byte("test-secret"),
