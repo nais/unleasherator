@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.22.2
 
 require (
-	cloud.google.com/go/pubsub v1.38.0
+	cloud.google.com/go/pubsub v1.39.0
 	github.com/go-logr/logr v1.4.2
 	github.com/golangci/golangci-lint v1.59.1
 	github.com/google/uuid v1.6.0
@@ -22,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.27.0
 	google.golang.org/api v0.184.0
 	google.golang.org/grpc v1.64.0
-	google.golang.org/protobuf v1.34.1
+	google.golang.org/protobuf v1.34.2
 	k8s.io/api v0.29.6
 	k8s.io/apimachinery v0.29.6
 	k8s.io/client-go v0.29.6
@@ -77,7 +77,7 @@ require (
 require (
 	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
 	4d63.com/gochecknoglobals v0.2.1 // indirect
-	cloud.google.com/go v0.114.0 // indirect
+	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
 	github.com/4meepo/tagalign v1.3.4 // indirect
@@ -257,7 +257,7 @@ require (
 	golang.org/x/tools v0.22.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20240604185151-ef581f913117 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240528184218-531527333157 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240610135401-a8a62080eff3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240604185151-ef581f913117 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
