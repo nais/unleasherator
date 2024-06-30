@@ -63,7 +63,8 @@ type OpenTelemetryConfig struct {
 
 type Features struct {
 	// UnleashTokenUpdate enables updating tokens in Unleash.
-	ApiTokenUpdateEnabled bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
+	ApiTokenUpdateEnabled        bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
+	ApiTokenDeduplicationEnabled bool `envconfig:"FEATURE_API_TOKEN_DEDUPLICATION_ENABLED" default:"false"`
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {

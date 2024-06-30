@@ -39,6 +39,14 @@ var (
 		[]string{"namespace", "name", "status"},
 	)
 
+	apiTokenExistingTokens = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_apitoken_existing_tokens",
+			Help: "Number of existing tokens in Unleash for ApiToken",
+		},
+		[]string{"namespace", "name", "environment"},
+	)
+
 	apiTokenDeletedCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_apitoken_deleted_total",
@@ -57,7 +65,7 @@ var (
 )
 
 func init() {
-	metrics.Registry.MustRegister(apiTokenStatus)
+	metrics.Registry.MustRegister(apiTokenStatus, apiTokenExistingTokens, apiTokenDeletedCounter, apiTokenCreatedCounter)
 }
 
 // ApiTokenReconciler reconciles a ApiToken object
@@ -241,9 +249,10 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	var apiToken *unleashclient.ApiToken
+	log.WithValues("tokens", len(apiTokens.Tokens)).Info("Fetched token from Unleash for ApiToken")
+	apiTokenExistingTokens.WithLabelValues(token.Namespace, token.Name, token.Spec.Environment).Set(float64(len(apiTokens.Tokens)))
 
 	// Delete outdated tokens in Unleash
-	log.Info("Deleting outdated tokens in Unleash for ApiToken")
 	for _, t := range apiTokens.Tokens {
 		if token.IsEqual(t) {
 			apiToken = &t
@@ -296,22 +305,24 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	span.AddEvent("Deleting existing token secret")
-	log.Info("Deleting existing token secret for ApiToken")
-	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
-		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to delete existing token secret"); err != nil {
+	span.AddEvent("Updating token secret")
+	log.Info("Updating existing token secret for ApiToken")
+	if err := r.Update(ctx, secret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to update existing token secret"); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
-	}
 
-	span.AddEvent("Creating token secret")
-	log.Info("Creating token secret for ApiToken")
-	if err := r.Create(ctx, secret); err != nil {
-		if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create token secret"); err != nil {
+		span.AddEvent("Creating token secret")
+		log.Info("Creating token secret for ApiToken")
+		if err := r.Create(ctx, secret); err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create new token secret"); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
 	}
 
 	// Set ApiToken status to success

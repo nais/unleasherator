@@ -1,2 +1,9 @@
 resources:
 - monitor.yaml
+
+configurations:
+  - servicemonitor-matchlabels.yaml
+
+commonLabels:
+  app.kubernetes.io/name: prometheus
+  app.kubernetes.io/instance: system
