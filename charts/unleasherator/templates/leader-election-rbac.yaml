@@ -7,7 +7,6 @@ metadata:
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: unleasherator
     app.kubernetes.io/part-of: unleasherator
-    app.kubernets.io/managed-by: kustomize
   {{- include "unleasherator.labels" . | nindent 4 }}
 rules:
 - apiGroups:
