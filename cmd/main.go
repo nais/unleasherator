@@ -21,9 +21,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/controllers"
-	"github.com/nais/unleasherator/pkg/config"
-	"github.com/nais/unleasherator/pkg/o11y"
+	"github.com/nais/unleasherator/internal/config"
+	"github.com/nais/unleasherator/internal/controller"
+	"github.com/nais/unleasherator/internal/o11y"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -98,12 +98,12 @@ func main() {
 		defer publisher.Close()
 	}
 
-	if err = (&controllers.UnleashReconciler{
+	if err = (&controller.UnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
-		Federation: controllers.UnleashFederation{
+		Federation: controller.UnleashFederation{
 			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
 			Publisher: publisher,
 		},
@@ -112,13 +112,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
-	remoteUnleashReconciler := &controllers.RemoteUnleashReconciler{
+	remoteUnleashReconciler := &controller.RemoteUnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
 		Timeout:           cfg.Timeout,
-		Federation: controllers.RemoteUnleashFederation{
+		Federation: controller.RemoteUnleashFederation{
 			Enabled:     cfg.Federation.IsEnabled() && subscriber != nil,
 			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
@@ -129,7 +129,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
 	}
-	if err = (&controllers.ApiTokenReconciler{
+	if err = (&controller.ApiTokenReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		Recorder:              mgr.GetEventRecorderFor("api-token-controller"),

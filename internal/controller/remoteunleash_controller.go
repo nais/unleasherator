@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/config"
-	"github.com/nais/unleasherator/pkg/federation"
-	"github.com/nais/unleasherator/pkg/o11y"
-	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/nais/unleasherator/internal/config"
+	"github.com/nais/unleasherator/internal/federation"
+	"github.com/nais/unleasherator/internal/o11y"
+	"github.com/nais/unleasherator/internal/pb"
+	"github.com/nais/unleasherator/internal/utils"
 	"github.com/nais/unleasherator/pkg/unleashclient"
-	"github.com/nais/unleasherator/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"

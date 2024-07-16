@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/config"
-	mockfederation "github.com/nais/unleasherator/pkg/federation/mockfediration"
+	"github.com/nais/unleasherator/internal/config"
+	mockfederation "github.com/nais/unleasherator/internal/federation/mockfediration"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -57,8 +57,8 @@ var _ = BeforeSuite(func() {
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join("..", "config", "crd", "bases"),
-			filepath.Join("..", "config", "prometheus", "crd"),
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			filepath.Join("..", "..", "config", "prometheus", "crd"),
 		},
 		ErrorIfCRDPathMissing: true,
 	}

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/nais/unleasherator/internal/pb"
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

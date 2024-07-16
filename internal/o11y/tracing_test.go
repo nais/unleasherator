@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/nais/unleasherator/pkg/config"
+	"github.com/nais/unleasherator/internal/config"
 	"github.com/stretchr/testify/assert"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )

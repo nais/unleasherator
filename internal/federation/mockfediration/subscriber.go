@@ -3,7 +3,7 @@ package mockfederation
 import (
 	"context"
 
-	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/internal/federation"
 	"github.com/stretchr/testify/mock"
 )
 

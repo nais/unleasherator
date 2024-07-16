@@ -1,35 +1,35 @@
 componentConfig: true
 domain: nais.io
 layout:
-- go.kubebuilder.io/v4-alpha
+  - go.kubebuilder.io/v4
 projectName: unleasherator
 repo: github.com/nais/unleasherator
 resources:
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: nais.io
-  group: unleash
-  kind: Unleash
-  path: github.com/nais/unleasherator/api/v1
-  version: v1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: nais.io
-  group: unleash
-  kind: ApiToken
-  path: github.com/nais/unleasherator/api/v1
-  version: v1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
-  domain: nais.io
-  group: unleash
-  kind: RemoteUnleash
-  path: github.com/nais/unleasherator/api/v1
-  version: v1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: nais.io
+    group: unleash
+    kind: Unleash
+    path: github.com/nais/unleasherator/api/v1
+    version: v1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: nais.io
+    group: unleash
+    kind: ApiToken
+    path: github.com/nais/unleasherator/api/v1
+    version: v1
+  - api:
+      crdVersion: v1
+      namespaced: true
+    controller: true
+    domain: nais.io
+    group: unleash
+    kind: RemoteUnleash
+    path: github.com/nais/unleasherator/api/v1
+    version: v1
 version: "3"

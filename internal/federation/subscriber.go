@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/nais/unleasherator/pkg/pb"
-	"github.com/nais/unleasherator/pkg/resources"
+	"github.com/nais/unleasherator/internal/pb"
+	"github.com/nais/unleasherator/internal/resources"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"

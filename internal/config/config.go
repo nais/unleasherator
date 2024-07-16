@@ -7,7 +7,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
-	"github.com/nais/unleasherator/pkg/federation"
+	"github.com/nais/unleasherator/internal/federation"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"

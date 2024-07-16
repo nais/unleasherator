@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/o11y"
-	"github.com/nais/unleasherator/pkg/resources"
+	"github.com/nais/unleasherator/internal/o11y"
+	"github.com/nais/unleasherator/internal/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
 )

@@ -2,7 +2,7 @@ package federation
 
 import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/pb"
+	"github.com/nais/unleasherator/internal/pb"
 )
 
 func UnleashFederationInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {

@@ -1,4 +1,4 @@
-package controllers
+package controller
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/pkg/resources"
+	"github.com/nais/unleasherator/internal/resources"
 	"github.com/nais/unleasherator/pkg/unleashclient"
 )
 
