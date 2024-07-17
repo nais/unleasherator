@@ -230,7 +230,7 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
+			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
 			Expect(mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)).To(BeTrue())
 
 			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
