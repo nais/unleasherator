@@ -1,4 +1,4 @@
-package unleash_nais_io_v1
+package v1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 

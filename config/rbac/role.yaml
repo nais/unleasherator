@@ -152,6 +152,32 @@ rules:
 - apiGroups:
   - unleash.nais.io
   resources:
+  - releasechannels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - unleash.nais.io
+  resources:
   - remoteunleashes
   verbs:
   - create

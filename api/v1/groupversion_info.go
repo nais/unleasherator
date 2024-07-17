@@ -1,8 +1,7 @@
-// Package v1 contains API Schema definitions for the unleash.nais.io v1 API group
+// Package v1 contains API Schema definitions for the unleash v1 API group
 // +kubebuilder:object:generate=true
 // +groupName=unleash.nais.io
-// +versionName=v1
-package unleash_nais_io_v1
+package v1
 
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"

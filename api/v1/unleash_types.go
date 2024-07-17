@@ -1,4 +1,4 @@
-package unleash_nais_io_v1
+package v1
 
 import (
 	"context"
@@ -47,10 +47,13 @@ type UnleashSpec struct {
 	// +kubebuilder:default=1
 	Size int32 `json:"size,omitempty"`
 
-	// CustomImage points to a custom image, which overrides all other version settings.
-	// Use at your own risk.
+	// CustomImage is the custom Docker image to use for the Unleash deployment.
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
+
+	// ReleaseChannel is the release channel to use for the Unleash deployment.
+	// +kubebuilder:validation:Optional
+	ReleaseChannel string `json:"releaseChannel,omitempty"`
 
 	// Prometheus defines the Prometheus metrics collection configuration.
 	// +kubebuilder:validation:Optional

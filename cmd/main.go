@@ -141,6 +141,13 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)
 	}
+	if err = (&controller.ReleaseChannelReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ReleaseChannel")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {
