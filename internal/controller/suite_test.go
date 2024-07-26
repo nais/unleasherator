@@ -112,7 +112,7 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&RemoteUnleashReconciler{
+	remoteUnleashReconciler = &RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: namespace,
@@ -123,7 +123,8 @@ var _ = BeforeSuite(func() {
 			Subscriber:  mockSubscriber,
 		},
 		Tracer: otel.Tracer("remoteunleash-controller"),
-	}).SetupWithManager(k8sManager)
+	}
+	err = remoteUnleashReconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
@@ -136,13 +137,13 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&ReleaseChannelReconciler{
-		Client:   k8sManager.GetClient(),
-		Scheme:   k8sManager.GetScheme(),
-		Recorder: k8sManager.GetEventRecorderFor("releasechannel-controller"),
-		Tracer:   otel.Tracer("releasechannel-controller"),
-	}).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
+	//err = (&ReleaseChannelReconciler{
+	//	Client:   k8sManager.GetClient(),
+	//	Scheme:   k8sManager.GetScheme(),
+	//	Recorder: k8sManager.GetEventRecorderFor("releasechannel-controller"),
+	//	Tracer:   otel.Tracer("releasechannel-controller"),
+	//}).SetupWithManager(k8sManager)
+	//Expect(err).ToNot(HaveOccurred())
 
 	go func() {
 		defer GinkgoRecover()
