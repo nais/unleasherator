@@ -34,6 +34,8 @@ func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1
 
 var _ = Describe("Unleash controller", func() {
 	const (
+		UnleashImage     = unleashv1.UnleashImage("unleashorg/unleash-server:6.0.0")
+		UnleashPort      = unleashv1.UnleashPort(4242)
 		UnleashNamespace = "default"
 		UnleashVersion   = "v5.1.2"
 
@@ -99,13 +101,13 @@ var _ = Describe("Unleash controller", func() {
 				Federation: unleashv1.UnleashFederationConfig{},
 			})
 
-			existingDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme)
+			existingDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme, UnleashPort, UnleashImage)
 			Expect(err).To(BeNil())
 			existingDep.ObjectMeta.OwnerReferences = []metav1.OwnerReference{}
 			Expect(k8sClient.Create(ctx, existingDep)).Should(Succeed())
 			Expect(k8sClient.Get(ctx, unleash.NamespacedName(), existingDep)).Should(Succeed())
 
-			newDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme)
+			newDep, err := resources.DeploymentForUnleash(unleash, scheme.Scheme, UnleashPort, UnleashImage)
 			Expect(err).To(BeNil())
 			newDep.ObjectMeta.OwnerReferences = []metav1.OwnerReference{}
 

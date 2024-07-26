@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
 
 const (
@@ -49,6 +51,12 @@ type Config struct {
 	WebhookPort                int `envconfig:"WEBHOOK_PORT" default:"9443"`
 	Features                   Features
 	OpenTelemetry              OpenTelemetryConfig
+	Unleash                    UnleashConfig
+}
+
+type UnleashConfig struct {
+	Image unleashv1.UnleashImage `envconfig:"UNLEASH_IMAGE" default:"unleashorg/unleash-server:6.0.0"`
+	Port  unleashv1.UnleashPort  `envconfig:"UNLEASH_PORT" default:"4242"`
 }
 
 type LogConfig struct {
@@ -65,6 +73,7 @@ type Features struct {
 	// UnleashTokenUpdate enables updating tokens in Unleash.
 	ApiTokenUpdateEnabled        bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
 	ApiTokenDeduplicationEnabled bool `envconfig:"FEATURE_API_TOKEN_DEDUPLICATION_ENABLED" default:"false"`
+	ReleaseChannelEnabled        bool `envconfig:"FEATURE_RELEASE_CHANNEL_ENABLED" default:"false"`
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {

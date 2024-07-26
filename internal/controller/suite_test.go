@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -34,6 +35,7 @@ const namespace = "default"
 var (
 	cfg                     *rest.Config
 	k8sClient               client.Client // You'll be using this client in your tests.
+	k8sManager              manager.Manager
 	testEnv                 *envtest.Environment
 	ctx                     context.Context
 	cancel                  context.CancelFunc
@@ -81,7 +83,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 		Metrics: server.Options{
 			BindAddress: "0", // disable firewall prompt on mac
@@ -103,10 +105,14 @@ var _ = BeforeSuite(func() {
 			Publisher: mockPublisher,
 		},
 		Tracer: otel.Tracer("unleash-controller"),
+		UnleashConfig: config.UnleashConfig{
+			Image: "unleash:latest",
+			Port:  4242,
+		},
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	remoteUnleashReconciler = &RemoteUnleashReconciler{
+	err = (&RemoteUnleashReconciler{
 		Client:            k8sManager.GetClient(),
 		Scheme:            k8sManager.GetScheme(),
 		OperatorNamespace: namespace,
@@ -117,8 +123,7 @@ var _ = BeforeSuite(func() {
 			Subscriber:  mockSubscriber,
 		},
 		Tracer: otel.Tracer("remoteunleash-controller"),
-	}
-	err = remoteUnleashReconciler.SetupWithManager(k8sManager)
+	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
@@ -128,6 +133,14 @@ var _ = BeforeSuite(func() {
 		ApiTokenNameSuffix:    ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled: true,
 		Tracer:                otel.Tracer("apitoken-controller"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&ReleaseChannelReconciler{
+		Client:   k8sManager.GetClient(),
+		Scheme:   k8sManager.GetScheme(),
+		Recorder: k8sManager.GetEventRecorderFor("releasechannel-controller"),
+		Tracer:   otel.Tracer("releasechannel-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

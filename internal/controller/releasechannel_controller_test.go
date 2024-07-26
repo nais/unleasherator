@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.opentelemetry.io/otel"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -53,8 +54,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ReleaseChannelReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Recorder: k8sManager.GetEventRecorderFor("releasechannel-controller"),
+				Tracer:   otel.Tracer("releasechannel-controller"),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

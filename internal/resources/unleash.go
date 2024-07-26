@@ -2,7 +2,6 @@ package resources
 
 import (
 	"fmt"
-	"os"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/utils"
@@ -18,14 +17,6 @@ import (
 
 // Defaults for the Unleash custom resource
 const (
-	// DefaultUnleashImageRegistry is the default registry for the Unleash image
-	DefaultUnleashImageRegistry = "europe-north1-docker.pkg.dev/nais-io/nais/images"
-	// DefaultUnleashImageName is the default image name used for the Unleash deployment
-	DefaultUnleashImageName = "unleash-v4"
-	// DefaultUnleashVersion is the default version used for the Unleash deployment
-	DefaultUnleashVersion = "v4.23.1"
-	// DefaultUnleashPort is the default port used for the Unleash deployment
-	DefaultUnleashPort = 4242
 	// DefaultUnleashPortName is the default port name used for the Unleash deployment
 	DefaultUnleashPortName = "http"
 )
@@ -133,7 +124,7 @@ func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 	return sa, nil
 }
 
-func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*corev1.Service, error) {
+func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, port unleashv1.UnleashPort) (*corev1.Service, error) {
 	ls := labelsForUnleash(unleash.GetName())
 
 	svc := &corev1.Service{
@@ -147,7 +138,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 				{
 					Name:       DefaultUnleashPortName,
 					Port:       80,
-					TargetPort: intstr.FromInt(DefaultUnleashPort),
+					TargetPort: intstr.FromInt(int(port)),
 				},
 			},
 			Selector: ls,
@@ -161,7 +152,7 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 	return svc, nil
 }
 
-func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*appsv1.Deployment, error) {
+func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme, port unleashv1.UnleashPort, image unleashv1.UnleashImage) (*appsv1.Deployment, error) {
 	ls := labelsForUnleash(unleash.GetName())
 	podLabels := podLabelsForUnleash(unleash.GetName(), unleash.Spec.PodLabels)
 	podAnnotations := podAnnotationsForUnleash(unleash.GetName(), unleash.Spec.PodAnnotations)
@@ -238,7 +229,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 							ProbeHandler: corev1.ProbeHandler{
 								HTTPGet: &corev1.HTTPGetAction{
 									Path:   "/health",
-									Port:   intstr.FromInt(DefaultUnleashPort),
+									Port:   intstr.FromInt(int(port)),
 									Scheme: corev1.URISchemeHTTP,
 								},
 							},
@@ -248,7 +239,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 							SuccessThreshold:    1,
 							FailureThreshold:    3,
 						},
-						Image:           ImageForUnleash(unleash),
+						Image:           string(image),
 						Name:            "unleash",
 						ImagePullPolicy: corev1.PullAlways,
 						// Ensure restrictive context for the container
@@ -274,7 +265,7 @@ func DeploymentForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*
 							},
 						},
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: DefaultUnleashPort,
+							ContainerPort: int32(port),
 							Name:          DefaultUnleashPortName,
 							Protocol:      corev1.ProtocolTCP,
 						}},
@@ -509,20 +500,6 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 		return nil, err
 	}
 	return np, nil
-}
-
-// ImageForUnleash gets the Operand image which is managed by this controller
-// from the UNLEASH_IMAGE environment variable defined in the config/manager/manager.yaml
-func ImageForUnleash(unleash *unleashv1.Unleash) string {
-	if unleash.Spec.CustomImage != "" {
-		return unleash.Spec.CustomImage
-	}
-	var imageEnvVar = "UNLEASH_IMAGE"
-	image, found := os.LookupEnv(imageEnvVar)
-	if !found {
-		image = fmt.Sprintf("%s/%s:%s", DefaultUnleashImageRegistry, DefaultUnleashImageName, DefaultUnleashVersion)
-	}
-	return image
 }
 
 // envVarsForUnleash returns the environment variables for the Unleash Deployment

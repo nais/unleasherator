@@ -40,6 +40,12 @@ type Unleash struct {
 	Status UnleashStatus `json:"status,omitempty"`
 }
 
+// UnleashImage defines a container image for Unleash
+type UnleashImage string
+
+// UnleashPort defaines a http port for Unleash
+type UnleashPort int
+
 // UnleashSpec defines the desired state of Unleash
 // UnleashSpec represents the specification for an Unleash deployment.
 type UnleashSpec struct {
@@ -49,11 +55,11 @@ type UnleashSpec struct {
 
 	// CustomImage is the custom Docker image to use for the Unleash deployment.
 	// +kubebuilder:validation:Optional
-	CustomImage string `json:"customImage,omitempty"`
+	CustomImage UnleashImage `json:"customImage,omitempty"`
 
 	// ReleaseChannel is the release channel to use for the Unleash deployment.
 	// +kubebuilder:validation:Optional
-	ReleaseChannel string `json:"releaseChannel,omitempty"`
+	ReleaseChannel UnleashReleaseChannelConfig `json:"releaseChannel,omitempty"`
 
 	// Prometheus defines the Prometheus metrics collection configuration.
 	// +kubebuilder:validation:Optional
@@ -111,6 +117,12 @@ type UnleashSpec struct {
 	// PodLabels are additional labels to add to the Unleash pods.
 	// +kubebuilder:validation:Optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
+}
+
+type UnleashReleaseChannelConfig struct {
+	// Name is the name of the release channel
+	// +kubebuilder:validation:Required
+	Name string `json:"name,omitempty"`
 }
 
 // UnleashFederationConfig defines the configuration for Unleash federation
@@ -286,6 +298,10 @@ type UnleashStatus struct {
 	// Version is the reported version of the Unleash server
 	// +kubebuilder:default="unknown"
 	Version string `json:"version,omitempty"`
+
+	// ReleaseChannelImage is the image used by the release channel
+	// +kubebuilder:default=""
+	ReleaseChannelImage string `json:"releaseChannelImage,omitempty"`
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {
@@ -302,9 +318,9 @@ func (u *Unleash) NamespacedNameWithSuffix(suffix string) types.NamespacedName {
 	}
 }
 
-func (u *Unleash) NamespacedOperatorSecretName(namespace string) types.NamespacedName {
+func (u *Unleash) NamespacedOperatorSecretName(operatorNamespace string) types.NamespacedName {
 	return types.NamespacedName{
-		Namespace: namespace,
+		Namespace: operatorNamespace,
 		Name:      u.GetOperatorSecretName(),
 	}
 }
@@ -336,10 +352,32 @@ func (u *Unleash) PublicWebURL() string {
 	return fmt.Sprintf("https://%s", u.Spec.WebIngress.Host)
 }
 
-func (u *Unleash) AdminToken(ctx context.Context, client client.Client, namespace string) ([]byte, error) {
+func (u *Unleash) Image(ctx context.Context, client client.Client, defaultImage UnleashImage) (UnleashImage, error) {
+	if u.Spec.CustomImage != "" {
+		return u.Spec.CustomImage, nil
+	}
+
+	if u.Spec.ReleaseChannel.Name != "" {
+		releaseChannel := &ReleaseChannel{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: u.Namespace,
+				Name:      u.Spec.ReleaseChannel.Name,
+			},
+		}
+		if err := client.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+			return "", err
+		}
+
+		return releaseChannel.Spec.Image, nil
+	}
+
+	return defaultImage, nil
+}
+
+func (u *Unleash) AdminToken(ctx context.Context, client client.Client, operatorNamespace string) ([]byte, error) {
 	secret := &corev1.Secret{}
 
-	err := client.Get(ctx, u.NamespacedOperatorSecretName(namespace), secret)
+	err := client.Get(ctx, u.NamespacedOperatorSecretName(operatorNamespace), secret)
 	if err != nil {
 		return nil, err
 	}
@@ -347,8 +385,8 @@ func (u *Unleash) AdminToken(ctx context.Context, client client.Client, namespac
 	return secret.Data[UnleashSecretTokenKey], nil
 }
 
-func (u *Unleash) ApiClient(ctx context.Context, client client.Client, namespace string) (*unleashclient.Client, error) {
-	token, err := u.AdminToken(ctx, client, namespace)
+func (u *Unleash) ApiClient(ctx context.Context, client client.Client, operatorNamespace string) (*unleashclient.Client, error) {
+	token, err := u.AdminToken(ctx, client, operatorNamespace)
 	if err != nil {
 		return nil, err
 	}

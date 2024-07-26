@@ -107,11 +107,13 @@ func main() {
 			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
 			Publisher: publisher,
 		},
-		Tracer: tp.Tracer("unleash-controller"),
+		Tracer:        tp.Tracer("unleash-controller"),
+		UnleashConfig: cfg.Unleash,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Unleash")
 		os.Exit(1)
 	}
+
 	remoteUnleashReconciler := &controller.RemoteUnleashReconciler{
 		Client:            mgr.GetClient(),
 		Scheme:            mgr.GetScheme(),
@@ -129,6 +131,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
 	}
+
 	if err = (&controller.ApiTokenReconciler{
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
@@ -141,9 +144,11 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)
 	}
+
 	if err = (&controller.ReleaseChannelReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Tracer: tp.Tracer("releasechannel-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ReleaseChannel")
 		os.Exit(1)

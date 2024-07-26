@@ -3787,7 +3787,11 @@ spec:
               releaseChannel:
                 description: ReleaseChannel is the release channel to use for the
                   Unleash deployment.
-                type: string
+                properties:
+                  name:
+                    description: Name is the name of the release channel
+                    type: string
+                type: object
               resources:
                 default:
                   limits:
@@ -3992,6 +3996,11 @@ spec:
                   This is used for kubectl printing purposes. Rather than relying on this
                   value, check the conditions instead.
                 type: boolean
+              releaseChannelImage:
+                default: ""
+                description: ReleaseChannelImage is the image used by the release
+                  channel
+                type: string
               version:
                 default: unknown
                 description: Version is the reported version of the Unleash server

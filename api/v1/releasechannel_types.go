@@ -2,13 +2,14 @@ package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 // ReleaseChannelSpec defines the desired state of ReleaseChannel
 type ReleaseChannelSpec struct {
 	// Image is the Docker image to deploy for the release channel.
 	// +kubebuilder:validation:Required
-	Image string `json:"image,omitempty"`
+	Image UnleashImage `json:"image,omitempty"`
 
 	// Strategy defines the deployment strategy.
 	Strategy ReleaseChannelStrategy `json:"strategy,omitempty"`
@@ -79,6 +80,24 @@ type ReleaseChannel struct {
 
 	Spec   ReleaseChannelSpec   `json:"spec,omitempty"`
 	Status ReleaseChannelStatus `json:"status,omitempty"`
+}
+
+// IsCandidate checks if the release channel is a candidate for the given Unleash instance.
+func (rc *ReleaseChannel) IsCandidate(u *Unleash) bool {
+	return rc.Name == u.Spec.ReleaseChannel.Name && rc.Namespace == u.Namespace
+}
+
+// ShouldUpdate checks if the release channel should update the given Unleash instance.
+func (rc *ReleaseChannel) ShouldUpdate(u *Unleash) bool {
+	return rc.IsCandidate(u) && rc.Spec.Image != u.Spec.CustomImage
+}
+
+// NamespacedName returns the namespaced name of the release channel resource.
+func (rc *ReleaseChannel) NamespacedName() types.NamespacedName {
+	return types.NamespacedName{
+		Namespace: rc.Namespace,
+		Name:      rc.Name,
+	}
 }
 
 //+kubebuilder:object:root=true

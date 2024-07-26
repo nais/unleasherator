@@ -30,6 +30,7 @@ import (
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/internal/config"
 	"github.com/nais/unleasherator/internal/federation"
 	"github.com/nais/unleasherator/internal/o11y"
 	"github.com/nais/unleasherator/internal/resources"
@@ -74,6 +75,7 @@ type UnleashReconciler struct {
 	OperatorNamespace string
 	Federation        UnleashFederation
 	Tracer            trace.Tracer
+	UnleashConfig     config.UnleashConfig
 }
 
 type UnleashFederation struct {
@@ -636,7 +638,13 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithName("unleash")
 
-	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
+	port := r.UnleashConfig.Port
+	image, err := unleash.Image(ctx, r.Client, r.UnleashConfig.Image)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme, port, image)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -676,7 +684,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithName("unleash")
 
-	newSvc, err := resources.ServiceForUnleash(unleash, r.Scheme)
+	newSvc, err := resources.ServiceForUnleash(unleash, r.Scheme, r.UnleashConfig.Port)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
