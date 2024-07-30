@@ -1,11 +1,11 @@
-package unleash_nais_io_v1
+package v1
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/nais/unleasherator/internal/utils"
 	"github.com/nais/unleasherator/pkg/unleashclient"
-	"github.com/nais/unleasherator/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )

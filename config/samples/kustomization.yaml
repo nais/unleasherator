@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- unleash_v1_releasechannel.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization

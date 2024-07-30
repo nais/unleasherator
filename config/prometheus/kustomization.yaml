@@ -2,8 +2,12 @@ resources:
 - monitor.yaml
 
 configurations:
-  - servicemonitor-matchlabels.yaml
+- servicemonitor-matchlabels.yaml
 
-commonLabels:
-  app.kubernetes.io/name: prometheus
-  app.kubernetes.io/instance: system
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+- includeSelectors: true
+  pairs:
+    app.kubernetes.io/instance: system
+    app.kubernetes.io/name: prometheus
