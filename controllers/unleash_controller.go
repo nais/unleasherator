@@ -170,7 +170,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Set status to unknown if no status is set
-	if unleash.Status.Conditions == nil || len(unleash.Status.Conditions) == 0 {
+	if len(unleash.Status.Conditions) == 0 {
 		span.AddEvent("Setting status as unknown for Unleash")
 		log.Info("Setting status as unknown for Unleash")
 		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{

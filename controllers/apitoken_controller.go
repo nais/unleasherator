@@ -113,7 +113,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Set status to unknown if not set
-	if token.Status.Conditions == nil || len(token.Status.Conditions) == 0 {
+	if len(token.Status.Conditions) == 0 {
 		log.Info("Setting status to unknown for ApiToken")
 
 		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
@@ -336,21 +336,22 @@ func (r *ApiTokenReconciler) getUnleashInstance(ctx context.Context, token *unle
 		return nil, fmt.Errorf("unsupported api version: %s", token.Spec.UnleashInstance.ApiVersion)
 	}
 
-	if token.Spec.UnleashInstance.Kind == "Unleash" {
+	switch token.Spec.UnleashInstance.Kind {
+	case "Unleash":
 		unleash := &unleashv1.Unleash{}
 		if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
 			return nil, err
 		}
 
 		return unleash, nil
-	} else if token.Spec.UnleashInstance.Kind == "RemoteUnleash" {
+	case "RemoteUnleash":
 		unleash := &unleashv1.RemoteUnleash{}
 		if err := r.Get(ctx, types.NamespacedName{Name: token.Spec.UnleashInstance.Name, Namespace: token.Namespace}, unleash); err != nil {
 			return nil, err
 		}
 
 		return unleash, nil
-	} else {
+	default:
 		return nil, fmt.Errorf("unsupported api kind: %s", token.Spec.UnleashInstance.Kind)
 	}
 }

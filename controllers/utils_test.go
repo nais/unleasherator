@@ -8,7 +8,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -164,7 +163,7 @@ func apiTokenSuccessCondition() metav1.Condition {
 	}
 }
 
-func apiTokenSecretEventually(ctx context.Context, name types.NamespacedName, secret *v1.Secret) func() (map[string][]byte, error) {
+func apiTokenSecretEventually(ctx context.Context, name types.NamespacedName, secret *corev1.Secret) func() (map[string][]byte, error) {
 	return func() (map[string][]byte, error) {
 		err := k8sClient.Get(ctx, name, secret)
 		if err != nil {
