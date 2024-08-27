@@ -34,7 +34,7 @@ func (p *publisher) Close() error {
 	return p.client.Close()
 }
 
-func (p *publisher) otelSpanOptions(msg *pubsub.Message) []trace.SpanStartOption {
+func (p *publisher) otelSpanOptions() []trace.SpanStartOption {
 	return []trace.SpanStartOption{
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
@@ -65,7 +65,7 @@ func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, api
 	}
 
 	// Set pubsub information on span
-	spanOpts := p.otelSpanOptions(msg)
+	spanOpts := p.otelSpanOptions()
 
 	// Inject trace context into message attributes
 	otel.GetTextMapPropagator().Inject(ctx, propagation.MapCarrier(msg.Attributes))
