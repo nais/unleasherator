@@ -145,7 +145,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set status to unknown if no status is set
-	if remoteUnleash.Status.Conditions == nil || len(remoteUnleash.Status.Conditions) == 0 {
+	if len(remoteUnleash.Status.Conditions) == 0 {
 		log.Info("Setting status to unknown for RemoteUnleash")
 
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{

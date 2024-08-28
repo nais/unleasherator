@@ -27,23 +27,6 @@ rules:
   - ""
   resources:
   - secrets
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - secrets/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ""
-  resources:
   - services
   verbs:
   - create
@@ -56,6 +39,7 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - secrets/finalizers
   - services/finalizers
   verbs:
   - update
@@ -75,31 +59,6 @@ rules:
   - networking.k8s.io
   resources:
   - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - networking.k8s.io
-  resources:
   - networkpolicies
   verbs:
   - create
@@ -112,12 +71,14 @@ rules:
 - apiGroups:
   - networking.k8s.io
   resources:
+  - ingresses/finalizers
   - networkpolicies/finalizers
   verbs:
   - update
 - apiGroups:
   - networking.k8s.io
   resources:
+  - ingresses/status
   - networkpolicies/status
   verbs:
   - get
@@ -127,57 +88,7 @@ rules:
   - unleash.nais.io
   resources:
   - apitokens
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - apitokens/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - apitokens/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
   - remoteunleashes
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - remoteunleashes/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
-  - remoteunleashes/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - unleash.nais.io
-  resources:
   - unleashes
   verbs:
   - create
@@ -190,12 +101,16 @@ rules:
 - apiGroups:
   - unleash.nais.io
   resources:
+  - apitokens/finalizers
+  - remoteunleashes/finalizers
   - unleashes/finalizers
   verbs:
   - update
 - apiGroups:
   - unleash.nais.io
   resources:
+  - apitokens/status
+  - remoteunleashes/status
   - unleashes/status
   verbs:
   - get
