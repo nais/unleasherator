@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.23.0
 
 require (
-	cloud.google.com/go/pubsub v1.42.0
+	cloud.google.com/go/pubsub v1.43.0
 	github.com/go-logr/logr v1.4.2
 	github.com/golangci/golangci-lint v1.60.3
 	github.com/google/uuid v1.6.0
@@ -250,7 +250,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/mod v0.20.0 // indirect
 	golang.org/x/net v0.29.0 // indirect
-	golang.org/x/oauth2 v0.22.0 // indirect
+	golang.org/x/oauth2 v0.23.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/term v0.24.0 // indirect
