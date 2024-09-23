@@ -20,8 +20,8 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.30.0
 	go.opentelemetry.io/otel/sdk v1.30.0
 	go.opentelemetry.io/otel/trace v1.30.0
-	google.golang.org/api v0.197.0
-	google.golang.org/grpc v1.66.1
+	google.golang.org/api v0.198.0
+	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.34.2
 	k8s.io/api v0.31.1
 	k8s.io/apimachinery v0.31.1
@@ -32,7 +32,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/auth v0.9.3 // indirect
+	cloud.google.com/go/auth v0.9.4 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.4 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Antonboom/testifylint v1.4.3 // indirect
@@ -81,7 +81,7 @@ require (
 	4d63.com/gocheckcompilerdirectives v1.2.1 // indirect
 	4d63.com/gochecknoglobals v0.2.1 // indirect
 	cloud.google.com/go v0.115.1 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
+	cloud.google.com/go/compute/metadata v0.5.1 // indirect
 	cloud.google.com/go/iam v1.2.0 // indirect
 	github.com/4meepo/tagalign v1.3.4 // indirect
 	github.com/Abirdcfly/dupword v0.1.1 // indirect
