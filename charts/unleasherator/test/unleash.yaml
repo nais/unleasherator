@@ -1,0 +1,37 @@
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-test-unleash
+  labels:
+    app.kubernetes.io/component: manager
+    app.kubernetes.io/created-by: unleasherator
+    app.kubernetes.io/part-of: unleasherator
+    control-plane: controller-manager
+  {{- include "unleasherator.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+spec:
+  size: 1
+  database:
+    secretName: postgres-postgresql
+    secretPassKey: postgres-password
+    host: postgres-postgresql
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql
+        ports:
+          - protocol: TCP
+            port: 5432
+
