@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.23.0
 
 require (
-	cloud.google.com/go/pubsub v1.43.0
+	cloud.google.com/go/pubsub v1.44.0
 	github.com/go-logr/logr v1.4.2
 	github.com/golangci/golangci-lint v1.61.0
 	github.com/google/uuid v1.6.0
@@ -82,7 +82,7 @@ require (
 	4d63.com/gochecknoglobals v0.2.1 // indirect
 	cloud.google.com/go v0.115.1 // indirect
 	cloud.google.com/go/compute/metadata v0.5.2 // indirect
-	cloud.google.com/go/iam v1.2.0 // indirect
+	cloud.google.com/go/iam v1.2.1 // indirect
 	github.com/4meepo/tagalign v1.3.4 // indirect
 	github.com/Abirdcfly/dupword v0.1.1 // indirect
 	github.com/Antonboom/errname v0.1.13 // indirect
