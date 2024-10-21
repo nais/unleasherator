@@ -673,8 +673,8 @@ github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kd
 github.com/apache/arrow/go/v10 v10.0.1/go.mod h1:YvhnlEePVnBS4+0z3fhPfUy7W1Ikj0Ih0vcRo/gZ1M0=
 github.com/apache/arrow/go/v11 v11.0.0/go.mod h1:Eg5OsL5H+e299f7u5ssuXsuHQVEGC4xei5aX110hRiI=
 github.com/apache/thrift v0.16.0/go.mod h1:PHK3hniurgQaNMZYaCLEqXKsYK8upmhPbmdP2FXSqgU=
-github.com/arttor/helmify v0.4.13 h1:2Y0cnTjaQMGtPnsiAegF9nXfWgVrtcbIzLV3Fj/I9SI=
-github.com/arttor/helmify v0.4.13/go.mod h1:jHLtbiOoxmUIIZYLGtGnZWAzjhR6NkMPED/WA2loCVc=
+github.com/arttor/helmify v0.4.14 h1:ihIAVOvwE3adGrnoAv923SRzT5wEeXu2XFnHMlg1h4Q=
+github.com/arttor/helmify v0.4.14/go.mod h1:jHLtbiOoxmUIIZYLGtGnZWAzjhR6NkMPED/WA2loCVc=
 github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 h1:4daAzAu0S6Vi7/lbWECcX0j45yZReDZ56BQsrVBOEEY=
 github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535/go.mod h1:oGkLhpf+kjZl6xBf758TQhh5XrAeiJv/7FRz/2spLIg=
 github.com/ashanbrown/forbidigo v1.6.0 h1:D3aewfM37Yb3pxHujIPSpTf6oQk9sc9WZi8gerOIVIY=
