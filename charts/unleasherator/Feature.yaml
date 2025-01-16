@@ -9,13 +9,15 @@ environmentKinds:
 values:
   controllerManager.manager.env.apiTokenNameSuffix:
     computed:
-      template: '"{{ .Env.name }}"'
+      template: |
+        {{ if and (eq .Tenant.Name "nav") (eq .Env.name "dev") }}dev-gcp{{ else if and (eq .Tenant.Name "nav") (eq .Env.name "prod") }}prod-gcp{{ else }}{{ .Env.name }}{{ end }}
     config:
       type: string
   # Federation
   controllerManager.manager.env.clusterName:
     computed:
-      template: '"{{ .Env.name }}"'
+      template: |
+        {{ if and (eq .Tenant.Name "nav") (eq .Env.name "dev") }}dev-gcp{{ else if and (eq .Tenant.Name "nav") (eq .Env.name "prod") }}prod-gcp{{ else }}{{ .Env.name }}{{ end }}
     config:
       type: string
   controllerManager.manager.env.federationPubsubGcpProjectId:
