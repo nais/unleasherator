@@ -13,6 +13,6 @@ spec:
   type: {{ .Values.metricsService.type }}
   selector:
     control-plane: controller-manager
-  {{- include "unleasherator.selectorLabels" . | nindent 4 }}
+    {{- include "unleasherator.selectorLabels" . | nindent 4 }}
   ports:
-	{{- .Values.metricsService.ports | toYaml | nindent 2 }}
+  {{- .Values.metricsService.ports | toYaml | nindent 2 }}
