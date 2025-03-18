@@ -81,7 +81,7 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 
 				existingTokens.Tokens = append(existingTokens.Tokens, unleashclient.ApiToken{
 					Secret:      ApiTokenSecret,
-					Username:    tokenRequest.Username,
+					TokenName:   tokenRequest.Username,
 					Type:        strings.ToLower(tokenRequest.Type),
 					Environment: tokenRequest.Environment,
 					Project:     tokenRequest.Projects[0],
@@ -219,7 +219,7 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).Should(Equal(1))
 			Expect(existingTokens.Tokens).Should(HaveLen(1))
-			Expect(existingTokens.Tokens[0].Username).Should(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
+			Expect(existingTokens.Tokens[0].TokenName).Should(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
 			Expect(existingTokens.Tokens[0].Type).Should(Equal("client"))
 			Expect(existingTokens.Tokens[0].Environment).Should(Equal("development"))
 			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"default"}))
@@ -309,7 +309,7 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 			existingTokens.Tokens = []unleashclient.ApiToken{
 				{
 					Secret:      ApiTokenSecret,
-					Username:    apiTokenCreated.ApiTokenName("unleasherator"),
+					TokenName:   apiTokenCreated.ApiTokenName("unleasherator"),
 					Type:        "CLIENT",
 					Environment: "development",
 					Project:     "default",
@@ -386,7 +386,7 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 	})
 
 	Context("When dealing with duplicate Unleash tokens", func() {
-		It("Should count duplicate tokens", func() {
+		It("Should delete duplicate tokens", func() {
 			ctx := context.Background()
 
 			apiTokenName := "test-apitoken-duplicate"
@@ -401,22 +401,31 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 
 			existingTokens.Tokens = []unleashclient.ApiToken{
 				{
-					Secret:      ApiTokenSecret,
-					Username:    "test-apitoken-duplicate-unleasherator",
+					Secret:      ApiTokenSecret + "-1",
+					TokenName:   "test-apitoken-duplicate-unleasherator",
 					Type:        "CLIENT",
 					Environment: "development",
 					Project:     "default",
 					Projects:    []string{"default"},
-					CreatedAt:   time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+					CreatedAt:   time.Date(2021, 1, 1, 2, 0, 0, 0, time.UTC).Format(time.RFC3339),
 				},
 				{
-					Secret:      ApiTokenSecret,
-					Username:    "test-apitoken-duplicate-unleasherator",
+					Secret:      ApiTokenSecret + "-2",
+					TokenName:   "test-apitoken-duplicate-unleasherator",
 					Type:        "CLIENT",
-					Environment: "development",
+					Environment: "production",
 					Project:     "default",
 					Projects:    []string{"default"},
 					CreatedAt:   time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC).Format(time.RFC3339),
+				},
+				{
+					Secret:      ApiTokenSecret + "-3",
+					TokenName:   "test-apitoken-duplicate-unleasherator",
+					Type:        "CLIENT",
+					Environment: "development",
+					Project:     "default",
+					Projects:    []string{"default"},
+					CreatedAt:   time.Date(2021, 1, 1, 3, 0, 0, 0, time.UTC).Format(time.RFC3339),
 				},
 			}
 
@@ -427,7 +436,20 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 
 			fmt.Printf("existingTokens=%+v\n", existingTokens)
 
-			Expect(promGaugeVecVal(apiTokenExistingTokens, ApiTokenNamespace, apiTokenName, "development")).Should(Equal(2.0))
+			Expect(promGaugeVecVal(apiTokenExistingTokens, ApiTokenNamespace, apiTokenName, "development")).Should(Equal(3.0))
+			Expect(promCounterVecVal(apiTokenDeletedCounter, ApiTokenNamespace, apiTokenName)).Should(Equal(2.0))
+
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE %s", fmt.Sprintf("=~%s/.*", unleashclient.ApiTokensEndpoint))]).Should(Equal(2))
+
+			// Verify that the older tokens were deleted
+			for _, token := range existingTokens.Tokens {
+				Expect(token.Secret).ShouldNot(Equal(ApiTokenSecret + "-1"))
+				Expect(token.Secret).ShouldNot(Equal(ApiTokenSecret + "-2"))
+			}
+
+			// Verify that we kept the newest duplicate token
+			Expect(existingTokens.Tokens).Should(HaveLen(1))
+			Expect(existingTokens.Tokens[0].Secret).Should(Equal(ApiTokenSecret + "-3"))
 		})
 	})
 })
