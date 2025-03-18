@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -250,11 +251,23 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	var apiToken *unleashclient.ApiToken
 	log.WithValues("tokens", len(apiTokens.Tokens)).Info("Fetched token from Unleash for ApiToken")
+	// @TODO this is not entirely correct with regards to the environment
 	apiTokenExistingTokens.WithLabelValues(token.Namespace, token.Name, token.Spec.Environment).Set(float64(len(apiTokens.Tokens)))
+
+	// Sort tokens by created_at descending
+	// This is needed since Unleash can return tokens in any order
+	sort.Slice(apiTokens.Tokens, func(i, j int) bool {
+		ti, _ := time.Parse(time.RFC3339, apiTokens.Tokens[i].CreatedAt)
+		tj, _ := time.Parse(time.RFC3339, apiTokens.Tokens[j].CreatedAt)
+		return ti.After(tj)
+	})
 
 	// Delete outdated tokens in Unleash
 	for _, t := range apiTokens.Tokens {
-		if token.IsEqual(t) {
+		// Check if the token is up to date and that we have not already found an up to date token
+		if token.IsEqual(t) && apiToken == nil {
+			// This is the token we are looking for
+			// Continue to the next token
 			apiToken = &t
 			continue
 		}
@@ -264,10 +277,12 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
 		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
 
+		// If ApiTokenUpdateEnabled is false, prevent deletion of outdated tokens and subsequent creation of new tokens
+		// This also prevents deletion of duplicate tokens.
 		if !r.ApiTokenUpdateEnabled {
 			log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Token update is disabled in operator config")
 
-			// Set ApiToken so we don't create a new token if update is disabled
+			// Prevent creation of new tokens further down
 			if apiToken == nil {
 				apiToken = &t
 			}
@@ -275,6 +290,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
+		// At this point we know that the token is outdated our duplicate and it is safe to delete it
 		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
 		err = apiClient.DeleteApiToken(ctx, t.Secret)
 		if err != nil {
