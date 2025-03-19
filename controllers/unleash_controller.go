@@ -232,6 +232,19 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return res, nil
 	}
 
+	span.AddEvent("Reconciling NetworkPolicy")
+	res, err = r.reconcileNetworkPolicy(ctx, unleash)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	} else if res.Requeue {
+		return res, nil
+	}
+
 	span.AddEvent("Reconciling Deployment")
 	res, err = r.reconcileDeployment(ctx, unleash)
 	if err != nil {
@@ -251,19 +264,6 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Service")
 		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, err
-	} else if res.Requeue {
-		return res, nil
-	}
-
-	span.AddEvent("Reconciling NetworkPolicy")
-	res, err = r.reconcileNetworkPolicy(ctx, unleash)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
