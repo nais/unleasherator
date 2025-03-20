@@ -204,7 +204,7 @@ var _ = Describe("Unleash controller", func() {
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
 				Reason:  "Reconciling",
-				Message: "Deployment rollout timed out",
+				Message: "Deployment rollout timed out after 1s",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 			Expect(createdUnleash.Status.Reconciled).To(BeFalse())

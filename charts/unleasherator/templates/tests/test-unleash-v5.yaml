@@ -53,7 +53,7 @@ spec:
     - -c
     - |
       echo "Testing connection to Unleash server..."
-      curl -s --retry 10 --retry-delay 5 --retry-connrefused http://unleash-connection-test:4242/api/admin/health -o /dev/null -w "HTTP Status: %{http_code}\n"
+      curl -s --retry 100 --retry-delay 5 --retry-connrefused http://unleash-connection-test:4242/api/admin/health -o /dev/null -w "HTTP Status: %{http_code}\n"
       if [ $? -eq 0 ]; then
         echo "Connection successful!"
         exit 0
