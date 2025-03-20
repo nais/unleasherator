@@ -14,8 +14,6 @@ metadata:
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/part-of: unleasherator
-  annotations:
-    "helm.sh/hook": test
 spec:
   replicas: 1
   selector:
@@ -69,8 +67,6 @@ metadata:
   labels:
     app.kubernetes.io/name: unleash-connection-test
     app.kubernetes.io/part-of: unleasherator
-  annotations:
-    "helm.sh/hook": test
 spec:
   size: 1
   customImage: unleashorg/unleash-server:5
