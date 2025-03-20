@@ -308,9 +308,9 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// avoid testing connection to the previous instance if the Deployment is not
 	// ready yet. Delay requeue to avoid tying up the reconciler since waiting is
 	// done in the same reconcile loop.
-	log.Info("Waiting for Deployment rollout to finish")
+	log.WithValues("timeout", deploymentTimeout).Info("Waiting for Deployment rollout to finish")
 	if err = r.waitForDeployment(ctx, deploymentTimeout, req.NamespacedName); err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Deployment rollout timed out"); err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", deploymentTimeout)); err != nil {
 			return ctrl.Result{RequeueAfter: deploymentTimeout}, err
 		}
 		return ctrl.Result{RequeueAfter: deploymentTimeout}, err
