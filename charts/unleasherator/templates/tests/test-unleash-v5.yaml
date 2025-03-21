@@ -3,6 +3,9 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: postgres-postgresql
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
 type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
@@ -14,6 +17,9 @@ metadata:
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
 spec:
   replicas: 1
   selector:
@@ -53,6 +59,9 @@ metadata:
   labels:
     app.kubernetes.io/name: postgresql
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
 spec:
   ports:
   - port: 5432
@@ -67,6 +76,9 @@ metadata:
   labels:
     app.kubernetes.io/name: unleash-connection-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
 spec:
   size: 1
   customImage: unleashorg/unleash-server:5
@@ -93,8 +105,8 @@ spec:
           - protocol: TCP
             port: 5432
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: unleash.nais.io/v1
+kind: ApiToken
 metadata:
   name: unleash-connection-test
   labels:
@@ -102,7 +114,28 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": hook-succeeded
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  unleashInstance:
+    apiVersion: unleash.nais.io/v1
+    kind: Unleash
+    name: unleash-connecton-test
+  secretName: unleash-connection-test
+  type: CLIENT
+  environment: development
+  projects:
+    - default
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unleash-connection-test-probe
+  labels:
+    app.kubernetes.io/name: unleash-connection-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
 spec:
   containers:
   - name: connection-test
@@ -112,12 +145,27 @@ spec:
     - -c
     - |
       echo "Testing connection to Unleash server..."
-      curl -s --retry 100 --retry-delay 5 --retry-connrefused http://unleash-connection-test:4242/api/admin/health -o /dev/null -w "HTTP Status: %{http_code}\n"
-      if [ $? -eq 0 ]; then
-        echo "Connection successful!"
-        exit 0
-      else
-        echo "Connection failed!"
-        exit 1
-      fi
+      for i in $(seq 1 20); do
+        echo "Attempt $i of 20..."
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_SERVER_API_TOKEN}" ${UNLEASH_SERVER_API_URL}/api/client/features)
+        echo "HTTP Status: $STATUS"
+        if [ "$STATUS" = "200" ]; then
+          echo "Connection successful!"
+          exit 0
+        fi
+        sleep 5
+      done
+      echo "Connection failed after 20 attempts!"
+      exit 1
+    env:
+    - name: UNLEASH_SERVER_API_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: unleash-connection-test
+          key: UNLEASH_SERVER_API_TOKEN
+    - name: UNLEASH_SERVER_API_URL
+      valueFrom:
+        secretKeyRef:
+          name: unleash-connection-test
+          key: UNLEASH_SERVER_API_URL
   restartPolicy: Never
