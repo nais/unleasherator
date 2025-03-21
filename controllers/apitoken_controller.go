@@ -31,7 +31,7 @@ import (
 const tokenFinalizer = "unleash.nais.io/finalizer"
 
 var (
-	requeueAfter = 1 * time.Hour
+	unleashRequeueAfter = 1 * time.Hour
 
 	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	apiTokenStatus = prometheus.NewGaugeVec(
@@ -345,7 +345,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Set ApiToken status to success
 	err = r.updateStatusSuccess(ctx, token)
-	return ctrl.Result{RequeueAfter: requeueAfter}, err
+	return ctrl.Result{RequeueAfter: unleashRequeueAfter}, err
 }
 
 // getUnleashInstance returns the Unleash instance that the ApiToken belongs to
