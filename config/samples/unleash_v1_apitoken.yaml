@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/created-by: unleasherator
   name: apitoken-sample
 spec:
-  unleasshInstance:
+  unleashInstance:
     apiVersion: unleash.nais.io/v1
     kind: Unleash
     name: unleash-sample
