@@ -31,6 +31,8 @@ import (
 const tokenFinalizer = "unleash.nais.io/finalizer"
 
 var (
+	requeueAfter = 1 * time.Hour
+
 	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	apiTokenStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -161,11 +163,11 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
-			if err := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); err != nil {
-				return ctrl.Result{}, err
+			if statusErr := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); statusErr != nil {
+				return ctrl.Result{}, statusErr
 			}
 
-			return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+			return ctrl.Result{}, err
 		}
 
 		log.Error(err, "Failed to get Unleash resource")
@@ -178,7 +180,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		return ctrl.Result{}, fmt.Errorf("unleash instance not ready")
 	}
 
 	// Get Unleash API client
@@ -343,7 +345,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Set ApiToken status to success
 	err = r.updateStatusSuccess(ctx, token)
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, err
+	return ctrl.Result{RequeueAfter: requeueAfter}, err
 }
 
 // getUnleashInstance returns the Unleash instance that the ApiToken belongs to
