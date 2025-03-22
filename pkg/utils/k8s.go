@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,6 +32,16 @@ func SecretEnvVar(name, secretName, secretKey string) corev1.EnvVar {
 			},
 		},
 	}
+}
+
+// DeploymentIsReady returns true if the rollout of the given deployment has completed successfully.
+func DeploymentIsReady(deployment *appsv1.Deployment) bool {
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionTrue && condition.Reason == "NewReplicaSetAvailable" {
+			return true
+		}
+	}
+	return false
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.
