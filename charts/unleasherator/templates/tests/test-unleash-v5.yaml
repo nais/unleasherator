@@ -119,15 +119,15 @@ spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
     kind: Unleash
-    name: unleash-connecton-test
+    name: unleash-connection-test
   secretName: unleash-connection-test
   type: CLIENT
   environment: development
   projects:
     - default
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: batch/v1
+kind: Job
 metadata:
   name: unleash-connection-test-probe
   labels:
@@ -137,35 +137,42 @@ metadata:
     "helm.sh/hook": test
     #"helm.sh/hook-delete-policy": hook-succeeded
 spec:
-  containers:
-  - name: connection-test
-    image: curlimages/curl:7.88.1
-    command:
-    - sh
-    - -c
-    - |
-      echo "Testing connection to Unleash server..."
-      for i in $(seq 1 20); do
-        echo "Attempt $i of 20..."
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_SERVER_API_TOKEN}" ${UNLEASH_SERVER_API_URL}/api/client/features)
-        echo "HTTP Status: $STATUS"
-        if [ "$STATUS" = "200" ]; then
-          echo "Connection successful!"
-          exit 0
-        fi
-        sleep 5
-      done
-      echo "Connection failed after 20 attempts!"
-      exit 1
-    env:
-    - name: UNLEASH_SERVER_API_TOKEN
-      valueFrom:
-        secretKeyRef:
-          name: unleash-connection-test
-          key: UNLEASH_SERVER_API_TOKEN
-    - name: UNLEASH_SERVER_API_URL
-      valueFrom:
-        secretKeyRef:
-          name: unleash-connection-test
-          key: UNLEASH_SERVER_API_URL
-  restartPolicy: Never
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: unleash-connection-test
+        app.kubernetes.io/part-of: unleasherator
+    spec:
+      containers:
+      - name: connection-test
+        image: curlimages/curl:7.88.1
+        command:
+        - sh
+        - -c
+        - |
+          echo "Testing connection to Unleash server..."
+          for i in $(seq 1 20); do
+            echo "Attempt $i of 20..."
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_SERVER_API_TOKEN}" ${UNLEASH_SERVER_API_URL}/api/client/features)
+            echo "HTTP Status: $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Connection successful!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Connection failed after 20 attempts!"
+          exit 1
+        env:
+        - name: UNLEASH_SERVER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: unleash-connection-test
+              key: UNLEASH_SERVER_API_TOKEN
+        - name: UNLEASH_SERVER_API_URL
+          valueFrom:
+            secretKeyRef:
+              name: unleash-connection-test
+              key: UNLEASH_SERVER_API_URL
+      restartPolicy: Never
