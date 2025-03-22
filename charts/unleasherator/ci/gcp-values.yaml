@@ -3,9 +3,10 @@ controllerManagerGcp:
   serviceAccountCredentialsJson: "{}"
 networkPolicy:
   enabled: true
-  apiServerCIDR: 1.2.3.4/32
+  apiServerCIDR: 10.43.0.1/32
   allowDNS: true
   allowedNamespaces:
+    - unleasherator-system
     - foo
     - bar
   extraOutboundIPs:
