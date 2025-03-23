@@ -3,7 +3,7 @@ package unleash_nais_io_v1
 import (
 	"testing"
 
-	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/internal/unleashclient"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"

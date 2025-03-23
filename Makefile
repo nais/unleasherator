@@ -48,7 +48,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: proto
 proto: protoc protoc-gen-go ## Generate protobuf files.
-	$(PROTOC) --go_opt=paths=source_relative --plugin $(LOCALBIN)/protoc-gen-go --go_out=. pkg/pb/unleasherator.proto
+	$(PROTOC) --go_opt=paths=source_relative --plugin $(LOCALBIN)/protoc-gen-go --go_out=. internal/pb/unleasherator.proto
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
