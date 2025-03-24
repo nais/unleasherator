@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nais/unleasherator/pkg/unleashclient"
-	"github.com/nais/unleasherator/pkg/utils"
+	"github.com/nais/unleasherator/internal/unleashclient"
+	"github.com/nais/unleasherator/internal/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )

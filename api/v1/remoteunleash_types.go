@@ -3,7 +3,7 @@ package unleash_nais_io_v1
 import (
 	"context"
 
-	"github.com/nais/unleasherator/pkg/unleashclient"
+	"github.com/nais/unleasherator/internal/unleashclient"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"

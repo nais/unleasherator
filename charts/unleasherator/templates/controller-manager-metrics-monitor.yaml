@@ -19,6 +19,7 @@ spec:
       insecureSkipVerify: true
   selector:
     matchLabels:
+      app: unleasherator
       app.kubernetes.io/instance: unleasherator
       app.kubernetes.io/name: unleasherator
       control-plane: controller-manager
