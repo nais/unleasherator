@@ -1,7 +1,6 @@
 module github.com/nais/unleasherator
 
 go 1.24.0
-
 require (
 	cloud.google.com/go/pubsub v1.48.0
 	github.com/go-logr/logr v1.4.2
@@ -26,7 +25,7 @@ require (
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
-	sigs.k8s.io/controller-runtime v0.20.3
+	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240820183333-e6c3d139d2b6
 	sigs.k8s.io/controller-tools v0.16.1
 )
