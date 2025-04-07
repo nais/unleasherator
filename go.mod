@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.24.0
 
 require (
-	cloud.google.com/go/pubsub v1.48.0
+	cloud.google.com/go/pubsub v1.48.1
 	github.com/go-logr/logr v1.4.2
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
@@ -22,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.35.0
 	google.golang.org/api v0.227.0
 	google.golang.org/grpc v1.71.1
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
