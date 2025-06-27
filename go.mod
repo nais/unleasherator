@@ -2,7 +2,6 @@ module github.com/nais/unleasherator
 
 go 1.24.0
 
-
 require (
 	cloud.google.com/go/pubsub v1.48.0
 	github.com/go-logr/logr v1.4.2
