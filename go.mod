@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	cloud.google.com/go/pubsub v1.49.0
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
 	github.com/jarcoal/httpmock v1.4.0
