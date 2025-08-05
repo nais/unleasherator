@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,9 +18,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+)
+
+const (
+	ReleaseChannelFinalizer = "releasechannel.unleash.nais.io/finalizer"
 )
 
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
@@ -30,9 +36,83 @@ type ReleaseChannelReconciler struct {
 	Tracer   trace.Tracer
 }
 
-const (
-	ReleaseChannelFinalizer = "releasechannel.unleash.nais.io/finalizer"
+var (
+	// releaseChannelStatus tracks the current state of ReleaseChannels
+	releaseChannelStatus = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_releasechannel_status",
+			Help: "Status of ReleaseChannel resources (1=active, 0=inactive)",
+		},
+		[]string{"namespace", "name"},
+	)
+
+	// releaseChannelInstances tracks the number of instances managed by each ReleaseChannel
+	releaseChannelInstances = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_releasechannel_instances_total",
+			Help: "Total number of Unleash instances managed by ReleaseChannel",
+		},
+		[]string{"namespace", "name"},
+	)
+
+	// releaseChannelInstancesUpToDate tracks instances running the target image
+	releaseChannelInstancesUpToDate = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_releasechannel_instances_up_to_date",
+			Help: "Number of Unleash instances running the target image",
+		},
+		[]string{"namespace", "name"},
+	)
+
+	// releaseChannelRollouts tracks rollout events
+	releaseChannelRollouts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_releasechannel_rollouts_total",
+			Help: "Total number of ReleaseChannel rollout events",
+		},
+		[]string{"namespace", "name", "result"},
+	)
+
+	// releaseChannelInstanceUpdates tracks individual instance updates
+	releaseChannelInstanceUpdates = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_releasechannel_instance_updates_total",
+			Help: "Total number of instance updates attempted by ReleaseChannel",
+		},
+		[]string{"namespace", "name", "result"},
+	)
+
+	// releaseChannelRolloutDuration tracks how long rollouts take
+	releaseChannelRolloutDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "unleasherator_releasechannel_rollout_duration_seconds",
+			Help:    "Duration of ReleaseChannel rollouts in seconds",
+			Buckets: prometheus.ExponentialBuckets(1, 2, 10), // 1s to ~17 minutes
+		},
+		[]string{"namespace", "name"},
+	)
+
+	// releaseChannelConflicts tracks resource conflicts during updates
+	releaseChannelConflicts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_releasechannel_conflicts_total",
+			Help: "Total number of resource conflicts encountered during rollouts",
+		},
+		[]string{"namespace", "name"},
+	)
 )
+
+func init() {
+	metrics.Registry.MustRegister(
+		releaseChannelStatus,
+		releaseChannelInstances,
+		releaseChannelInstancesUpToDate,
+		releaseChannelRollouts,
+		releaseChannelInstanceUpdates,
+		releaseChannelRolloutDuration,
+		releaseChannelConflicts,
+	)
+}
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=releasechannels,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=releasechannels/status,verbs=get;update;patch
@@ -42,15 +122,22 @@ const (
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.FromContext(ctx).WithName("releasechannel")
-	log.Info("Starting reconciliation of ReleaseChannel")
+	log := ctrllog.FromContext(ctx).WithValues("releasechannel", req.NamespacedName)
 
-	// Fetch the ReleaseChannel instance
+	ctx, span := r.Tracer.Start(ctx, "releasechannel.reconcile")
+	defer span.End()
+
+	labels := []string{req.Namespace, req.Name}
+
 	releaseChannel := &unleashv1.ReleaseChannel{}
 	err := r.Get(ctx, req.NamespacedName, releaseChannel)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("ReleaseChannel resource not found, ignoring since object must be deleted")
+			log.Info("ReleaseChannel deleted, ignoring")
+			// Clear metrics for deleted ReleaseChannel
+			releaseChannelStatus.DeleteLabelValues(labels...)
+			releaseChannelInstances.DeleteLabelValues(labels...)
+			releaseChannelInstancesUpToDate.DeleteLabelValues(labels...)
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "Failed to get ReleaseChannel")
@@ -83,6 +170,8 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		log.Error(err, "Failed to execute phase", "phase", releaseChannel.Status.Phase)
 		r.recordError(ctx, releaseChannel, err)
+		// Record failed rollout
+		releaseChannelRollouts.WithLabelValues(labels[0], labels[1], "failed").Inc()
 		// Try to update status even on error
 		if statusErr := r.Status().Update(ctx, releaseChannel); statusErr != nil {
 			log.V(1).Info("Failed to update status after error", "error", statusErr)
@@ -97,6 +186,17 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			// Don't fail the reconciliation for status update conflicts
 			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
+	}
+
+	// Record metrics for successful reconciliation
+	r.recordMetrics(releaseChannel, labels)
+
+	// Record rollout duration if this was a completed rollout
+	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCompleted && releaseChannel.Status.LastReconcileTime != nil {
+		rolloutDuration := time.Since(releaseChannel.Status.LastReconcileTime.Time).Seconds()
+		releaseChannelRolloutDuration.WithLabelValues(labels[0], labels[1]).Observe(rolloutDuration)
+		// Record successful rollout
+		releaseChannelRollouts.WithLabelValues(labels[0], labels[1], "success").Inc()
 	}
 
 	return result, nil
@@ -189,15 +289,35 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	log.Info("Starting rollout", "instancesToUpdate", len(instancesToUpdate))
 
 	// Directly update instances
+	var errors []string
+	successCount := 0
 	for _, unleash := range instancesToUpdate {
 		log.Info("Updating instance", "name", unleash.Name, "from", unleash.Spec.CustomImage, "to", string(targetImage))
 
 		if err := r.updateUnleashInstance(ctx, unleash.Namespace, unleash.Name, string(targetImage)); err != nil {
 			log.Error(err, "Failed to update instance", "name", unleash.Name)
-			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
-			releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to update instance %s: %v", unleash.Name, err)
-			return ctrl.Result{RequeueAfter: time.Minute}, nil
+			if apierrors.IsConflict(err) {
+				// For conflicts, just log and continue - the reconcile will retry
+				log.V(1).Info("Conflict updating instance, will retry later", "name", unleash.Name)
+				continue
+			}
+			errors = append(errors, fmt.Sprintf("%s: %v", unleash.Name, err))
+		} else {
+			successCount++
 		}
+	}
+
+	// If there were non-conflict errors, fail the rollout
+	if len(errors) > 0 {
+		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
+		releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to update instances: %v", errors)
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	// If some instances couldn't be updated due to conflicts, requeue to retry
+	if successCount < len(instancesToUpdate) {
+		log.Info("Some instances had conflicts, will retry", "successful", successCount, "total", len(instancesToUpdate))
+		return ctrl.Result{RequeueAfter: time.Second * 2}, nil
 	}
 
 	// Update status to reflect progress
@@ -251,25 +371,86 @@ func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChann
 	})
 }
 
-// updateUnleashInstance updates a specific Unleash instance with new image
+// recordMetrics updates the metrics for a ReleaseChannel
+func (r *ReleaseChannelReconciler) recordMetrics(releaseChannel *unleashv1.ReleaseChannel, labels []string) {
+	// Update status metrics (1=success, 0.5=in-progress, 0=failed)
+	var status float64
+	switch releaseChannel.Status.Phase {
+	case unleashv1.ReleaseChannelPhaseCompleted:
+		status = 1 // Success
+	case unleashv1.ReleaseChannelPhaseFailed:
+		status = 0 // Failed
+	default:
+		status = 0.5 // In progress
+	}
+	releaseChannelStatus.WithLabelValues(labels[0], labels[1]).Set(status)
+
+	// Update instance metrics
+	releaseChannelInstances.WithLabelValues(labels[0], labels[1]).Set(float64(releaseChannel.Status.Instances))
+	releaseChannelInstancesUpToDate.WithLabelValues(labels[0], labels[1]).Set(float64(releaseChannel.Status.InstancesUpToDate))
+}
+
+// updateUnleashInstance updates a specific Unleash instance with new image.
+// This sets CustomImage to trigger reconciliation and also updates status for tracking.
 func (r *ReleaseChannelReconciler) updateUnleashInstance(ctx context.Context, namespace, name, image string) error {
 	unleash := &unleashv1.Unleash{}
 	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, unleash); err != nil {
+		releaseChannelInstanceUpdates.WithLabelValues(namespace, "unknown", "failed").Inc()
 		return fmt.Errorf("failed to get Unleash instance %s: %w", name, err)
 	}
 
-	// Check if already up to date
-	if unleash.Spec.CustomImage == image {
-		return nil
+	// Get the ReleaseChannel name for metrics
+	rcName := "unknown"
+	if unleash.Spec.ReleaseChannel.Name != "" {
+		rcName = unleash.Spec.ReleaseChannel.Name
 	}
 
-	unleash.Spec.CustomImage = image
-	if err := r.Update(ctx, unleash); err != nil {
-		if apierrors.IsConflict(err) {
-			// Resource was modified, return conflict error to trigger requeue
-			return fmt.Errorf("conflict updating Unleash instance %s: %w", name, err)
+	needsSpecUpdate := false
+	needsStatusUpdate := false
+
+	// For intentional upgrades via ReleaseChannel, we set CustomImage to trigger reconciliation
+	if unleash.Spec.CustomImage != image {
+		unleash.Spec.CustomImage = image
+		needsSpecUpdate = true
+	}
+
+	// Also update the status to track the resolved ReleaseChannel image
+	if unleash.Status.ResolvedReleaseChannelImage != image ||
+		unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
+		unleash.Status.ResolvedReleaseChannelImage = image
+		unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
+		needsStatusUpdate = true
+	}
+
+	// Update spec if needed (this triggers reconciliation)
+	if needsSpecUpdate {
+		if err := r.Update(ctx, unleash); err != nil {
+			if apierrors.IsConflict(err) {
+				// Resource was modified, requeue for retry
+				releaseChannelConflicts.WithLabelValues(namespace, rcName).Inc()
+				return fmt.Errorf("conflict updating Unleash instance %s spec, will retry: %w", name, err)
+			}
+			releaseChannelInstanceUpdates.WithLabelValues(namespace, rcName, "failed").Inc()
+			return fmt.Errorf("failed to update Unleash instance %s spec: %w", name, err)
 		}
-		return fmt.Errorf("failed to update Unleash instance %s: %w", name, err)
+	}
+
+	// Update status if needed (this tracks the resolved image)
+	if needsStatusUpdate {
+		if err := r.Status().Update(ctx, unleash); err != nil {
+			if apierrors.IsConflict(err) {
+				// Resource was modified, requeue for retry
+				releaseChannelConflicts.WithLabelValues(namespace, rcName).Inc()
+				return fmt.Errorf("conflict updating Unleash instance %s status, will retry: %w", name, err)
+			}
+			releaseChannelInstanceUpdates.WithLabelValues(namespace, rcName, "failed").Inc()
+			return fmt.Errorf("failed to update Unleash instance %s status: %w", name, err)
+		}
+	}
+
+	// Record successful update
+	if needsSpecUpdate || needsStatusUpdate {
+		releaseChannelInstanceUpdates.WithLabelValues(namespace, rcName, "success").Inc()
 	}
 
 	return nil
