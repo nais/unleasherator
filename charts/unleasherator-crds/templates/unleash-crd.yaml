@@ -4239,8 +4239,6 @@ spec:
                   name:
                     description: Name is the name of the release channel
                     type: string
-                required:
-                - name
                 type: object
               resources:
                 default:

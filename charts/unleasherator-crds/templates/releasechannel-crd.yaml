@@ -56,12 +56,56 @@ spec:
           spec:
             description: ReleaseChannelSpec defines the desired state of ReleaseChannel
             properties:
+              healthChecks:
+                description: HealthChecks defines health validation configuration
+                properties:
+                  enabled:
+                    default: true
+                    description: Enabled determines if health checks are performed after
+                      deployment
+                    type: boolean
+                  endpoint:
+                    description: Endpoint is a custom health check endpoint (optional)
+                    type: string
+                  initialDelay:
+                    default: 30s
+                    description: InitialDelay is the wait time after deployment before
+                      starting health checks
+                    type: string
+                  timeout:
+                    default: 5m
+                    description: Timeout is the maximum time to wait for health check
+                      to pass
+                    type: string
+                type: object
               image:
                 description: Image is the Docker image to deploy for the release channel.
                 type: string
+              rollback:
+                description: Rollback defines rollback configuration
+                properties:
+                  enabled:
+                    default: false
+                    description: Enabled determines if automatic rollback is enabled
+                      on failure
+                    type: boolean
+                  onFailure:
+                    default: true
+                    description: OnFailure determines if rollback should trigger on
+                      deployment failure
+                    type: boolean
+                  previousImage:
+                    description: PreviousImage is the image to rollback to (auto-populated)
+                    type: string
+                type: object
               strategy:
                 description: Strategy defines the deployment strategy.
                 properties:
+                  batchInterval:
+                    default: 30s
+                    description: BatchInterval defines wait time between deployment
+                      batches
+                    type: string
                   canary:
                     description: Canary defines the canary strategy.
                     properties:
@@ -122,7 +166,14 @@ spec:
                     default: 1
                     description: MaxParallel defines the maximum number of instances
                       to deploy in parallel.
+                    maximum: 50
+                    minimum: 1
                     type: integer
+                  maxUpgradeTime:
+                    default: 10m
+                    description: MaxUpgradeTime defines maximum time to wait for all
+                      upgrades to complete
+                    type: string
                 type: object
             required:
             - image
@@ -202,6 +253,41 @@ spec:
                   - type
                   type: object
                 type: array
+              estimatedCompletion:
+                description: EstimatedCompletion is the estimated completion time
+                format: date-time
+                type: string
+              failureReason:
+                description: FailureReason contains the reason for rollout failure
+                type: string
+              instanceStatus:
+                description: InstanceStatus provides detailed status for each instance
+                items:
+                  description: InstanceStatus provides detailed status for individual
+                    instances
+                  properties:
+                    endTime:
+                      description: EndTime when upgrade completed for this instance
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message with additional details
+                      type: string
+                    name:
+                      description: Name of the Unleash instance
+                      type: string
+                    phase:
+                      description: Phase of this instance's upgrade
+                      type: string
+                    ready:
+                      description: Ready indicates if instance is ready after upgrade
+                      type: boolean
+                    startTime:
+                      description: StartTime when upgrade started for this instance
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
               instances:
                 default: 0
                 description: Instances is the number of instances for the release channel.
@@ -214,6 +300,18 @@ spec:
               lastReconcileTime:
                 description: LastReconcileTime is the last time the release channel
                   was reconciled.
+                format: date-time
+                type: string
+              phase:
+                description: Phase represents the current phase of the rollout
+                type: string
+              progress:
+                description: Progress represents rollout progress as a percentage (0-100)
+                maximum: 100
+                minimum: 0
+                type: integer
+              startTime:
+                description: StartTime is when the current rollout started
                 format: date-time
                 type: string
               version:
