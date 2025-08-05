@@ -9,18 +9,26 @@ spec:
   # Docker image for this release channel
   image: "unleashorg/unleash-server:5.7.0"
 
-  # Deployment strategy configuration
-  strategy:
-    # Maximum number of instances to upgrade in parallel
-    maxParallel: 2
+  # Advanced strategy configuration (planned features)
+  # strategy:
+  #   maxParallel: 2
+  #   batchInterval: "30s"
+  #   canary:
+  #     enabled: true
+  #     podSelector:
+  #       matchLabels:
+  #         deployment: "canary"
 
-    # Canary deployment configuration
-    canary:
-      enabled: true
-      # Label selector for canary instances
-      podSelector:
-        matchLabels:
-          deployment: "canary"
+  # Health check configuration (planned feature)
+  # healthChecks:
+  #   enabled: true
+  #   initialDelay: "30s"
+  #   timeout: "5m"
+
+  # Rollback configuration (planned feature)
+  # rollback:
+  #   enabled: true
+  #   onFailure: true
 ---
 # Example Unleash instance that will be managed by the release channel
 apiVersion: unleash.nais.io/v1
@@ -36,13 +44,13 @@ spec:
   releaseChannel:
     name: releasechannel-sample
 ---
-# Example canary Unleash instance
+# Example second Unleash instance for testing rollouts
 apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
-  name: unleash-canary
+  name: unleash-staging
   labels:
-    deployment: "canary"  # This label makes it a canary instance
+    deployment: "staging"
 spec:
   database:
     url: "postgres://unleash-db:5432/unleash"
