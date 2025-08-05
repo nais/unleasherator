@@ -1,0 +1,27 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters-settings:
+  staticcheck:
+    checks: ["all", "-SA1019"]
+
+issues:
+  exclude-rules:
+    # Exclude SA1019 (deprecation warnings) for cloud.google.com/go/pubsub v1
+    # until we migrate to v2
+    - linters:
+        - staticcheck
+      text: '"cloud.google.com/go/pubsub" is deprecated'
+      source: '"cloud\.google\.com/go/pubsub"'
+
+linters:
+  enable:
+    - staticcheck
+    - govet
+    - errcheck
+    - gosimple
+    - ineffassign
+    - unused
+    - typecheck
+  disable: []
