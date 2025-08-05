@@ -29,6 +29,10 @@ const (
 	ApiTokenStatusConditionTypeFailed  = "Failed"
 	ApiTokenStatusConditionTypeDeleted = "Deleted"
 
+	ReleaseChannelStatusConditionTypeReconciled = "Reconciled"
+	ReleaseChannelStatusConditionTypeUpgrading  = "Upgrading"
+	ReleaseChannelStatusConditionTypeCompleted  = "Completed"
+
 	UnleashSecretNamePrefix = "unleasherator"
 	UnleashSecretTokenKey   = "token"
 

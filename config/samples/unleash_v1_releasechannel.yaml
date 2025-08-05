@@ -1,0 +1,51 @@
+apiVersion: unleash.nais.io/v1
+kind: ReleaseChannel
+metadata:
+  labels:
+    app.kubernetes.io/name: unleasherator
+    app.kubernetes.io/managed-by: kustomize
+  name: releasechannel-sample
+spec:
+  # Docker image for this release channel
+  image: "unleashorg/unleash-server:5.7.0"
+
+  # Deployment strategy configuration
+  strategy:
+    # Maximum number of instances to upgrade in parallel
+    maxParallel: 2
+
+    # Canary deployment configuration
+    canary:
+      enabled: true
+      # Label selector for canary instances
+      podSelector:
+        matchLabels:
+          deployment: "canary"
+---
+# Example Unleash instance that will be managed by the release channel
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-production
+  labels:
+    deployment: "production"
+spec:
+  database:
+    url: "postgres://unleash-db:5432/unleash"
+  # This connects the Unleash instance to the release channel
+  releaseChannel:
+    name: releasechannel-sample
+---
+# Example canary Unleash instance
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-canary
+  labels:
+    deployment: "canary"  # This label makes it a canary instance
+spec:
+  database:
+    url: "postgres://unleash-db:5432/unleash"
+  # This connects the Unleash instance to the release channel
+  releaseChannel:
+    name: releasechannel-sample

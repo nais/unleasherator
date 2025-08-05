@@ -90,6 +90,7 @@ rules:
   - unleash.nais.io
   resources:
   - apitokens
+  - releasechannels
   - remoteunleashes
   - unleashes
   verbs:
@@ -104,6 +105,7 @@ rules:
   - unleash.nais.io
   resources:
   - apitokens/finalizers
+  - releasechannels/finalizers
   - remoteunleashes/finalizers
   - unleashes/finalizers
   verbs:
@@ -112,6 +114,7 @@ rules:
   - unleash.nais.io
   resources:
   - apitokens/status
+  - releasechannels/status
   - remoteunleashes/status
   - unleashes/status
   verbs:
