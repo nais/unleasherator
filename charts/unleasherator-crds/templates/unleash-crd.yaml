@@ -4232,6 +4232,16 @@ spec:
                     description: Enable enables the prometheus metrics endpoint
                     type: boolean
                 type: object
+              releaseChannel:
+                description: ReleaseChannel is the release channel to use for the Unleash
+                  deployment.
+                properties:
+                  name:
+                    description: Name is the name of the release channel
+                    type: string
+                required:
+                - name
+                type: object
               resources:
                 default:
                   limits:

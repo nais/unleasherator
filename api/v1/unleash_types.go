@@ -40,6 +40,9 @@ type Unleash struct {
 	Status UnleashStatus `json:"status,omitempty"`
 }
 
+// UnleashImage defines a container image for Unleash
+type UnleashImage string
+
 // UnleashSpec defines the desired state of Unleash
 // UnleashSpec represents the specification for an Unleash deployment.
 type UnleashSpec struct {
@@ -51,6 +54,10 @@ type UnleashSpec struct {
 	// Use at your own risk.
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
+
+	// ReleaseChannel is the release channel to use for the Unleash deployment.
+	// +kubebuilder:validation:Optional
+	ReleaseChannel UnleashReleaseChannelConfig `json:"releaseChannel,omitempty"`
 
 	// Prometheus defines the Prometheus metrics collection configuration.
 	// +kubebuilder:validation:Optional
@@ -108,6 +115,12 @@ type UnleashSpec struct {
 	// PodLabels are additional labels to add to the Unleash pods.
 	// +kubebuilder:validation:Optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
+}
+
+type UnleashReleaseChannelConfig struct {
+	// Name is the name of the release channel
+	// +kubebuilder:validation:Optional
+	Name string `json:"name,omitempty"`
 }
 
 // UnleashFederationConfig defines the configuration for Unleash federation
