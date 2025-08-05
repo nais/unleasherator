@@ -25,10 +25,9 @@ import (
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
 type ReleaseChannelReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	CircuitBreaker *CircuitBreaker
-	Tracer         trace.Tracer
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+	Tracer   trace.Tracer
 }
 
 const (
@@ -170,14 +169,14 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	}
 
 	// Check if all instances are already up to date
-	targetImage := string(releaseChannel.Spec.Image)
-	log.Info("Checking instances for updates", "targetImage", targetImage, "instanceCount", len(targetInstances))
+	targetImage := releaseChannel.Spec.Image
+	log.Info("Checking instances for updates", "targetImage", string(targetImage), "instanceCount", len(targetInstances))
 
 	var instancesToUpdate []unleashv1.Unleash
 	for _, unleash := range targetInstances {
 		currentImage := unleash.Spec.CustomImage
-		log.Info("Instance status", "name", unleash.Name, "currentImage", currentImage, "targetImage", targetImage)
-		if currentImage != targetImage {
+		log.Info("Instance status", "name", unleash.Name, "currentImage", currentImage, "targetImage", string(targetImage))
+		if currentImage != string(targetImage) {
 			instancesToUpdate = append(instancesToUpdate, unleash)
 		}
 	}
@@ -191,9 +190,9 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 
 	// Directly update instances
 	for _, unleash := range instancesToUpdate {
-		log.Info("Updating instance", "name", unleash.Name, "from", unleash.Spec.CustomImage, "to", targetImage)
+		log.Info("Updating instance", "name", unleash.Name, "from", unleash.Spec.CustomImage, "to", string(targetImage))
 
-		if err := r.updateUnleashInstance(ctx, unleash.Namespace, unleash.Name, targetImage); err != nil {
+		if err := r.updateUnleashInstance(ctx, unleash.Namespace, unleash.Name, string(targetImage)); err != nil {
 			log.Error(err, "Failed to update instance", "name", unleash.Name)
 			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to update instance %s: %v", unleash.Name, err)
@@ -211,7 +210,7 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
 		Reason:  "RolloutCompleted",
-		Message: fmt.Sprintf("Successfully updated %d instances to %s", len(instancesToUpdate), targetImage),
+		Message: fmt.Sprintf("Successfully updated %d instances to %s", len(instancesToUpdate), string(targetImage)),
 	})
 
 	log.Info("Rollout completed successfully", "updatedInstances", len(instancesToUpdate))
@@ -252,34 +251,28 @@ func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChann
 	})
 }
 
-// updateUnleashInstance updates a specific Unleash instance with new image using retry logic
+// updateUnleashInstance updates a specific Unleash instance with new image
 func (r *ReleaseChannelReconciler) updateUnleashInstance(ctx context.Context, namespace, name, image string) error {
-	// Retry logic to handle optimistic concurrency conflicts
-	for i := 0; i < 3; i++ {
-		unleash := &unleashv1.Unleash{}
-		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, unleash); err != nil {
-			return fmt.Errorf("failed to get Unleash instance %s: %w", name, err)
-		}
+	unleash := &unleashv1.Unleash{}
+	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, unleash); err != nil {
+		return fmt.Errorf("failed to get Unleash instance %s: %w", name, err)
+	}
 
-		// Check if already up to date
-		if unleash.Spec.CustomImage == image {
-			return nil
-		}
-
-		unleash.Spec.CustomImage = image
-		if err := r.Update(ctx, unleash); err != nil {
-			if apierrors.IsConflict(err) {
-				// Resource was modified, retry after a short delay
-				time.Sleep(time.Millisecond * time.Duration(100*(i+1)))
-				continue
-			}
-			return fmt.Errorf("failed to update Unleash instance %s: %w", name, err)
-		}
-
+	// Check if already up to date
+	if unleash.Spec.CustomImage == image {
 		return nil
 	}
 
-	return fmt.Errorf("failed to update Unleash instance %s after 3 retries due to conflicts", name)
+	unleash.Spec.CustomImage = image
+	if err := r.Update(ctx, unleash); err != nil {
+		if apierrors.IsConflict(err) {
+			// Resource was modified, return conflict error to trigger requeue
+			return fmt.Errorf("conflict updating Unleash instance %s: %w", name, err)
+		}
+		return fmt.Errorf("failed to update Unleash instance %s: %w", name, err)
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
