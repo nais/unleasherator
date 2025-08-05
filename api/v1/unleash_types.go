@@ -296,6 +296,17 @@ type UnleashStatus struct {
 	// Version is the reported version of the Unleash server
 	// +kubebuilder:default="unknown"
 	Version string `json:"version,omitempty"`
+
+	// ResolvedReleaseChannelImage is the image resolved from the ReleaseChannel
+	// This is set by the controller when a ReleaseChannel is specified and tracks
+	// the current image that should be used for this Unleash instance.
+	// +kubebuilder:validation:Optional
+	ResolvedReleaseChannelImage string `json:"resolvedReleaseChannelImage,omitempty"`
+
+	// ReleaseChannelName tracks which ReleaseChannel was used to resolve the image
+	// This ensures we only use the resolved image if it matches the current ReleaseChannel
+	// +kubebuilder:validation:Optional
+	ReleaseChannelName string `json:"releaseChannelName,omitempty"`
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {

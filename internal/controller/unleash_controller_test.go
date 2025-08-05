@@ -280,6 +280,113 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
+		It("Should resolve ReleaseChannel image on creation and not update on subsequent reconciles", func() {
+			ctx := context.Background()
+
+			releaseChannelImage := "quay.io/unleash/unleash-server:6.3.0"
+			releaseChannelName := "stable"
+
+			By("By creating a ReleaseChannel")
+			releaseChannel := releaseChannelResource(releaseChannelName, UnleashNamespace, releaseChannelImage)
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("By creating a new Unleash that references the ReleaseChannel")
+			unleash := unleashResource("test-unleash-releasechannel", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+					Name: releaseChannelName,
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By checking that ReleaseChannel controller has adopted the instance by setting CustomImage")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Spec.CustomImage
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By faking Deployment status as available")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that the deployment uses the ReleaseChannel image")
+			Expect(createdDeployment.Spec.Template.Spec.Containers[0].Image).To(Equal(releaseChannelImage))
+
+			By("By manually triggering an Unleash reconcile (simulating periodic reconcilation)")
+			// Force a reconcile by updating a label - this simulates routine reconciliation
+			Eventually(func() error {
+				freshUnleash := &unleashv1.Unleash{}
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), freshUnleash); err != nil {
+					return err
+				}
+				if freshUnleash.Labels == nil {
+					freshUnleash.Labels = map[string]string{}
+				}
+				freshUnleash.Labels["test"] = "reconcile-trigger"
+				return k8sClient.Update(ctx, freshUnleash)
+			}, timeout, interval).Should(Succeed())
+
+			By("By checking that routine Unleash reconciliation does NOT change the image")
+			// The status should remain the same after routine reconciliation
+			Consistently(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, time.Second*2, interval).Should(Equal(releaseChannelImage))
+
+			By("By checking that CustomImage remains set after routine reconciliation (ReleaseChannel manages it)")
+			Expect(createdUnleash.Spec.CustomImage).Should(Equal(releaseChannelImage))
+
+			By("By updating the ReleaseChannel to a new image (intentional upgrade)")
+			newReleaseChannelImage := "quay.io/unleash/unleash-server:6.4.0"
+			// Get the latest version to avoid conflicts
+			Eventually(func() error {
+				freshReleaseChannel := &unleashv1.ReleaseChannel{}
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), freshReleaseChannel); err != nil {
+					return err
+				}
+				freshReleaseChannel.Spec.Image = unleashv1.UnleashImage(newReleaseChannelImage)
+				return k8sClient.Update(ctx, freshReleaseChannel)
+			}, timeout, interval).Should(Succeed())
+
+			By("By checking that ReleaseChannel controller DOES update the Unleash image (intentional upgrade)")
+			// This should happen because ReleaseChannel controller intentionally upgrades instances by setting CustomImage
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Spec.CustomImage
+			}, timeout, interval).Should(Equal(newReleaseChannelImage))
+
+			By("By checking that the status is also updated during intentional upgrade")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(newReleaseChannelImage))
+
+			By("By cleaning up resources")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
+		})
+
 		It("Should publish Unleash instance when federation is enabled", func() {
 			ctx := context.Background()
 

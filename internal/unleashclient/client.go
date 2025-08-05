@@ -100,6 +100,8 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected http status code %d", res.StatusCode)
 	}

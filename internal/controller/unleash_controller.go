@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -651,14 +652,42 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithName("unleash")
 
+	found := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
+	isCreating := err != nil && apierrors.IsNotFound(err)
+
+	// Handle ReleaseChannel resolution - always resolve when ReleaseChannel is specified
+	// to keep status up to date, regardless of CustomImage setting
+	if unleash.Spec.ReleaseChannel.Name != "" {
+		resolvedImage, modified, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+		if err != nil {
+			log.Error(err, "Failed to resolve ReleaseChannel image", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
+			return ctrl.Result{}, err
+		}
+
+		// If the resource was modified (status updated), update it
+		if modified {
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				log.Error(err, "Failed to update Unleash status with resolved ReleaseChannel image")
+				return ctrl.Result{}, err
+			}
+
+			log.Info("Updated ReleaseChannel image tracking in status", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name, "ResolvedImage", resolvedImage)
+
+			// Fetch the updated resource to get the latest status
+			if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); err != nil {
+				log.Error(err, "Failed to get updated Unleash")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
 	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	found := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
-	if err != nil && apierrors.IsNotFound(err) {
+	if isCreating {
 		log.Info("Creating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 		if err = r.Create(ctx, dep); err != nil {
 			log.Error(err, "Failed to create Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
@@ -841,11 +870,43 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	return nil
 }
 
+// findUnleashInstancesForReleaseChannel finds all Unleash instances that reference a given ReleaseChannel
+func (r *UnleashReconciler) findUnleashInstancesForReleaseChannel(ctx context.Context, obj client.Object) []ctrl.Request {
+	releaseChannel, ok := obj.(*unleashv1.ReleaseChannel)
+	if !ok {
+		return nil
+	}
+
+	// Find all Unleash instances in the same namespace that reference this ReleaseChannel
+	unleashList := &unleashv1.UnleashList{}
+	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []ctrl.Request
+	for _, unleash := range unleashList.Items {
+		if unleash.Spec.ReleaseChannel.Name == releaseChannel.Name {
+			requests = append(requests, ctrl.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      unleash.Name,
+					Namespace: unleash.Namespace,
+				},
+			})
+		}
+	}
+
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
+		Watches(
+			&unleashv1.ReleaseChannel{},
+			handler.EnqueueRequestsFromMapFunc(r.findUnleashInstancesForReleaseChannel),
+		).
 		//Owns(&appsv1.Deployment{}).
 		WithEventFilter(pred).
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).

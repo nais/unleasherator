@@ -4440,6 +4440,17 @@ spec:
                   This is used for kubectl printing purposes. Rather than relying on this
                   value, check the conditions instead.
                 type: boolean
+              releaseChannelName:
+                description: |-
+                  ReleaseChannelName tracks which ReleaseChannel was used to resolve the image
+                  This ensures we only use the resolved image if it matches the current ReleaseChannel
+                type: string
+              resolvedReleaseChannelImage:
+                description: |-
+                  ResolvedReleaseChannelImage is the image resolved from the ReleaseChannel
+                  This is set by the controller when a ReleaseChannel is specified and tracks
+                  the current image that should be used for this Unleash instance.
+                type: string
               version:
                 default: unknown
                 description: Version is the reported version of the Unleash server
