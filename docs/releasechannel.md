@@ -8,9 +8,11 @@ Instead of manually updating individual Unleash instances when a new version is 
 
 - Define a target image version centrally
 - Automatically roll out updates to matching Unleash instances
-- Implement canary deployments for safer rollouts
-- Control the pace of rollouts with parallel deployment limits
 - Monitor rollout progress through rich status information
+- Handle concurrent updates with conflict resolution
+- Implement phase-based rollout management
+
+**Note**: This is the current simplified implementation. Advanced features like canary deployments, health checks, and batch processing are planned for future releases.
 
 ## Architecture
 
@@ -30,33 +32,52 @@ graph TD
 ## Key Features
 
 ### 1. **Automatic Instance Discovery**
+
 - Finds Unleash instances that reference the ReleaseChannel by name
 - Uses `IsCandidate()` method to determine eligibility
 - Works within namespace boundaries
 
 ### 2. **Intelligent Update Logic**
+
 - Only updates instances that need it via `ShouldUpdate()` method
 - Compares current `CustomImage` with ReleaseChannel target image
 - Skips instances already running the target version
 
-### 3. **Canary Deployment Strategy**
-- Deploy to canary instances first
-- Wait for canary instances to be ready before proceeding
-- Use label selectors to identify canary instances
-- Configurable enable/disable per ReleaseChannel
+### 3. **Conflict Resolution**
 
-### 4. **Parallel Deployment Control**
-- Configure maximum parallel deployments via `maxParallel`
-- Prevents overwhelming cluster resources
-- Default: 1 (sequential deployments)
+- Implements retry logic with exponential backoff
+- Handles Kubernetes optimistic concurrency control conflicts
+- Up to 3 retry attempts with increasing delays
+
+### 4. **Phase-Based Management**
+
+- Idle: Checking for instances to update
+- Completed: All instances updated successfully
+- Failed: Rollout encountered errors
 
 ### 5. **Rich Status Reporting**
+
 - Total instances managed
 - Instances up-to-date
-- Canary instance statistics
-- Completion status
+- Progress percentage
 - Last reconciliation time
 - Kubernetes conditions for detailed status
+
+## Current Implementation Status
+
+✅ **Implemented Features:**
+- Basic image rollout to matching Unleash instances
+- Conflict resolution with retry logic
+- Phase-based status management
+- Instance discovery and filtering
+- Status reporting and progress tracking
+
+🚧 **Planned Features (CRD Ready):**
+- Canary deployment strategy
+- Health checks after deployment
+- Batch interval controls
+- Automatic rollback capabilities
+- Parallel deployment limits
 
 ## Configuration
 
