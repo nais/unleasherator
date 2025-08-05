@@ -3,7 +3,7 @@ kind: CustomResourceDefinition
 metadata:
   name: apitokens.unleash.nais.io
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.1
+    controller-gen.kubebuilder.io/version: v0.18.0
   labels:
   {{- include "unleasherator-crds.labels" . | nindent 4 }}
 spec:

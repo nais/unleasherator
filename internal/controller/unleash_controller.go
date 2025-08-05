@@ -228,7 +228,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -241,7 +241,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -254,7 +254,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -267,7 +267,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -280,7 +280,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -293,7 +293,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, err
-	} else if res.Requeue {
+	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
@@ -584,12 +584,12 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 // reconcileIngresses will ensure that the required ingresses are created
 func (r *UnleashReconciler) reconcileIngresses(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	res, err := r.reconcileIngress(ctx, unleash, &unleash.Spec.WebIngress, "web")
-	if err != nil || res.Requeue {
+	if err != nil || res.RequeueAfter > 0 {
 		return res, err
 	}
 
 	res, err = r.reconcileIngress(ctx, unleash, &unleash.Spec.ApiIngress, "api")
-	if err != nil || res.Requeue {
+	if err != nil || res.RequeueAfter > 0 {
 		return res, err
 	}
 
