@@ -544,7 +544,7 @@ func ImageForUnleash(unleash *unleashv1.Unleash) string {
 	return image
 }
 
-// ResolveReleaseChannelImage resolves the image from a ReleaseChannel and stores it in the status.
+// ResolveReleaseChannelImage resolves the image from a ReleaseChannel considering rollout phases.
 // This should be called during Unleash reconciliation to ensure the resolved image is up to date.
 // Returns the resolved image and a boolean indicating if the Unleash resource was modified.
 func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, unleash *unleashv1.Unleash) (string, bool, error) {
@@ -553,7 +553,7 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		return ImageForUnleash(unleash), false, nil
 	}
 
-	// Fetch the ReleaseChannel to get the current image
+	// Fetch the ReleaseChannel to get the current image and phase
 	releaseChannel := &unleashv1.ReleaseChannel{}
 	err := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      unleash.Spec.ReleaseChannel.Name,
@@ -568,15 +568,28 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		return "", false, fmt.Errorf("ReleaseChannel %s has no image specified", releaseChannel.Name)
 	}
 
-	currentReleaseChannelImage := string(releaseChannel.Spec.Image)
+	// Determine which image this instance should use based on ReleaseChannel phase and rollout strategy
+	resolvedImage := getImageForInstance(unleash, releaseChannel)
 
-	// Always update the status to track the resolved ReleaseChannel image
+	// Update the status based on mutual exclusivity rules
 	needsUpdate := false
-	if unleash.Status.ResolvedReleaseChannelImage != currentReleaseChannelImage ||
-		unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
-		unleash.Status.ResolvedReleaseChannelImage = currentReleaseChannelImage
-		unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
-		needsUpdate = true
+
+	if unleash.Spec.CustomImage != "" {
+		// When CustomImage is set, clear ReleaseChannel tracking (mutual exclusivity)
+		if unleash.Status.ResolvedReleaseChannelImage != "" ||
+			unleash.Status.ReleaseChannelName != "" {
+			unleash.Status.ResolvedReleaseChannelImage = ""
+			unleash.Status.ReleaseChannelName = ""
+			needsUpdate = true
+		}
+	} else {
+		// When CustomImage is NOT set, track the resolved ReleaseChannel image
+		if unleash.Status.ResolvedReleaseChannelImage != resolvedImage ||
+			unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
+			unleash.Status.ResolvedReleaseChannelImage = resolvedImage
+			unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
+			needsUpdate = true
+		}
 	}
 
 	// Return the appropriate image based on priority
@@ -584,7 +597,62 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		return unleash.Spec.CustomImage, needsUpdate, nil
 	}
 
-	return currentReleaseChannelImage, needsUpdate, nil
+	return resolvedImage, needsUpdate, nil
+}
+
+// getImageForInstance determines which image a specific Unleash instance should use
+// based on the ReleaseChannel's current phase and rollout strategy
+func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) string {
+	targetImage := string(releaseChannel.Spec.Image)
+
+	// If there's no PreviousImage or we're in idle state, use the target image
+	if releaseChannel.Status.PreviousImage == "" ||
+		releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseIdle {
+		return targetImage
+	}
+
+	// During rollback, all instances should use the previous image
+	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack {
+		return releaseChannel.Status.PreviousImage
+	}
+
+	// During canary phase, only canary instances get the new image
+	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary {
+		if releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel) {
+			return targetImage
+		}
+		// Non-canary instances stay on previous image during canary phase
+		return releaseChannel.Status.PreviousImage
+	}
+
+	// During rolling phase, instances get updated based on the controller's rollout logic
+	// For now, we'll use the target image - the ReleaseChannel controller manages the timing
+	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling {
+		return targetImage
+	}
+
+	// Default to target image for any other states
+	return targetImage
+}
+
+// isCanaryInstance checks if this Unleash instance matches the canary label selector
+func isCanaryInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) bool {
+	if !releaseChannel.Spec.Strategy.Canary.Enabled {
+		return false
+	}
+
+	selector := releaseChannel.Spec.Strategy.Canary.LabelSelector
+
+	// Check match labels
+	for key, value := range selector.MatchLabels {
+		if unleash.Labels == nil || unleash.Labels[key] != value {
+			return false
+		}
+	}
+
+	// For now, we'll just implement matchLabels
+	// MatchExpressions could be added later if needed
+	return true
 }
 
 // envVarsForUnleash returns the environment variables for the Unleash Deployment
