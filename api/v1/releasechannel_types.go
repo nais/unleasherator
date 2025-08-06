@@ -134,6 +134,9 @@ type ReleaseChannelStatus struct {
 
 	// FailureReason contains the reason for rollout failure
 	FailureReason string `json:"failureReason,omitempty"`
+
+	// PreviousImage stores the previous image for rollback purposes
+	PreviousImage string `json:"previousImage,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout
