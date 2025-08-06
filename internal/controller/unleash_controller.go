@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -207,7 +206,25 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, nil
 		}
 
-		if err = r.Update(ctx, unleash); err != nil {
+		// Retry update on conflicts (common when multiple controllers are operating)
+		err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
+			if updateErr := r.Update(ctx, unleash); updateErr != nil {
+				if apierrors.IsConflict(updateErr) {
+					// Refetch and retry
+					if fetchErr := r.Get(ctx, req.NamespacedName, unleash); fetchErr != nil {
+						return false, fetchErr
+					}
+					if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
+						controllerutil.AddFinalizer(unleash, unleashFinalizer)
+					}
+					return false, nil // retry
+				}
+				return false, updateErr
+			}
+			return true, nil
+		})
+
+		if err != nil {
 			log.Error(err, "Failed to update Unleash to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -862,7 +879,21 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&unleash.Status.Conditions, status)
-	if err := r.Status().Update(ctx, unleash); err != nil {
+
+	// Retry status updates on conflicts (common when multiple controllers are operating)
+	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
+		if updateErr := r.Status().Update(ctx, unleash); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				// For status updates, we don't need to refetch the entire object since status is separate
+				// Just retry the status update
+				return false, nil // retry
+			}
+			return false, updateErr
+		}
+		return true, nil
+	})
+
+	if err != nil {
 		log.Error(err, "Failed to update status for Unleash")
 		return err
 	}
@@ -900,7 +931,6 @@ func (r *UnleashReconciler) findUnleashInstancesForReleaseChannel(ctx context.Co
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
 		Watches(
@@ -908,7 +938,9 @@ func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.findUnleashInstancesForReleaseChannel),
 		).
 		//Owns(&appsv1.Deployment{}).
-		WithEventFilter(pred).
+		// Note: Removed GenerationChangedPredicate to allow status-only changes to trigger reconciliation
+		// This is needed because ReleaseChannel status changes (phase transitions) need to trigger
+		// Unleash controller reconciliation, but GenerationChangedPredicate only triggers on spec changes
 		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
 		Complete(r)
 }
