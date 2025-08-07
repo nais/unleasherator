@@ -678,7 +678,10 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 		return append(envVars, utils.SecretEnvVar(EnvDatabaseURL, secretName, secretURLKey)), nil
 	}
 
-	// Removed: Only set EnvDatabasePass when constructing DATABASE_URL from components, if needed.
+	if unleash.Spec.Database.SecretPassKey != "" {
+		envVars = append(envVars, utils.SecretEnvVar(EnvDatabasePass, secretName, unleash.Spec.Database.SecretPassKey))
+	}
+
 	if unleash.Spec.Database.SecretUserKey != "" {
 		envVars = append(envVars, utils.SecretEnvVar(EnvDatabaseUser, secretName, unleash.Spec.Database.SecretUserKey))
 	} else if unleash.Spec.Database.User != "" {

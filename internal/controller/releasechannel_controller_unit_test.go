@@ -33,6 +33,9 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 					Namespace: "default",
 					Labels:    map[string]string{},
 				},
+				Spec: unleashv1.UnleashSpec{
+					// No ReleaseChannel specified
+				},
 			},
 			targetImage:   "test:v2",
 			expectedImage: "test:v2",
@@ -45,6 +48,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 					Namespace: "default",
 					Labels: map[string]string{
 						"release-channel": "nonexistent-channel",
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "nonexistent-channel",
 					},
 				},
 			},
@@ -60,6 +68,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 					Namespace: "default",
 					Labels: map[string]string{
 						"release-channel": "test-channel",
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
 					},
 				},
 			},
@@ -89,6 +102,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 					Labels: map[string]string{
 						"release-channel": "test-channel",
 						"stage":           "canary", // Matches canary selector
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
 					},
 				},
 			},
@@ -130,6 +148,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 						"stage":           "production", // Does not match canary selector
 					},
 				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
+					},
+				},
 			},
 			targetImage: "test:v2",
 			releaseChannel: &unleashv1.ReleaseChannel{
@@ -169,6 +192,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 						"stage":           "production",
 					},
 				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
+					},
+				},
 			},
 			targetImage: "test:v2",
 			releaseChannel: &unleashv1.ReleaseChannel{
@@ -205,6 +233,11 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 					Namespace: "default",
 					Labels: map[string]string{
 						"release-channel": "test-channel",
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
 					},
 				},
 			},
