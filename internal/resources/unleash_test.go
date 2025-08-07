@@ -394,12 +394,12 @@ func TestEnvVarsForUnleash(t *testing.T) {
 			},
 			checkSecretFn: func(t *testing.T, envVars []corev1.EnvVar) {
 				expectedSecrets := map[string]string{
-					"DATABASE_USER":     "user",
-					"DATABASE_PASS":     "pass",
-					"DATABASE_HOST":     "host",
-					"DATABASE_PORT":     "port",
-					"DATABASE_NAME":     "dbname",
-					"DATABASE_SSL":      "ssl",
+					"DATABASE_USER": "user",
+					"DATABASE_PASS": "pass",
+					"DATABASE_HOST": "host",
+					"DATABASE_PORT": "port",
+					"DATABASE_NAME": "dbname",
+					"DATABASE_SSL":  "ssl",
 				}
 
 				foundSecrets := make(map[string]string)

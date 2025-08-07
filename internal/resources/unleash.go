@@ -602,50 +602,42 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 }
 
 // getImageForInstance determines which image a specific Unleash instance should use
-// based on the ReleaseChannel's current phase and rollout strategy
+// based on the ReleaseChannel's current phase and rollout strategy.
 func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) string {
 	targetImage := string(releaseChannel.Spec.Image)
+	previousImage := string(releaseChannel.Status.PreviousImage)
 
 	// Log for debugging
 	fmt.Printf("DEBUG getImageForInstance: instance=%s, phase=%s, targetImage=%s, previousImage=%s\n",
-		unleash.Name, releaseChannel.Status.Phase, targetImage, releaseChannel.Status.PreviousImage)
+		unleash.Name, releaseChannel.Status.Phase, targetImage, previousImage)
 
-	// If there's no PreviousImage or we're in idle state, use the target image
-	if releaseChannel.Status.PreviousImage == "" ||
-		releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseIdle {
-		fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (no previous or idle)\n", targetImage)
+	// No rollout in progress, all instances get the target image.
+	if previousImage == "" {
 		return targetImage
 	}
 
-	// During rollback, all instances should use the previous image
-	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack {
-		fmt.Printf("DEBUG getImageForInstance: returning previousImage=%s (rollback)\n", releaseChannel.Status.PreviousImage)
-		return releaseChannel.Status.PreviousImage
-	}
+	// A rollout is in progress (PreviousImage is set).
+	isCanary := releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel)
 
-	// During canary phase, only canary instances get the new image
-	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary {
-		isCanary := releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel)
-		fmt.Printf("DEBUG getImageForInstance: canary phase, instance=%s, isCanary=%t\n", unleash.Name, isCanary)
+	switch releaseChannel.Status.Phase {
+	case unleashv1.ReleaseChannelPhaseCanary, unleashv1.ReleaseChannelPhaseIdle:
+		// When phase is Idle but PreviousImage is set, it means a rollout has just been triggered.
+		// We treat this as being in the Canary phase for image selection purposes.
 		if isCanary {
-			fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (canary instance)\n", targetImage)
 			return targetImage
 		}
-		// Non-canary instances stay on previous image during canary phase
-		fmt.Printf("DEBUG getImageForInstance: returning previousImage=%s (non-canary instance)\n", releaseChannel.Status.PreviousImage)
-		return releaseChannel.Status.PreviousImage
-	}
-
-	// During rolling phase, instances get updated based on the controller's rollout logic
-	// For now, we'll use the target image - the ReleaseChannel controller manages the timing
-	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling {
-		fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (rolling)\n", targetImage)
+		return previousImage
+	case unleashv1.ReleaseChannelPhaseRolling, unleashv1.ReleaseChannelPhaseCompleted:
+		// During rolling and completed phases, all instances should be on the target image.
 		return targetImage
+	case unleashv1.ReleaseChannelPhaseRollingBack:
+		// During rollback, all instances should be on the previous image.
+		return previousImage
+	default:
+		// For any other unknown or unexpected phase during a rollout, it's safest
+		// to stick with the previous image to avoid unintended upgrades.
+		return previousImage
 	}
-
-	// Default to target image for any other states
-	fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (default)\n", targetImage)
-	return targetImage
 }
 
 // isCanaryInstance checks if this Unleash instance matches the canary label selector
