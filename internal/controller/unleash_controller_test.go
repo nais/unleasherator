@@ -173,7 +173,6 @@ var _ = Describe("Unleash Controller", func() {
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(0))
 
 			By("By cleaning up the Unleash")

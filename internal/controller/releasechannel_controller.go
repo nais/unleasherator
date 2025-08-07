@@ -921,7 +921,7 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 
 		// Check if instance has the expected image (via ResolvedReleaseChannelImage)
 		// The Unleash controller should have resolved the correct image based on ReleaseChannel phase
-		expectedImage := r.getExpectedImageForInstance(currentInstance, targetImage)
+		expectedImage := r.getExpectedImageForInstance(ctx, currentInstance, targetImage)
 		if currentInstance.Status.ResolvedReleaseChannelImage != expectedImage {
 			log.V(1).Info("Instance not updated yet", "name", instance.Name,
 				"resolved", currentInstance.Status.ResolvedReleaseChannelImage,
@@ -941,10 +941,53 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 
 // getExpectedImageForInstance determines what image we expect this instance to have
 // based on the current ReleaseChannel phase
-func (r *ReleaseChannelReconciler) getExpectedImageForInstance(instance *unleashv1.Unleash, targetImage string) string {
-	// For now, during any rollout phase, we expect instances to eventually get the target image
-	// The Unleash controller's image resolution logic will handle the timing based on phase
-	return targetImage
+func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Context, instance *unleashv1.Unleash, targetImage string) string {
+	// During a rollout, we need to check which image this instance should have based on the phase
+	// This should match the logic in the Unleash controller's getImageForInstance function
+
+	// Get the ReleaseChannel to check the current phase and previous image
+	releaseChannelName := instance.Labels["release-channel"]
+	if releaseChannelName == "" {
+		// If no release channel, expect the target image
+		return targetImage
+	}
+
+	releaseChannel := &unleashv1.ReleaseChannel{}
+	err := r.Get(ctx, types.NamespacedName{
+		Name:      releaseChannelName,
+		Namespace: instance.Namespace,
+	}, releaseChannel)
+	if err != nil {
+		// If we can't get the release channel, expect the target image
+		return targetImage
+	}
+
+	previousImage := string(releaseChannel.Status.PreviousImage)
+
+	// No rollout in progress, all instances get the target image
+	if previousImage == "" {
+		return targetImage
+	}
+
+	// A rollout is in progress (PreviousImage is set)
+	isCanary := releaseChannel.Spec.Strategy.Canary.Enabled && r.matchesLabelSelector(*instance, releaseChannel.Spec.Strategy.Canary.LabelSelector)
+
+	switch releaseChannel.Status.Phase {
+	case unleashv1.ReleaseChannelPhaseCanary:
+		if isCanary {
+			return targetImage
+		}
+		return previousImage
+	case unleashv1.ReleaseChannelPhaseRolling, unleashv1.ReleaseChannelPhaseCompleted:
+		// During rolling and completed phases, all instances should be on the target image
+		return targetImage
+	case unleashv1.ReleaseChannelPhaseRollingBack:
+		// During rollback, all instances should be on the previous image
+		return previousImage
+	default:
+		// For any other phase, expect the target image
+		return targetImage
+	}
 }
 
 // isInstanceReady checks if an individual instance is ready
