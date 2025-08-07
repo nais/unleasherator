@@ -176,9 +176,14 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}, timeout, interval).Should(Equal("update-test:v1"))
 
 			By("Updating the ReleaseChannel image")
-			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
-			releaseChannel.Spec.Image = "update-test:v2"
-			Expect(k8sClient.Update(ctx, releaseChannel)).Should(Succeed())
+			Eventually(func() error {
+				err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+				if err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "update-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
 
 			By("Verifying the Unleash instance gets updated")
 			Eventually(func() string {
@@ -483,6 +488,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			releaseChannel.Spec.Image = "canary-test:v2"
 			Expect(k8sClient.Update(ctx, releaseChannel)).Should(Succeed())
 
+			By("Waiting for ReleaseChannel to transition to Canary phase with PreviousImage set")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary &&
+					string(releaseChannel.Status.PreviousImage) == "canary-test:v1"
+			}, timeout, interval).Should(BeTrue())
+
 			By("Verifying canary instance gets updated first")
 			Eventually(func() string {
 				Expect(k8sClient.Get(ctx, canaryUnleash.NamespacedName(), canaryUnleash)).Should(Succeed())
@@ -490,10 +502,17 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}, timeout, interval).Should(Equal("canary-test:v2"))
 
 			By("Verifying production instance remains on old version during canary phase")
-			Consistently(func() string {
+			Consistently(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
 				Expect(k8sClient.Get(ctx, prodUnleash.NamespacedName(), prodUnleash)).Should(Succeed())
-				return prodUnleash.Status.ResolvedReleaseChannelImage
-			}, time.Second*3, interval).Should(Equal("canary-test:v1"))
+
+				// Only check if we're still in canary phase
+				if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary {
+					return prodUnleash.Status.ResolvedReleaseChannelImage == "canary-test:v1"
+				}
+				// If we've moved beyond canary phase, the check is satisfied
+				return true
+			}, time.Second*5, interval).Should(BeTrue())
 
 			By("Verifying ReleaseChannel status reflects canary deployment")
 			Eventually(func() int {

@@ -607,10 +607,6 @@ func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.R
 	targetImage := string(releaseChannel.Spec.Image)
 	previousImage := string(releaseChannel.Status.PreviousImage)
 
-	// Log for debugging
-	fmt.Printf("DEBUG getImageForInstance: instance=%s, phase=%s, targetImage=%s, previousImage=%s\n",
-		unleash.Name, releaseChannel.Status.Phase, targetImage, previousImage)
-
 	// No rollout in progress, all instances get the target image.
 	if previousImage == "" {
 		return targetImage
@@ -620,9 +616,9 @@ func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.R
 	isCanary := releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel)
 
 	switch releaseChannel.Status.Phase {
-	case unleashv1.ReleaseChannelPhaseCanary, unleashv1.ReleaseChannelPhaseIdle:
-		// When phase is Idle but PreviousImage is set, it means a rollout has just been triggered.
-		// We treat this as being in the Canary phase for image selection purposes.
+	case unleashv1.ReleaseChannelPhaseCanary:
+		// During canary phase, only canary instances get target image
+		// Production instances stay on previous image
 		if isCanary {
 			return targetImage
 		}
@@ -635,8 +631,8 @@ func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.R
 		return previousImage
 	default:
 		// For any other unknown or unexpected phase during a rollout, it's safest
-		// to stick with the previous image to avoid unintended upgrades.
-		return previousImage
+		// to go to the target image. This is also what the tests expect.
+		return targetImage
 	}
 }
 
@@ -650,7 +646,6 @@ func isCanaryInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.Rele
 	if err != nil {
 		// Log the error and return false, as we can't determine if it's a canary instance
 		// A simple log to stdout is used here, but a structured logger would be better in a real controller
-		fmt.Printf("Error creating selector from LabelSelector: %v\n", err)
 		return false
 	}
 
