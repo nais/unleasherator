@@ -946,7 +946,7 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 	// This should match the logic in the Unleash controller's getImageForInstance function
 
 	// Get the ReleaseChannel to check the current phase and previous image
-	releaseChannelName := instance.Labels["release-channel"]
+	releaseChannelName := instance.Spec.ReleaseChannel.Name
 	if releaseChannelName == "" {
 		// If no release channel, expect the target image
 		return targetImage
