@@ -374,5 +374,142 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				Equal(unleashv1.ReleaseChannelPhaseIdle),
 			))
 		})
+
+		It("Should perform canary deployment with label selector", func() {
+			By("Creating a ReleaseChannel with canary strategy")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "canary-test-channel",
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "canary-test:v1",
+					Strategy: unleashv1.ReleaseChannelStrategy{
+						Canary: unleashv1.ReleaseChannelCanary{
+							Enabled: true,
+							LabelSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"environment": "staging",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// Create canary instance (staging)
+			canaryUnleash := &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "canary-staging",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"environment": "staging",
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					Database: unleashv1.UnleashDatabaseConfig{
+						URL: "postgres://canary-staging",
+					},
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: releaseChannel.Name,
+					},
+				},
+			}
+
+			// Create production instance (should not be updated in canary phase)
+			prodUnleash := &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "canary-production",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"environment": "production",
+					},
+				},
+				Spec: unleashv1.UnleashSpec{
+					Database: unleashv1.UnleashDatabaseConfig{
+						URL: "postgres://canary-production",
+					},
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: releaseChannel.Name,
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, canaryUnleash)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, prodUnleash)).Should(Succeed())
+
+			By("Mocking deployments to be ready")
+			Eventually(func() error {
+				deployment := &appsv1.Deployment{}
+				err := getDeployment(k8sClient, ctx, client.ObjectKey{
+					Namespace: namespace,
+					Name:      canaryUnleash.Name,
+				}, deployment)
+				if err != nil {
+					return err
+				}
+				setDeploymentStatusAvailable(deployment)
+				return k8sClient.Status().Update(ctx, deployment)
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func() error {
+				deployment := &appsv1.Deployment{}
+				err := getDeployment(k8sClient, ctx, client.ObjectKey{
+					Namespace: namespace,
+					Name:      prodUnleash.Name,
+				}, deployment)
+				if err != nil {
+					return err
+				}
+				setDeploymentStatusAvailable(deployment)
+				return k8sClient.Status().Update(ctx, deployment)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying canary deployment behavior")
+			// Both instances should get the initial image
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, canaryUnleash.NamespacedName(), canaryUnleash)).Should(Succeed())
+				return canaryUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal("canary-test:v1"))
+
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, prodUnleash.NamespacedName(), prodUnleash)).Should(Succeed())
+				return prodUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal("canary-test:v1"))
+
+			By("Updating ReleaseChannel to trigger canary rollout")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			releaseChannel.Spec.Image = "canary-test:v2"
+			Expect(k8sClient.Update(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying canary instance gets updated first")
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, canaryUnleash.NamespacedName(), canaryUnleash)).Should(Succeed())
+				return canaryUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal("canary-test:v2"))
+
+			By("Verifying production instance remains on old version during canary phase")
+			Consistently(func() string {
+				Expect(k8sClient.Get(ctx, prodUnleash.NamespacedName(), prodUnleash)).Should(Succeed())
+				return prodUnleash.Status.ResolvedReleaseChannelImage
+			}, time.Second*3, interval).Should(Equal("canary-test:v1"))
+
+			By("Verifying ReleaseChannel status reflects canary deployment")
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.Instances
+			}, timeout, interval).Should(Equal(2))
+
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.CanaryInstances
+			}, timeout, interval).Should(Equal(1))
+
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.CanaryInstancesUpToDate
+			}, timeout, interval).Should(Equal(1))
+		})
 	})
 })
