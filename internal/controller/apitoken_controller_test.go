@@ -466,23 +466,3 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 		})
 	})
 })
-
-func apiTokenForTest(name, namespace, secretName, unleashName string) *unleashv1.ApiToken {
-	return &unleashv1.ApiToken{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: unleashv1.ApiTokenSpec{
-			UnleashInstance: unleashv1.ApiTokenUnleashInstance{
-				Name:       unleashName,
-				Kind:       "RemoteUnleash",
-				ApiVersion: "unleash.nais.io/v1",
-			},
-			SecretName:  secretName,
-			Type:        "CLIENT",
-			Environment: "development",
-			Projects:    []string{"default"},
-		},
-	}
-}
