@@ -66,6 +66,11 @@ vet: ## Run go vet against code.
 test: envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
+test-releasechannel: envtest ## Run ReleaseChannel controller tests only.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/controller -ginkgo.focus="ReleaseChannel Controller" -v
+
+test-unleash: envtest ## Run Unleash controller tests only.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./internal/controller -ginkgo.focus="Unleash Controller" -v
 ##@ Build
 
 .PHONY: build
