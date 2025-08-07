@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -537,7 +538,7 @@ func ImageForUnleash(unleash *unleashv1.Unleash) string {
 	// Priority 3: Environment variable
 	var imageEnvVar = "UNLEASH_IMAGE"
 	image, found := os.LookupEnv(imageEnvVar)
-	if !found {
+	if !found || image == "" {
 		// Priority 4: Default image
 		image = fmt.Sprintf("%s/%s:%s", DefaultUnleashImageRegistry, DefaultUnleashImageName, DefaultUnleashVersion)
 	}
@@ -605,33 +606,45 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 func getImageForInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) string {
 	targetImage := string(releaseChannel.Spec.Image)
 
+	// Log for debugging
+	fmt.Printf("DEBUG getImageForInstance: instance=%s, phase=%s, targetImage=%s, previousImage=%s\n",
+		unleash.Name, releaseChannel.Status.Phase, targetImage, releaseChannel.Status.PreviousImage)
+
 	// If there's no PreviousImage or we're in idle state, use the target image
 	if releaseChannel.Status.PreviousImage == "" ||
 		releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseIdle {
+		fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (no previous or idle)\n", targetImage)
 		return targetImage
 	}
 
 	// During rollback, all instances should use the previous image
 	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack {
+		fmt.Printf("DEBUG getImageForInstance: returning previousImage=%s (rollback)\n", releaseChannel.Status.PreviousImage)
 		return releaseChannel.Status.PreviousImage
 	}
 
 	// During canary phase, only canary instances get the new image
 	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary {
-		if releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel) {
+		isCanary := releaseChannel.Spec.Strategy.Canary.Enabled && isCanaryInstance(unleash, releaseChannel)
+		fmt.Printf("DEBUG getImageForInstance: canary phase, instance=%s, isCanary=%t\n", unleash.Name, isCanary)
+		if isCanary {
+			fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (canary instance)\n", targetImage)
 			return targetImage
 		}
 		// Non-canary instances stay on previous image during canary phase
+		fmt.Printf("DEBUG getImageForInstance: returning previousImage=%s (non-canary instance)\n", releaseChannel.Status.PreviousImage)
 		return releaseChannel.Status.PreviousImage
 	}
 
 	// During rolling phase, instances get updated based on the controller's rollout logic
 	// For now, we'll use the target image - the ReleaseChannel controller manages the timing
 	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling {
+		fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (rolling)\n", targetImage)
 		return targetImage
 	}
 
 	// Default to target image for any other states
+	fmt.Printf("DEBUG getImageForInstance: returning targetImage=%s (default)\n", targetImage)
 	return targetImage
 }
 
@@ -641,18 +654,15 @@ func isCanaryInstance(unleash *unleashv1.Unleash, releaseChannel *unleashv1.Rele
 		return false
 	}
 
-	selector := releaseChannel.Spec.Strategy.Canary.LabelSelector
-
-	// Check match labels
-	for key, value := range selector.MatchLabels {
-		if unleash.Labels == nil || unleash.Labels[key] != value {
-			return false
-		}
+	selector, err := metav1.LabelSelectorAsSelector(&releaseChannel.Spec.Strategy.Canary.LabelSelector)
+	if err != nil {
+		// Log the error and return false, as we can't determine if it's a canary instance
+		// A simple log to stdout is used here, but a structured logger would be better in a real controller
+		fmt.Printf("Error creating selector from LabelSelector: %v\n", err)
+		return false
 	}
 
-	// For now, we'll just implement matchLabels
-	// MatchExpressions could be added later if needed
-	return true
+	return selector.Matches(labels.Set(unleash.Labels))
 }
 
 // envVarsForUnleash returns the environment variables for the Unleash Deployment
@@ -681,7 +691,9 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 		return append(envVars, utils.SecretEnvVar(EnvDatabaseURL, secretName, secretURLKey)), nil
 	}
 
-	envVars = append(envVars, utils.SecretEnvVar(EnvDatabasePass, secretName, unleash.Spec.Database.SecretPassKey))
+	if unleash.Spec.Database.SecretPassKey != "" {
+		envVars = append(envVars, utils.SecretEnvVar(EnvDatabasePass, secretName, unleash.Spec.Database.SecretPassKey))
+	}
 
 	if unleash.Spec.Database.SecretUserKey != "" {
 		envVars = append(envVars, utils.SecretEnvVar(EnvDatabaseUser, secretName, unleash.Spec.Database.SecretUserKey))
@@ -733,14 +745,16 @@ func envVarsForUnleash(unleash *unleashv1.Unleash) ([]corev1.EnvVar, error) {
 		envVars = append(envVars, utils.EnvVar(EnvDatabaseSSL, unleash.Spec.Database.SSL))
 	}
 
-	envVars = append(envVars, utils.EnvVar(EnvDatabaseURL, fmt.Sprintf(
-		"postgres://$(%s):$(%s)@$(%s):$(%s)/$(%s)",
-		EnvDatabaseUser,
-		EnvDatabasePass,
-		EnvDatabaseHost,
-		EnvDatabasePort,
-		EnvDatabaseName,
-	)))
+	if unleash.Spec.Database.SecretPassKey != "" {
+		envVars = append(envVars, utils.EnvVar(EnvDatabaseURL, fmt.Sprintf(
+			"postgres://$(%s):$(%s)@$(%s):$(%s)/$(%s)",
+			EnvDatabaseUser,
+			EnvDatabasePass,
+			EnvDatabaseHost,
+			EnvDatabasePort,
+			EnvDatabaseName,
+		)))
+	}
 
 	if unleash.Spec.ExtraEnvVars != nil {
 		envVars = append(envVars, unleash.Spec.ExtraEnvVars...)
