@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -466,6 +467,72 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
+
+		It("Should wait for ReleaseChannel to become available instead of using default image", func() {
+			ctx := context.Background()
+
+			By("By creating an Unleash that references a non-existent ReleaseChannel")
+			unleash := unleashResource("test-unleash-missing-rc", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+					Name: "missing-channel",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By verifying the Unleash is stuck waiting (no deployment created)")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+
+			// The Unleash should exist but should not create a deployment
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash) == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// No deployment should be created yet
+			createdDeployment := &appsv1.Deployment{}
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment)
+				return apierrors.IsNotFound(err)
+			}, time.Second*2, interval).Should(BeTrue())
+
+			By("By creating the missing ReleaseChannel")
+			releaseChannelImage := "unleash:6.0.0"
+			releaseChannel := releaseChannelResource("missing-channel", UnleashNamespace, releaseChannelImage)
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("By waiting for ReleaseChannel to be ready")
+			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
+					return false
+				}
+				return createdReleaseChannel.Status.Phase == "Idle"
+			}, timeout, interval).Should(BeTrue())
+
+			By("By verifying the Unleash now progresses and uses the ReleaseChannel image")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By verifying the deployment is now created with the correct image")
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment); err != nil {
+					return ""
+				}
+				return createdDeployment.Spec.Template.Spec.Containers[0].Image
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By cleaning up resources")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
 		})
 	})
 })

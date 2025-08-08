@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"testing"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -8,7 +9,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestDeploymentForUnleash(t *testing.T) {
@@ -477,4 +480,93 @@ func TestEnvVarsForUnleash(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveReleaseChannelImage(t *testing.T) {
+	// Setup scheme with our custom types
+	testScheme := runtime.NewScheme()
+	err := unleashv1.AddToScheme(testScheme)
+	assert.NoError(t, err)
+
+	unleash := &unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-unleash",
+			Namespace: "test-namespace",
+		},
+		Spec: unleashv1.UnleashSpec{
+			ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+				Name: "test-channel",
+			},
+		},
+	}
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-channel",
+			Namespace: "test-namespace",
+		},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image: "test-image:v1.0",
+		},
+	}
+
+	t.Run("should return default image when no ReleaseChannel specified", func(t *testing.T) {
+		unleashNoRC := unleash.DeepCopy()
+		unleashNoRC.Spec.ReleaseChannel.Name = ""
+
+		k8sClient := fake.NewClientBuilder().WithScheme(testScheme).Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleashNoRC)
+		assert.NoError(t, err)
+		assert.False(t, modified)
+		assert.Contains(t, image, "unleash-v4") // Should be the default image
+	})
+
+	t.Run("should return error when ReleaseChannel not found", func(t *testing.T) {
+		k8sClient := fake.NewClientBuilder().WithScheme(testScheme).Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleash)
+		assert.Error(t, err)
+		assert.False(t, modified)
+		assert.Empty(t, image)
+		assert.Contains(t, err.Error(), "not found, waiting for it to become available")
+	})
+
+	t.Run("should return ReleaseChannel image when found", func(t *testing.T) {
+		k8sClient := fake.NewClientBuilder().WithScheme(testScheme).WithObjects(releaseChannel).Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleash)
+		assert.NoError(t, err)
+		assert.True(t, modified) // Status should be updated
+		assert.Equal(t, "test-image:v1.0", image)
+		assert.Equal(t, "test-image:v1.0", unleash.Status.ResolvedReleaseChannelImage)
+		assert.Equal(t, "test-channel", unleash.Status.ReleaseChannelName)
+	})
+
+	t.Run("should return error when ReleaseChannel has no image", func(t *testing.T) {
+		emptyReleaseChannel := releaseChannel.DeepCopy()
+		emptyReleaseChannel.Spec.Image = ""
+
+		k8sClient := fake.NewClientBuilder().WithScheme(testScheme).WithObjects(emptyReleaseChannel).Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleash)
+		assert.Error(t, err)
+		assert.False(t, modified)
+		assert.Empty(t, image)
+		assert.Contains(t, err.Error(), "has no image specified")
+	})
+
+	t.Run("should prioritize CustomImage over ReleaseChannel", func(t *testing.T) {
+		unleashWithCustom := unleash.DeepCopy()
+		unleashWithCustom.Spec.CustomImage = "custom-image:latest"
+
+		k8sClient := fake.NewClientBuilder().WithScheme(testScheme).WithObjects(releaseChannel).Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleashWithCustom)
+		assert.NoError(t, err)
+		assert.True(t, modified) // Status should be cleared when CustomImage is set
+		assert.Equal(t, "custom-image:latest", image)
+		assert.Empty(t, unleashWithCustom.Status.ResolvedReleaseChannelImage)
+		assert.Empty(t, unleashWithCustom.Status.ReleaseChannelName)
+	})
 }
