@@ -78,8 +78,8 @@ var _ = Describe("Unleash Controller", func() {
 		UnleashNamespace = "default"
 		UnleashVersion   = "v5.1.2"
 
-		timeout  = time.Second * 10
-		interval = time.Millisecond * 250
+		timeout  = time.Second * 5
+		interval = time.Millisecond * 100
 	)
 
 	BeforeEach(func() {
@@ -310,14 +310,29 @@ var _ = Describe("Unleash Controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
-			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
+			By("By verifying ReleaseChannel controller does NOT interfere during initial creation")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			// Wait for initial reconciliation to complete
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return false
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
+			}, timeout, interval).Should(BeTrue())
+
+			// Verify no rollout annotations are set during initial creation (no rollout happening)
+			Expect(createdUnleash.Annotations).To(BeNil(), "No rollout annotations should be set during initial creation")
+
+			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage
 			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By verifying CustomImage is NOT set during initial creation")
+			Expect(createdUnleash.Spec.CustomImage).Should(BeEmpty(), "CustomImage should not be set during initial creation")
 
 			By("By faking Deployment status as available")
 			createdDeployment := &appsv1.Deployment{}
@@ -333,7 +348,7 @@ var _ = Describe("Unleash Controller", func() {
 				return createdDeployment.Spec.Template.Spec.Containers[0].Image
 			}, timeout, interval).Should(Equal(releaseChannelImage))
 
-			By("By manually triggering an Unleash reconcile (simulating periodic reconcilation)")
+			By("By manually triggering an Unleash reconcile (simulating periodic reconciliation)")
 			// Force a reconcile by updating a label - this simulates routine reconciliation
 			Eventually(func() error {
 				freshUnleash := &unleashv1.Unleash{}
@@ -347,6 +362,16 @@ var _ = Describe("Unleash Controller", func() {
 				return k8sClient.Update(ctx, freshUnleash)
 			}, timeout, interval).Should(Succeed())
 
+			By("By verifying ReleaseChannel controller does NOT interfere during routine reconciliation")
+			// After routine reconciliation, still no rollout annotations should be present
+			Consistently(func() map[string]string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return nil
+				}
+				return createdUnleash.Annotations
+			}, time.Second*2, interval).Should(Or(BeNil(), Not(HaveKey("releasechannel.unleash.nais.io/last-rollout-trigger"))),
+				"ReleaseChannel controller should not set rollout annotations during routine reconciliation")
+
 			By("By checking that routine Unleash reconciliation does NOT change the image")
 			// The status should remain the same after routine reconciliation
 			Consistently(func() string {
@@ -356,10 +381,15 @@ var _ = Describe("Unleash Controller", func() {
 				return createdUnleash.Status.ResolvedReleaseChannelImage
 			}, time.Second*2, interval).Should(Equal(releaseChannelImage))
 
-			By("By checking that CustomImage is NOT set during initial creation (only during rollouts)")
-			Expect(createdUnleash.Spec.CustomImage).Should(BeEmpty())
+			By("By verifying CustomImage remains empty during routine operations")
+			Consistently(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return "error"
+				}
+				return createdUnleash.Spec.CustomImage
+			}, time.Second*2, interval).Should(BeEmpty(), "CustomImage should remain empty during routine operations")
 
-			By("By updating the ReleaseChannel to a new image (intentional upgrade)")
+			By("By updating the ReleaseChannel to a new image (intentional rollout)")
 			newReleaseChannelImage := "quay.io/unleash/unleash-server:6.4.0"
 			// Get the latest version to avoid conflicts
 			Eventually(func() error {
@@ -371,17 +401,8 @@ var _ = Describe("Unleash Controller", func() {
 				return k8sClient.Update(ctx, freshReleaseChannel)
 			}, timeout, interval).Should(Succeed())
 
-			By("By checking that ReleaseChannel controller DOES update the Unleash (intentional upgrade)")
-			// During rollout, ReleaseChannel controller temporarily sets CustomImage to trigger the upgrade
-			// But we should verify that the status is updated to track the new image
-			Eventually(func() string {
-				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
-					return ""
-				}
-				return createdUnleash.Status.ResolvedReleaseChannelImage
-			}, timeout, interval).Should(Equal(newReleaseChannelImage))
-
-			By("By checking that the annotation is set during the rollout")
+			By("By verifying ReleaseChannel controller DOES coordinate during intentional rollout")
+			// Now the ReleaseChannel controller should set rollout coordination annotations
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
@@ -390,9 +411,31 @@ var _ = Describe("Unleash Controller", func() {
 					return ""
 				}
 				return createdUnleash.Annotations["releasechannel.unleash.nais.io/last-rollout-trigger"]
-			}, timeout, interval).ShouldNot(BeEmpty())
+			}, timeout, interval).ShouldNot(BeEmpty(), "ReleaseChannel controller should set rollout trigger annotation during intentional rollout")
 
-			By("By checking that the status is also updated during intentional upgrade")
+			By("By checking that rollout intent annotation is also set")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				if createdUnleash.Annotations == nil {
+					return ""
+				}
+				return createdUnleash.Annotations["releasechannel.unleash.nais.io/rollout-intent"]
+			}, timeout, interval).Should(ContainSubstring(newReleaseChannelImage), "Rollout intent should reference the new image")
+
+			By("By checking that target image annotation is set")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				if createdUnleash.Annotations == nil {
+					return ""
+				}
+				return createdUnleash.Annotations["releasechannel.unleash.nais.io/target-image"]
+			}, timeout, interval).Should(Equal(newReleaseChannelImage), "Target image annotation should be set during rollout")
+
+			By("By checking that the Unleash status is updated to the new image")
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
@@ -400,16 +443,33 @@ var _ = Describe("Unleash Controller", func() {
 				return createdUnleash.Status.ResolvedReleaseChannelImage
 			}, timeout, interval).Should(Equal(newReleaseChannelImage))
 
-			By("By verifying that after rollout, CustomImage and ReleaseChannel remain mutually exclusive")
-			// After the rollout completes, CustomImage should be cleared and ReleaseChannel should manage the image
-			Consistently(func() bool {
+			By("By verifying the coordination annotations work as intended")
+			// The annotations should contain the expected rollout coordination data
+			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return false
 				}
-				// During active rollout, CustomImage might be temporarily set, but we want to verify
-				// that the ReleaseChannel mechanism is working (status is updated)
-				return createdUnleash.Status.ResolvedReleaseChannelImage == newReleaseChannelImage
-			}, time.Second*2, interval).Should(BeTrue())
+				annotations := createdUnleash.Annotations
+				if annotations == nil {
+					return false
+				}
+
+				// Verify all required coordination annotations are present
+				hasRolloutTrigger := annotations["releasechannel.unleash.nais.io/last-rollout-trigger"] != ""
+				hasTargetImage := annotations["releasechannel.unleash.nais.io/target-image"] == newReleaseChannelImage
+				hasRolloutIntent := annotations["releasechannel.unleash.nais.io/rollout-intent"] != ""
+
+				return hasRolloutTrigger && hasTargetImage && hasRolloutIntent
+			}, timeout, interval).Should(BeTrue(), "All coordination annotations should be present during rollout")
+
+			By("By verifying that ReleaseChannel coordination is phase-aware")
+			// Check that the rollout intent includes the phase information
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
+					return ""
+				}
+				return string(createdReleaseChannel.Status.Phase)
+			}, timeout, interval).Should(BeElementOf("Rolling", "Canary", "Idle"), "ReleaseChannel should transition through rollout phases")
 
 			By("By cleaning up resources")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())

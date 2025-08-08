@@ -341,6 +341,13 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
+	// Additional wait for Unleash v7+ instances to ensure admin tokens are properly initialized
+	// This helps prevent 401 authentication errors during multi-instance deployments
+	if r.isUnleashV7OrLater(ctx, unleash) {
+		log.Info("Unleash v7+ detected, allowing additional time for admin token initialization")
+		time.Sleep(time.Second * 3)
+	}
+
 	span.AddEvent("Testing connection to Unleash instance")
 	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
@@ -671,8 +678,8 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 	log := log.FromContext(ctx).WithName("unleash")
 
 	found := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
-	isCreating := err != nil && apierrors.IsNotFound(err)
+	getErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
+	isCreating := getErr != nil && apierrors.IsNotFound(getErr)
 
 	// Handle ReleaseChannel resolution - always resolve when ReleaseChannel is specified
 	// to keep status up to date, regardless of CustomImage setting
@@ -764,9 +771,9 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 		}
 
 		return ctrl.Result{}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
-		return ctrl.Result{}, err
+	} else if getErr != nil {
+		log.Error(getErr, "Failed to get Deployment")
+		return ctrl.Result{}, getErr
 	} else if !equality.Semantic.DeepDerivative(dep.Spec, found.Spec) || !equality.Semantic.DeepEqual(dep.ObjectMeta.Labels, found.ObjectMeta.Labels) {
 		log.Info("Updating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 
@@ -840,7 +847,7 @@ func (r *UnleashReconciler) waitForDeployment(ctx context.Context, timeout time.
 	return err
 }
 
-// testConnection will test the connection to the Unleash instance
+// testConnection will test the connection to the Unleash instance with retry logic for authentication failures
 func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
@@ -848,19 +855,81 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 		return nil, err
 	}
 
-	stats, res, err := client.GetInstanceAdminStats(ctx)
+	// Retry logic for 401 authentication errors - common with Unleash v7 during initialization
+	maxRetries := 3
+	retryDelay := time.Second * 2
 
-	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
-		return nil, err
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		stats, res, err := client.GetInstanceAdminStats(ctx)
+
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s (attempt %d/%d)", unleash.URL(), attempt, maxRetries))
+
+			// For connection refused errors, fail immediately (service not ready)
+			if strings.Contains(err.Error(), "connection refused") {
+				return nil, err
+			}
+
+			// For other errors, retry if we have attempts left
+			if attempt < maxRetries {
+				log.Info(fmt.Sprintf("Retrying connection test in %v", retryDelay))
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // exponential backoff
+				continue
+			}
+			return nil, err
+		}
+
+		if res.StatusCode == http.StatusUnauthorized {
+			log.Info(fmt.Sprintf("Authentication failed (attempt %d/%d) - admin token may not be initialized yet", attempt, maxRetries))
+
+			if attempt < maxRetries {
+				log.Info(fmt.Sprintf("Retrying authentication in %v", retryDelay))
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // exponential backoff
+				continue
+			}
+
+			err = fmt.Errorf("authentication failed after %d attempts - admin token not properly initialized", maxRetries)
+			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+			return nil, err
+		}
+
+		if res.StatusCode != http.StatusOK {
+			err = fmt.Errorf("unexpected http status code %d", res.StatusCode)
+			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+			return nil, err
+		}
+
+		// If we reach here, connection was successful
+		log.Info("Successfully connected to Unleash instance")
+		return stats, nil
 	}
 
-	if res.StatusCode != http.StatusOK {
-		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
-		return nil, err
-	}
+	// This should never be reached, but just in case
+	return nil, fmt.Errorf("unexpected error in connection retry loop")
+}
 
-	return stats, nil
+// isUnleashV7OrLater determines if this is an Unleash v7+ instance based on the image
+func (r *UnleashReconciler) isUnleashV7OrLater(ctx context.Context, unleash resources.UnleashInstance) bool {
+	// Check if this is an Unleash instance (not RemoteUnleash)
+	if u, ok := unleash.(*unleashv1.Unleash); ok {
+		// Check for custom image first
+		if u.Spec.CustomImage != "" {
+			// Check if custom image contains version 7 indicators
+			return strings.Contains(u.Spec.CustomImage, ":7") ||
+				strings.Contains(u.Spec.CustomImage, "v7") ||
+				strings.Contains(u.Spec.CustomImage, "unleash-server")
+		}
+
+		// Try to resolve the actual image being used
+		if resolvedImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, u); err == nil {
+			return strings.Contains(resolvedImage, ":7") ||
+				strings.Contains(resolvedImage, "v7") ||
+				strings.Contains(resolvedImage, "unleash-server")
+		}
+	}
+	return false
 }
 
 func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
