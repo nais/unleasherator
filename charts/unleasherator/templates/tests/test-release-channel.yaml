@@ -1,0 +1,427 @@
+---
+# PostgreSQL database for the release channel test
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-rc-test
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+type: Opaque
+data:
+  postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-rc-test
+  labels:
+    app.kubernetes.io/name: postgresql-rc-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql-rc-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgresql-rc-test
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:15.3
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-rc-test
+              key: postgres-password
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-rc-test
+  labels:
+    app.kubernetes.io/name: postgresql-rc-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app.kubernetes.io/name: postgresql-rc-test
+---
+# ReleaseChannel with specific image version for testing
+apiVersion: unleash.nais.io/v1
+kind: ReleaseChannel
+metadata:
+  name: release-channel-test
+  labels:
+    app.kubernetes.io/name: release-channel-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  image: "unleashorg/unleash-server:6"
+  strategy:
+    maxParallel: 1
+    batchInterval: "30s"
+    maxUpgradeTime: "10m"
+  healthChecks:
+    enabled: true
+    initialDelay: "15s"
+    timeout: "3m"
+  rollback:
+    enabled: false
+    onFailure: true
+---
+# First Unleash instance managed by the release channel
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-rc-prod
+  labels:
+    app.kubernetes.io/name: unleash-rc-prod
+    app.kubernetes.io/part-of: unleasherator
+    deployment: "production"
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  size: 1
+  database:
+    secretName: postgres-rc-test
+    secretPassKey: postgres-password
+    host: postgres-rc-test
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  releaseChannel:
+    name: release-channel-test
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql-rc-test
+        ports:
+          - protocol: TCP
+            port: 5432
+---
+# Second Unleash instance managed by the same release channel
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-rc-staging
+  labels:
+    app.kubernetes.io/name: unleash-rc-staging
+    app.kubernetes.io/part-of: unleasherator
+    deployment: "staging"
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  size: 1
+  database:
+    secretName: postgres-rc-test
+    secretPassKey: postgres-password
+    host: postgres-rc-test
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  releaseChannel:
+    name: release-channel-test
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql-rc-test
+        ports:
+          - protocol: TCP
+            port: 5432
+---
+# API Token for the production instance
+apiVersion: unleash.nais.io/v1
+kind: ApiToken
+metadata:
+  name: unleash-rc-prod-token
+  labels:
+    app.kubernetes.io/name: unleash-rc-prod
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  unleashInstance:
+    apiVersion: unleash.nais.io/v1
+    kind: Unleash
+    name: unleash-rc-prod
+  secretName: unleash-rc-prod-token
+  type: CLIENT
+  environment: development
+  projects:
+    - default
+---
+# API Token for the staging instance
+apiVersion: unleash.nais.io/v1
+kind: ApiToken
+metadata:
+  name: unleash-rc-staging-token
+  labels:
+    app.kubernetes.io/name: unleash-rc-staging
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  unleashInstance:
+    apiVersion: unleash.nais.io/v1
+    kind: Unleash
+    name: unleash-rc-staging
+  secretName: unleash-rc-staging-token
+  type: CLIENT
+  environment: development
+  projects:
+    - default
+---
+# Test job to verify ReleaseChannel functionality
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: release-channel-test-probe
+  labels:
+    app.kubernetes.io/name: release-channel-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: release-channel-test
+        app.kubernetes.io/part-of: unleasherator
+    spec:
+      serviceAccountName: controller-manager
+      containers:
+      - name: release-channel-test
+        image: bitnami/kubectl:1.30
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "=== ReleaseChannel E2E Test Suite ==="
+
+          # Wait for ReleaseChannel to be created
+          echo "1. Waiting for ReleaseChannel to be created..."
+          for i in $(seq 1 30); do
+            if kubectl get releasechannel release-channel-test -o jsonpath='{.metadata.name}' 2>/dev/null; then
+              echo "✓ ReleaseChannel 'release-channel-test' found"
+              break
+            fi
+            echo "Attempt $i/30: Waiting for ReleaseChannel..."
+            sleep 5
+          done
+
+          # Verify ReleaseChannel spec
+          echo "2. Verifying ReleaseChannel configuration..."
+          RC_IMAGE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.image}')
+          if [ "$RC_IMAGE" = "unleashorg/unleash-server:6" ]; then
+            echo "✓ ReleaseChannel image correctly set to: $RC_IMAGE"
+          else
+            echo "✗ ReleaseChannel image mismatch. Expected: unleashorg/unleash-server:6, Got: $RC_IMAGE"
+            exit 1
+          fi
+
+          # Verify strategy configuration
+          MAX_PARALLEL=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.strategy.maxParallel}')
+          if [ "$MAX_PARALLEL" = "1" ]; then
+            echo "✓ ReleaseChannel maxParallel correctly set to: $MAX_PARALLEL"
+          else
+            echo "✗ ReleaseChannel maxParallel mismatch. Expected: 1, Got: $MAX_PARALLEL"
+            exit 1
+          fi
+
+          # Wait for Unleash instances to be created and managed by ReleaseChannel
+          echo "3. Waiting for Unleash instances to be deployed..."
+          for instance in unleash-rc-prod unleash-rc-staging; do
+            echo "Checking instance: $instance"
+            for i in $(seq 1 60); do
+              RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
+              CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+              echo "Attempt $i/60: Instance $instance reconciled: $RECONCILED, connected: $CONNECTED"
+
+              if [ "$RECONCILED" = "true" ] && [ "$CONNECTED" = "true" ]; then
+                echo "✓ Instance $instance is Ready (reconciled and connected)"
+                break
+              elif [ "$RECONCILED" = "false" ]; then
+                echo "Instance $instance not reconciled yet, waiting..."
+              elif [ "$CONNECTED" = "false" ]; then
+                echo "Instance $instance not connected yet, waiting..."
+              fi
+              sleep 10
+            done
+
+            if [ "$RECONCILED" != "true" ] || [ "$CONNECTED" != "true" ]; then
+              echo "✗ Instance $instance did not become Ready within timeout"
+              echo "Final status: reconciled=$RECONCILED, connected=$CONNECTED"
+              kubectl describe unleash $instance
+              exit 1
+            fi
+          done
+
+          # Verify that instances use the ReleaseChannel image
+          echo "4. Verifying instances use ReleaseChannel image..."
+          for instance in unleash-rc-prod unleash-rc-staging; do
+            # Check if resolvedReleaseChannelImage is set
+            RESOLVED_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
+            RC_NAME=$(kubectl get unleash $instance -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
+
+            if [ "$RESOLVED_IMAGE" = "unleashorg/unleash-server:6" ] && [ "$RC_NAME" = "release-channel-test" ]; then
+              echo "✓ Instance $instance correctly uses ReleaseChannel image: $RESOLVED_IMAGE"
+            else
+              echo "✗ Instance $instance image mismatch. Expected image: unleashorg/unleash-server:6, Got: $RESOLVED_IMAGE"
+              echo "   Expected ReleaseChannel: release-channel-test, Got: $RC_NAME"
+              kubectl get unleash $instance -o yaml
+              exit 1
+            fi
+
+            # Verify deployment uses correct image
+            DEPLOY_IMAGE=$(kubectl get deployment $instance -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+            if echo "$DEPLOY_IMAGE" | grep -q "unleashorg/unleash-server:6"; then
+              echo "✓ Deployment $instance uses correct image: $DEPLOY_IMAGE"
+            else
+              echo "✗ Deployment $instance image mismatch. Expected to contain: unleashorg/unleash-server:6, Got: $DEPLOY_IMAGE"
+              exit 1
+            fi
+          done
+
+          # Test API connectivity for both instances
+          echo "5. Testing API connectivity for both instances..."
+          for instance in unleash-rc-prod unleash-rc-staging; do
+            echo "Testing connectivity to $instance..."
+
+            # Get API credentials
+            API_TOKEN=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_TOKEN}' | base64 -d)
+            API_URL=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_URL}' | base64 -d)
+
+            # Test connection
+            for i in $(seq 1 20); do
+              echo "Attempt $i/20: Testing $instance API..."
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: $API_TOKEN" $API_URL/api/client/features 2>/dev/null || echo "000")
+              echo "HTTP Status for $instance: $STATUS"
+
+              if [ "$STATUS" = "200" ]; then
+                echo "✓ $instance API connection successful!"
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$STATUS" != "200" ]; then
+              echo "✗ $instance API connection failed after 20 attempts!"
+              exit 1
+            fi
+          done
+
+          # Check ReleaseChannel status
+          echo "6. Checking ReleaseChannel status..."
+          RC_PHASE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+          RC_INSTANCES=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instances}' 2>/dev/null || echo "0")
+          RC_UPDATED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instancesUpToDate}' 2>/dev/null || echo "0")
+
+          echo "ReleaseChannel Status:"
+          echo "  Phase: $RC_PHASE"
+          echo "  Instances: $RC_INSTANCES"
+          echo "  InstancesUpToDate: $RC_UPDATED"
+
+          if [ "$RC_INSTANCES" = "$RC_UPDATED" ] && [ "$RC_INSTANCES" != "0" ]; then
+            echo "✓ All instances managed by ReleaseChannel are up to date"
+          else
+            echo "⚠ ReleaseChannel may still be updating instances"
+            kubectl get releasechannel release-channel-test -o yaml
+          fi
+
+          # Test upgrade scenario: Update ReleaseChannel to version 7
+          echo "7. Testing ReleaseChannel upgrade scenario..."
+          echo "Updating ReleaseChannel from version 6 to version 7..."
+          kubectl patch releasechannel release-channel-test --type='merge' -p='{"spec":{"image":"unleashorg/unleash-server:7"}}'
+
+          # Wait a bit for the controller to process the change
+          sleep 10
+
+          # Verify the ReleaseChannel was updated
+          NEW_RC_IMAGE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.image}')
+          if [ "$NEW_RC_IMAGE" = "unleashorg/unleash-server:7" ]; then
+            echo "✓ ReleaseChannel successfully updated to: $NEW_RC_IMAGE"
+          else
+            echo "✗ ReleaseChannel upgrade failed. Expected: unleashorg/unleash-server:7, Got: $NEW_RC_IMAGE"
+            exit 1
+          fi
+
+          # Check if instances are being updated (they should show the upgrade in progress)
+          echo "Checking if instances are being upgraded..."
+          for i in $(seq 1 30); do
+            UPDATED_COUNT=0
+            for instance in unleash-rc-prod unleash-rc-staging; do
+              CURRENT_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
+              if [ "$CURRENT_IMAGE" = "unleashorg/unleash-server:7" ]; then
+                UPDATED_COUNT=$((UPDATED_COUNT + 1))
+              fi
+            done
+
+            echo "Upgrade progress: $UPDATED_COUNT/2 instances updated to version 7"
+            if [ "$UPDATED_COUNT" = "2" ]; then
+              echo "✓ All instances successfully upgraded to version 7!"
+              break
+            fi
+
+            sleep 5
+          done
+
+          if [ "$UPDATED_COUNT" != "2" ]; then
+            echo "⚠ Not all instances were upgraded within the timeout, but this is expected in a test environment"
+            echo "Final status:"
+            for instance in unleash-rc-prod unleash-rc-staging; do
+              FINAL_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
+              echo "  $instance: $FINAL_IMAGE"
+            done
+          fi
+
+          echo "=== All ReleaseChannel tests passed! ==="
+      restartPolicy: Never

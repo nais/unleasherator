@@ -1,0 +1,443 @@
+---
+# PostgreSQL database for the Unleash v7 test
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-v7-test
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+type: Opaque
+data:
+  postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-v7-test
+  labels:
+    app.kubernetes.io/name: postgresql-v7-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql-v7-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgresql-v7-test
+    spec:
+      containers:
+      - name: postgresql
+        image: postgres:15.3
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-v7-test
+              key: postgres-password
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-v7-test
+  labels:
+    app.kubernetes.io/name: postgresql-v7-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app.kubernetes.io/name: postgresql-v7-test
+---
+# Direct Unleash v7 instance (not using ReleaseChannel)
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-v7-direct
+  labels:
+    app.kubernetes.io/name: unleash-v7-direct
+    app.kubernetes.io/part-of: unleasherator
+    test-type: "direct-v7"
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  size: 1
+  customImage: "unleashorg/unleash-server:7"
+  database:
+    secretName: postgres-v7-test
+    secretPassKey: postgres-password
+    host: postgres-v7-test
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+    - name: LOG_LEVEL
+      value: "debug"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql-v7-test
+        ports:
+          - protocol: TCP
+            port: 5432
+---
+# ReleaseChannel with Unleash v7 for comparison
+apiVersion: unleash.nais.io/v1
+kind: ReleaseChannel
+metadata:
+  name: release-channel-v7-test
+  labels:
+    app.kubernetes.io/name: release-channel-v7-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  image: "unleashorg/unleash-server:7"
+  strategy:
+    maxParallel: 1
+    batchInterval: "30s"
+    maxUpgradeTime: "10m"
+  healthChecks:
+    enabled: true
+    initialDelay: "15s"
+    timeout: "3m"
+  rollback:
+    enabled: false
+    onFailure: true
+---
+# Unleash instance managed by ReleaseChannel v7
+apiVersion: unleash.nais.io/v1
+kind: Unleash
+metadata:
+  name: unleash-v7-channel
+  labels:
+    app.kubernetes.io/name: unleash-v7-channel
+    app.kubernetes.io/part-of: unleasherator
+    test-type: "channel-v7"
+  annotations:
+    "helm.sh/hook": test
+    #"helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  size: 1
+  database:
+    secretName: postgres-v7-test
+    secretPassKey: postgres-password
+    host: postgres-v7-test
+    databaseName: postgres
+    port: "5432"
+    user: postgres
+    ssl: "false"
+  releaseChannel:
+    name: release-channel-v7-test
+  extraEnvVars:
+    - name: ENABLE_OAS
+      value: "true"
+    - name: LOG_LEVEL
+      value: "debug"
+  networkPolicy:
+    enabled: true
+    allowDNS: true
+    extraEgressRules:
+      - to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: postgresql-v7-test
+        ports:
+          - protocol: TCP
+            port: 5432
+---
+# API Token for the direct v7 instance
+# apiVersion: unleash.nais.io/v1
+# kind: ApiToken
+# metadata:
+#   name: unleash-v7-direct-token
+#   labels:
+#     app.kubernetes.io/name: unleash-v7-direct
+#     app.kubernetes.io/part-of: unleasherator
+#   annotations:
+#     "helm.sh/hook": test
+#     #"helm.sh/hook-delete-policy": hook-succeeded
+# spec:
+#   unleashInstance:
+#     apiVersion: unleash.nais.io/v1
+#     kind: Unleash
+#     name: unleash-v7-direct
+#   secretName: unleash-v7-direct-token
+#   type: CLIENT
+#   environment: development
+#   projects:
+#     - default
+# ---
+# # API Token for the channel-managed v7 instance
+# apiVersion: unleash.nais.io/v1
+# kind: ApiToken
+# metadata:
+#   name: unleash-v7-channel-token
+#   labels:
+#     app.kubernetes.io/name: unleash-v7-channel
+#     app.kubernetes.io/part-of: unleasherator
+#   annotations:
+#     "helm.sh/hook": test
+#     #"helm.sh/hook-delete-policy": hook-succeeded
+# spec:
+#   unleashInstance:
+#     apiVersion: unleash.nais.io/v1
+#     kind: Unleash
+#     name: unleash-v7-channel
+#   secretName: unleash-v7-channel-token
+#   type: CLIENT
+#   environment: development
+#   projects:
+#     - default
+---
+# Test job to verify Unleash v7 functionality and investigate connectivity issues
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: unleash-v7-test-probe
+#   labels:
+#     app.kubernetes.io/name: unleash-v7-test
+#     app.kubernetes.io/part-of: unleasherator
+#   annotations:
+#     "helm.sh/hook": test
+#     #"helm.sh/hook-delete-policy": hook-succeeded
+# spec:
+#   backoffLimit: 3
+#   template:
+#     metadata:
+#       labels:
+#         app.kubernetes.io/name: unleash-v7-test
+#         app.kubernetes.io/part-of: unleasherator
+#     spec:
+#       serviceAccountName: controller-manager
+#       containers:
+#       - name: unleash-v7-test
+#         image: bitnami/kubectl:1.30
+#         command:
+#         - sh
+#         - -c
+#         - |
+#           set -e
+#           echo "=== Unleash v7 Connectivity Investigation Test ==="
+#
+#           # Function to check and display detailed status
+#           check_instance_status() {
+#             local instance=$1
+#             local test_type=$2
+#             echo "--- Checking $instance ($test_type) ---"
+#
+#             # Basic status
+#             RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
+#             CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+#             PHASE=$(kubectl get unleash $instance -o jsonpath='{.status.phase}' 2>/dev/null || echo "unknown")
+#             echo "Status: reconciled=$RECONCILED, connected=$CONNECTED, phase=$PHASE"
+#
+#             # Image information
+#             if [ "$test_type" = "direct" ]; then
+#               CUSTOM_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.spec.customImage}' 2>/dev/null || echo "")
+#               RESOLVED_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedImage}' 2>/dev/null || echo "")
+#               echo "Images: custom=$CUSTOM_IMAGE, resolved=$RESOLVED_IMAGE"
+#             else
+#               RC_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
+#               RC_NAME=$(kubectl get unleash $instance -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
+#               echo "ReleaseChannel: name=$RC_NAME, image=$RC_IMAGE"
+#             fi
+#
+#             # Pod status
+#             POD_STATUS=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $3}' || echo "NotFound")
+#             POD_READY=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $2}' || echo "0/0")
+#             echo "Pod: status=$POD_STATUS, ready=$POD_READY"
+#
+#             # Deployment status
+#             DEPLOY_IMAGE=$(kubectl get deployment $instance -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "NotFound")
+#             echo "Deployment image: $DEPLOY_IMAGE"
+#
+#             # Health endpoint check
+#             echo "Testing health endpoint directly..."
+#             POD_NAME=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $1}' | head -n 1)
+#             if [ -n "$POD_NAME" ] && [ "$POD_NAME" != "" ]; then
+#               echo "Pod name: $POD_NAME"
+#               HEALTH_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/health 2>/dev/null || echo "failed")
+#               echo "Health endpoint (/health): HTTP $HEALTH_CHECK"
+#
+#               # Check specific Unleash endpoints
+#               API_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/api/admin/features 2>/dev/null || echo "failed")
+#               echo "Admin API (/api/admin/features): HTTP $API_CHECK"
+#
+#               CLIENT_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/api/client/features 2>/dev/null || echo "failed")
+#               echo "Client API (/api/client/features): HTTP $CLIENT_CHECK"
+#
+#               # Check logs for any errors
+#               echo "Recent container logs (last 10 lines):"
+#               kubectl logs $POD_NAME --tail=10 2>/dev/null || echo "Failed to get logs"
+#             else
+#               echo "No pod found for $instance"
+#             fi
+#
+#             echo ""
+#           }
+#
+#           # Wait for PostgreSQL to be ready
+#           echo "1. Waiting for PostgreSQL to be ready..."
+#           for i in $(seq 1 30); do
+#             PG_READY=$(kubectl get deployment postgres-v7-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+#             if [ "$PG_READY" = "1" ]; then
+#               echo "✓ PostgreSQL is ready"
+#               break
+#             fi
+#             echo "Attempt $i/30: PostgreSQL not ready yet..."
+#             sleep 5
+#           done
+#
+#           # Wait for ReleaseChannel to be created
+#           echo "2. Waiting for ReleaseChannel to be created..."
+#           for i in $(seq 1 30); do
+#             if kubectl get releasechannel release-channel-v7-test -o jsonpath='{.metadata.name}' 2>/dev/null; then
+#               echo "✓ ReleaseChannel 'release-channel-v7-test' found"
+#               break
+#             fi
+#             echo "Attempt $i/30: Waiting for ReleaseChannel..."
+#             sleep 5
+#           done
+#
+#           # Wait for both Unleash instances to be deployed
+#           echo "3. Waiting for Unleash instances to be deployed..."
+#           for instance in unleash-v7-direct unleash-v7-channel; do
+#             echo "Waiting for $instance to be created..."
+#             for i in $(seq 1 30); do
+#               if kubectl get unleash $instance -o jsonpath='{.metadata.name}' 2>/dev/null; then
+#                 echo "✓ $instance found"
+#                 break
+#               fi
+#               echo "Attempt $i/30: Waiting for $instance..."
+#               sleep 5
+#             done
+#           done
+#
+#           # Wait for pods to be running
+#           echo "4. Waiting for pods to be running..."
+#           for instance in unleash-v7-direct unleash-v7-channel; do
+#             echo "Waiting for $instance pod to be running..."
+#             for i in $(seq 1 60); do
+#               POD_STATUS=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $3}' || echo "NotFound")
+#               if [ "$POD_STATUS" = "Running" ]; then
+#                 echo "✓ $instance pod is running"
+#                 break
+#               fi
+#               echo "Attempt $i/60: Pod status: $POD_STATUS"
+#               sleep 5
+#             done
+#           done
+#
+#           # Detailed status check after initial deployment
+#           echo "5. Performing detailed status checks..."
+#           sleep 10  # Give time for health checks to complete
+#
+#           check_instance_status "unleash-v7-direct" "direct"
+#           check_instance_status "unleash-v7-channel" "channel"
+#
+#           # Monitor connectivity status over time
+#           echo "6. Monitoring connectivity status over time..."
+#           for round in $(seq 1 12); do  # Monitor for 2 minutes
+#             echo "--- Round $round/12 (monitoring connectivity) ---"
+#
+#             for instance in unleash-v7-direct unleash-v7-channel; do
+#               RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
+#               CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+#               echo "$instance: reconciled=$RECONCILED, connected=$CONNECTED"
+#
+#               # If not connected, show detailed controller events
+#               if [ "$CONNECTED" = "false" ]; then
+#                 echo "Events for $instance:"
+#                 kubectl describe unleash $instance | grep -A 10 "Events:" | tail -n 5
+#               fi
+#             done
+#
+#             sleep 10
+#           done
+#
+#           # Final comprehensive check
+#           echo "7. Final comprehensive status check..."
+#           echo "=== Direct Unleash v7 Instance ==="
+#           check_instance_status "unleash-v7-direct" "direct"
+#
+#           echo "=== ReleaseChannel-managed Unleash v7 Instance ==="
+#           check_instance_status "unleash-v7-channel" "channel"
+#
+#           # Test API connectivity if instances are connected
+#           echo "8. Testing API connectivity..."
+#           for instance in unleash-v7-direct unleash-v7-channel; do
+#             CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+#             if [ "$CONNECTED" = "true" ]; then
+#               echo "Testing API for connected instance: $instance"
+#               API_TOKEN=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_TOKEN}' | base64 -d 2>/dev/null || echo "")
+#               API_URL=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_URL}' | base64 -d 2>/dev/null || echo "")
+#
+#               if [ -n "$API_TOKEN" ] && [ -n "$API_URL" ]; then
+#                 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: $API_TOKEN" $API_URL/api/client/features 2>/dev/null || echo "000")
+#                 echo "API test for $instance: HTTP $STATUS"
+#               else
+#                 echo "API credentials not available for $instance"
+#               fi
+#             else
+#               echo "Skipping API test for disconnected instance: $instance"
+#             fi
+#           done
+#
+#           # Show controller logs related to these instances
+#           echo "9. Checking controller logs for Unleash v7 related entries..."
+#           CONTROLLER_POD=$(kubectl get pods -n default -l app.kubernetes.io/name=controller-manager --no-headers | awk '{print $1}' | head -n 1)
+#           if [ -n "$CONTROLLER_POD" ]; then
+#             echo "Controller pod: $CONTROLLER_POD"
+#             echo "Recent controller logs mentioning our test instances:"
+#             kubectl logs $CONTROLLER_POD --tail=100 | grep -E "(unleash-v7-direct|unleash-v7-channel|connectivity|health)" || echo "No relevant logs found"
+#           else
+#             echo "Controller pod not found"
+#           fi
+#
+#           echo "=== Unleash v7 Investigation Complete ==="
+#           echo "Summary:"
+#           DIRECT_CONNECTED=$(kubectl get unleash unleash-v7-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+#           CHANNEL_CONNECTED=$(kubectl get unleash unleash-v7-channel -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+#           echo "Direct v7 instance connected: $DIRECT_CONNECTED"
+#           echo "Channel v7 instance connected: $CHANNEL_CONNECTED"
+#
+#           if [ "$DIRECT_CONNECTED" = "false" ] || [ "$CHANNEL_CONNECTED" = "false" ]; then
+#             echo "⚠️  Connectivity issues detected with Unleash v7 instances!"
+#             echo "This confirms the suspected bug with Unleash v7 connectivity."
+#             # Don't exit with error for investigation purposes
+#           else
+#             echo "✅ Both Unleash v7 instances are connected successfully"
+#           fi
+#
+#       restartPolicy: Never
