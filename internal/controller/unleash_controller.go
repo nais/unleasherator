@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -679,6 +680,11 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 		resolvedImage, modified, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
 		if err != nil {
 			log.Error(err, "Failed to resolve ReleaseChannel image", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
+			// Check if it's a "not found" error - if so, requeue to wait for ReleaseChannel
+			if apierrors.IsNotFound(err) || strings.Contains(fmt.Sprintf("%v", err), "not found, waiting for it to become available") {
+				log.Info("ReleaseChannel not yet available, requeuing", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
 			return ctrl.Result{}, err
 		}
 

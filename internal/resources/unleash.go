@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -561,6 +562,10 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		Namespace: unleash.Namespace,
 	}, releaseChannel)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// ReleaseChannel specified but not found - this should fail reconciliation and requeue
+			return "", false, fmt.Errorf("ReleaseChannel %s specified but not found, waiting for it to become available", unleash.Spec.ReleaseChannel.Name)
+		}
 		return "", false, fmt.Errorf("failed to get ReleaseChannel %s: %w", unleash.Spec.ReleaseChannel.Name, err)
 	}
 
