@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -428,5 +429,8 @@ func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.RemoteUnleash{}).
 		WithEventFilter(pred).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1, // Prevent race conditions with rapid simultaneous changes
+		}).
 		Complete(r)
 }

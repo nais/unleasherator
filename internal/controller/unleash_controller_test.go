@@ -78,8 +78,8 @@ var _ = Describe("Unleash Controller", func() {
 		UnleashNamespace = "default"
 		UnleashVersion   = "v5.1.2"
 
-		timeout  = time.Second * 5
-		interval = time.Millisecond * 100
+		timeout  = time.Second * 3
+		interval = time.Millisecond * 50
 	)
 
 	BeforeEach(func() {
@@ -369,7 +369,7 @@ var _ = Describe("Unleash Controller", func() {
 					return nil
 				}
 				return createdUnleash.Annotations
-			}, time.Second*2, interval).Should(Or(BeNil(), Not(HaveKey("releasechannel.unleash.nais.io/last-rollout-trigger"))),
+			}, time.Millisecond*500, interval).Should(Or(BeNil(), Not(HaveKey("releasechannel.unleash.nais.io/last-rollout-trigger"))),
 				"ReleaseChannel controller should not set rollout annotations during routine reconciliation")
 
 			By("By checking that routine Unleash reconciliation does NOT change the image")
@@ -379,7 +379,7 @@ var _ = Describe("Unleash Controller", func() {
 					return ""
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage
-			}, time.Second*2, interval).Should(Equal(releaseChannelImage))
+			}, time.Millisecond*500, interval).Should(Equal(releaseChannelImage))
 
 			By("By verifying CustomImage remains empty during routine operations")
 			Consistently(func() string {
@@ -387,7 +387,7 @@ var _ = Describe("Unleash Controller", func() {
 					return "error"
 				}
 				return createdUnleash.Spec.CustomImage
-			}, time.Second*2, interval).Should(BeEmpty(), "CustomImage should remain empty during routine operations")
+			}, time.Millisecond*500, interval).Should(BeEmpty(), "CustomImage should remain empty during routine operations")
 
 			By("By updating the ReleaseChannel to a new image (intentional rollout)")
 			newReleaseChannelImage := "quay.io/unleash/unleash-server:6.4.0"
@@ -556,7 +556,7 @@ var _ = Describe("Unleash Controller", func() {
 			Consistently(func() bool {
 				err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment)
 				return apierrors.IsNotFound(err)
-			}, time.Second*2, interval).Should(BeTrue())
+			}, time.Millisecond*500, interval).Should(BeTrue())
 
 			By("By creating the missing ReleaseChannel")
 			releaseChannelImage := "unleash:6.0.0"

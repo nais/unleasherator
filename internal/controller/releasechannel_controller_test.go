@@ -399,6 +399,11 @@ var _ = Describe("ReleaseChannel Controller", func() {
 							},
 						},
 					},
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: time.Second * 3},
+						Timeout:      &metav1.Duration{Duration: time.Minute * 5},
+					},
 				},
 			}
 
