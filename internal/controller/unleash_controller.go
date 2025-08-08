@@ -676,8 +676,11 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 
 	// Handle ReleaseChannel resolution - always resolve when ReleaseChannel is specified
 	// to keep status up to date, regardless of CustomImage setting
+	var resolvedImage string
 	if unleash.Spec.ReleaseChannel.Name != "" {
-		resolvedImage, modified, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+		var modified bool
+		var err error
+		resolvedImage, modified, err = resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
 		if err != nil {
 			log.Error(err, "Failed to resolve ReleaseChannel image", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
 			// Check if it's a "not found" error - if so, requeue to wait for ReleaseChannel
@@ -688,11 +691,33 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		// If the resource was modified (status updated), update it
+		// If the resource was modified (status updated), update it with retry logic
 		if modified {
-			if err := r.Status().Update(ctx, unleash); err != nil {
-				log.Error(err, "Failed to update Unleash status with resolved ReleaseChannel image")
-				return ctrl.Result{}, err
+			updateErr := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
+				if err := r.Status().Update(ctx, unleash); err != nil {
+					if apierrors.IsConflict(err) {
+						// Refresh the object to get the latest version before retrying
+						if fetchErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); fetchErr != nil {
+							return false, fetchErr
+						}
+						// Re-resolve the ReleaseChannel to update status on the fresh object
+						_, modified, resolveErr := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+						if resolveErr != nil {
+							return false, resolveErr
+						}
+						if !modified {
+							return true, nil // No changes needed
+						}
+						return false, nil // retry with refreshed object
+					}
+					return false, err
+				}
+				return true, nil
+			})
+
+			if updateErr != nil {
+				log.Error(updateErr, "Failed to update Unleash status with resolved ReleaseChannel image")
+				return ctrl.Result{}, updateErr
 			}
 
 			log.Info("Updated ReleaseChannel image tracking in status", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name, "ResolvedImage", resolvedImage)
@@ -703,9 +728,30 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 				return ctrl.Result{}, err
 			}
 		}
+	} else {
+		// No ReleaseChannel specified, use ResolveReleaseChannelImage for consistency
+		var modified bool
+		var err error
+		resolvedImage, modified, err = resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+		if err != nil {
+			log.Error(err, "Failed to resolve image", "Name", unleash.Name)
+			return ctrl.Result{}, err
+		}
+
+		// Update status if needed (typically when clearing ReleaseChannel tracking)
+		if modified {
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.Info("Conflict updating Unleash status, will retry", "Name", unleash.Name, "Namespace", unleash.Namespace)
+					return ctrl.Result{Requeue: true}, nil
+				}
+				log.Error(err, "Failed to update Unleash status")
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
-	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
+	dep, err := resources.DeploymentForUnleashWithImage(unleash, r.Scheme, resolvedImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -890,9 +936,26 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
 		if updateErr := r.Status().Update(ctx, unleash); updateErr != nil {
 			if apierrors.IsConflict(updateErr) {
-				// For status updates, we don't need to refetch the entire object since status is separate
-				// Just retry the status update
-				return false, nil // retry
+				// Refresh the object to get the latest version before retrying
+				if fetchErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); fetchErr != nil {
+					return false, fetchErr
+				}
+				// Reapply the status changes to the fresh object
+				switch status.Type {
+				case unleashv1.UnleashStatusConditionTypeReconciled:
+					unleash.Status.Reconciled = status.Status == metav1.ConditionTrue
+				case unleashv1.UnleashStatusConditionTypeConnected:
+					unleash.Status.Connected = status.Status == metav1.ConditionTrue
+				}
+				if stats != nil {
+					if stats.VersionEnterprise != "" {
+						unleash.Status.Version = stats.VersionEnterprise
+					} else {
+						unleash.Status.Version = stats.VersionOSS
+					}
+				}
+				meta.SetStatusCondition(&unleash.Status.Conditions, status)
+				return false, nil // retry with refreshed object
 			}
 			return false, updateErr
 		}
