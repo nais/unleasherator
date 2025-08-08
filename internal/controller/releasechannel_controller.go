@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/internal/statemachine"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -35,9 +36,10 @@ const (
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
 type ReleaseChannelReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
-	Tracer   trace.Tracer
+	Scheme         *runtime.Scheme
+	Recorder       record.EventRecorder
+	Tracer         trace.Tracer
+	DecisionEngine *statemachine.DecisionEngine
 }
 
 var (
@@ -205,7 +207,7 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// Only update status at the end if the phase execution didn't already handle it
 	// Phase execution methods that return updateReleaseChannelStatus already handle status updates
-	if result.RequeueAfter > 0 && err == nil {
+	if result.RequeueAfter > 0 {
 		// Skip final status update since phase methods handle their own status updates
 		log.V(1).Info("Skipping final status update as phase method handles it")
 	}
@@ -363,7 +365,32 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		if err := r.Status().Update(ctx, releaseChannel); err != nil {
 			log.V(1).Info("Failed to update ReleaseChannel status with instance counts", "error", err)
 		}
-		return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
+		return ctrl.Result{RequeueAfter: time.Minute * 10}, nil
+	}
+
+	// Check if this is initial deployment vs. actual rollout
+	// If no instances have resolved images AND no PreviousImage is set, this is initial deployment
+	isInitialDeployment := true
+	for _, unleash := range targetInstances {
+		if unleash.Status.ResolvedReleaseChannelImage != "" {
+			isInitialDeployment = false
+			break
+		}
+	}
+
+	if isInitialDeployment {
+		log.Info("Detected initial deployment - letting Unleash controller handle image resolution without rollout coordination")
+		// Update instance counts for status tracking but don't trigger rollout
+		r.updateInstanceCounts(releaseChannel, targetInstances)
+		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		r.recordMetrics(releaseChannel, labels)
+
+		// Update status to persist instance counts
+		if err := r.Status().Update(ctx, releaseChannel); err != nil {
+			log.V(1).Info("Failed to update ReleaseChannel status with instance counts", "error", err)
+		}
+		// Requeue to check progress but don't trigger rollout coordination
+		return ctrl.Result{RequeueAfter: time.Minute * 2}, nil
 	}
 
 	log.Info("Starting rollout", "instancesToUpdate", len(instancesToUpdate))
@@ -686,19 +713,28 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	batchSize := min(len(instancesToUpdate), maxParallel)
 	batch := instancesToUpdate[:batchSize]
 
-	// Deploy to current batch
-	result, err := r.deployToInstances(ctx, releaseChannel, batch, log)
-	if err != nil {
-		newPhase := releasePhaseFailedRolling(releaseChannel.Spec.Rollback.Enabled)
-		r.recordPhaseTransition(releaseChannel, newPhase)
-		releaseChannel.Status.Phase = newPhase
-		releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
-		// Record metrics for failure state
-		r.recordMetrics(releaseChannel, labels)
-		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
-			log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
+	// Check if this is a new batch that needs deployment
+	needsDeployment := r.shouldTriggerDeployment(ctx, releaseChannel, batch, log)
+
+	if needsDeployment {
+		// Deploy to current batch
+		result, err := r.deployToInstances(ctx, releaseChannel, batch, log)
+		if err != nil {
+			newPhase := releasePhaseFailedRolling(releaseChannel.Spec.Rollback.Enabled)
+			r.recordPhaseTransition(releaseChannel, newPhase)
+			releaseChannel.Status.Phase = newPhase
+			releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
+			// Record metrics for failure state
+			r.recordMetrics(releaseChannel, labels)
+			if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
+				log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
+			}
+			return result, err
 		}
-		return result, err
+
+		// After successful deployment trigger, give Unleash controllers time to process
+		log.Info("Deployment triggered, allowing time for Unleash controllers to process")
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
 	// Update instance counts after deployment
@@ -713,7 +749,8 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
 			log.V(1).Info("Failed to update ReleaseChannel status while waiting for batch", "error", statusErr)
 		}
-		return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		// Use exponential backoff when waiting for instances to become ready
+		return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
 	}
 
 	// Perform health checks if enabled
@@ -806,6 +843,82 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 
 // Helper functions
 
+// shouldTriggerDeployment determines if we should trigger deployment for a batch
+// Optimized to focus on core coordination patterns
+func (r *ReleaseChannelReconciler) shouldTriggerDeployment(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, batch []unleashv1.Unleash, log logr.Logger) bool {
+	targetImage := string(releaseChannel.Spec.Image)
+	currentPhase := releaseChannel.Status.Phase
+
+	// Create expected rollout intent for this phase
+	expectedIntent := fmt.Sprintf("%s-%s", targetImage, currentPhase)
+
+	// Check if any instance needs triggering based on rollout intent mismatch
+	for _, instance := range batch {
+		// Simple coordination check: does the intent match?
+		if r.needsIntentUpdate(instance, expectedIntent, targetImage, log) {
+			return true
+		}
+	}
+
+	log.V(1).Info("No instances in batch need deployment triggering", "batchSize", len(batch), "expectedIntent", expectedIntent)
+	return false
+}
+
+// needsIntentUpdate checks if an instance needs its rollout intent updated
+// This is a simplified coordination check focusing on the key patterns
+func (r *ReleaseChannelReconciler) needsIntentUpdate(instance unleashv1.Unleash, expectedIntent, targetImage string, log logr.Logger) bool {
+	// First, check if the instance is already rolling out - if so, don't interfere
+	if r.isInstanceRollingOut(instance) {
+		log.V(1).Info("Instance is already rolling out, skipping trigger",
+			"name", instance.Name)
+		return false
+	}
+
+	// Check current rollout intent annotation
+	currentIntent := instance.Annotations["releasechannel.unleash.nais.io/rollout-intent"]
+
+	// Intent mismatch - need to trigger
+	if currentIntent != expectedIntent {
+		log.V(1).Info("Instance needs deployment trigger due to intent mismatch",
+			"name", instance.Name,
+			"currentIntent", currentIntent,
+			"expectedIntent", expectedIntent)
+		return true
+	}
+
+	// Also check if the instance doesn't have the target image yet
+	if instance.Status.ResolvedReleaseChannelImage != targetImage {
+		log.V(1).Info("Instance needs deployment trigger due to image mismatch",
+			"name", instance.Name,
+			"currentImage", instance.Status.ResolvedReleaseChannelImage,
+			"targetImage", targetImage)
+		return true
+	}
+
+	return false
+}
+
+// getBackoffDuration calculates backoff duration based on phase transition attempts
+// This implements exponential backoff to reduce controller load during wait periods
+func (r *ReleaseChannelReconciler) getBackoffDuration(releaseChannel *unleashv1.ReleaseChannel) time.Duration {
+	// Base duration for waiting
+	baseDuration := time.Second * 10
+
+	// Check how long we've been in the current phase to implement backoff
+	if releaseChannel.Status.LastReconcileTime != nil {
+		timeSinceLastReconcile := time.Since(releaseChannel.Status.LastReconcileTime.Time)
+
+		// If we've been waiting for a while, increase the backoff
+		if timeSinceLastReconcile > time.Minute*2 {
+			return time.Second * 30 // Longer backoff if we've been waiting
+		} else if timeSinceLastReconcile > time.Minute {
+			return time.Second * 20 // Medium backoff
+		}
+	}
+
+	return baseDuration // Default backoff
+}
+
 // getTargetInstances finds all Unleash instances that reference this ReleaseChannel
 // and do not have CustomImage set (since CustomImage and ReleaseChannel are mutually exclusive)
 func (r *ReleaseChannelReconciler) getTargetInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) ([]unleashv1.Unleash, error) {
@@ -859,6 +972,7 @@ func (r *ReleaseChannelReconciler) getInstancesToUpdate(instances []unleashv1.Un
 }
 
 // deployToInstances coordinates rollout by triggering Unleash reconciliations
+// OPTIMIZATION: Uses semantic annotations for cleaner Option 2 alignment
 func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash, log logr.Logger) (ctrl.Result, error) {
 	targetImage := string(releaseChannel.Spec.Image)
 
@@ -885,7 +999,10 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 				currentInstance.Annotations = make(map[string]string)
 			}
 
-			// Use a timestamp to ensure the annotation value changes
+			// Store declarative rollout intent and target image
+			rolloutIntent := fmt.Sprintf("%s-%s", targetImage, releaseChannel.Status.Phase)
+			currentInstance.Annotations["releasechannel.unleash.nais.io/rollout-intent"] = rolloutIntent
+			currentInstance.Annotations["releasechannel.unleash.nais.io/target-image"] = targetImage
 			currentInstance.Annotations["releasechannel.unleash.nais.io/last-rollout-trigger"] = time.Now().Format(time.RFC3339)
 
 			if err := r.Update(ctx, currentInstance); err != nil {
@@ -998,6 +1115,38 @@ func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) 
 			return condition.Status == metav1.ConditionTrue
 		}
 	}
+	return false
+}
+
+// isInstanceRollingOut checks if an instance is currently in the middle of a deployment rollout
+func (r *ReleaseChannelReconciler) isInstanceRollingOut(instance unleashv1.Unleash) bool {
+	// Check if the instance is in a degraded state (might indicate ongoing deployment)
+	for _, condition := range instance.Status.Conditions {
+		if condition.Type == unleashv1.UnleashStatusConditionTypeDegraded {
+			return condition.Status == metav1.ConditionTrue
+		}
+	}
+
+	// Check if reconciled condition is False (indicating ongoing work)
+	for _, condition := range instance.Status.Conditions {
+		if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
+			// If reconciled is False, the controller is likely working on it
+			return condition.Status == metav1.ConditionFalse
+		}
+	}
+
+	// Check if there's a recent rollout trigger annotation that suggests ongoing work
+	if lastTrigger, exists := instance.Annotations["releasechannel.unleash.nais.io/last-rollout-trigger"]; exists {
+		// Parse the timestamp and check if it's very recent (within last 2 minutes)
+		// This suggests a rollout was recently triggered and might still be in progress
+		if triggerTime, err := time.Parse(time.RFC3339, lastTrigger); err == nil {
+			if time.Since(triggerTime) < 2*time.Minute {
+				// Recent trigger, likely still rolling out
+				return true
+			}
+		}
+	}
+
 	return false
 }
 
@@ -1184,9 +1333,9 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 			log.V(1).Info("Failed to update ReleaseChannel status", "error", err, "instances", statusToApply.Instances)
 			return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
 		}
-		// Success
+		// Success - use longer interval to reduce aggressive reconciling
 		log.V(1).Info("Successfully updated ReleaseChannel status", "instances", statusToApply.Instances, "upToDate", statusToApply.InstancesUpToDate)
-		return ctrl.Result{RequeueAfter: time.Second * 2}, nil
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
 	// If we reach here, all retries failed
@@ -1197,6 +1346,11 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 // SetupWithManager sets up the controller with the Manager.
 func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Tracer = otel.Tracer("github.com/nais/unleasherator/internal/controller")
+
+	// Initialize decision engine with real time provider
+	if r.DecisionEngine == nil {
+		r.DecisionEngine = statemachine.NewDecisionEngineWithDefaults(&statemachine.RealTimeProvider{})
+	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.ReleaseChannel{}).

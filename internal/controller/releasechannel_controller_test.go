@@ -18,8 +18,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	const (
 		namespace = "default"
 
-		timeout  = time.Second * 10
-		interval = time.Millisecond * 250
+		timeout  = time.Second * 5
+		interval = time.Millisecond * 100
 
 		releaseChannelUnleashVersion = "v5.1.2"
 	)

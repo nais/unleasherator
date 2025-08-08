@@ -33,8 +33,8 @@ var _ = Describe("RemoteUnleash controller", func() {
 		RemoteUnleashToken     = "test"
 		RemoteUnleashVersion   = "v5.1.2"
 
-		timeout  = time.Second * 10
-		interval = time.Millisecond * 250
+		timeout  = time.Second * 5
+		interval = time.Millisecond * 100
 	)
 
 	BeforeEach(func() {

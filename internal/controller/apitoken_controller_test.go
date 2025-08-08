@@ -34,8 +34,8 @@ var _ = Describe("ApiToken controller", Ordered, func() {
 		ApiTokenServerURL = "http://api-token-unleash.nais.io"
 		ApiTokenSecret    = "*:*.be44368985f7fb3237c584ef86f3d6bdada42ddbd63a019d26955178"
 
-		timeout  = time.Second * 10
-		interval = time.Millisecond * 250
+		timeout  = time.Second * 5
+		interval = time.Millisecond * 100
 	)
 
 	var existingTokens = unleashclient.ApiTokenResult{
