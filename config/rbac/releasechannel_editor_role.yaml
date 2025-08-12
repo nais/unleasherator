@@ -1,0 +1,27 @@
+# permissions for end users to edit releasechannels.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: unleasherator
+    app.kubernetes.io/managed-by: kustomize
+  name: releasechannel-editor-role
+rules:
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels/status
+  verbs:
+  - get

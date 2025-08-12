@@ -1,0 +1,26 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-releasechannel-editor-role
+  labels:
+    app: unleasherator
+  {{- include "unleasherator.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels/status
+  verbs:
+  - get

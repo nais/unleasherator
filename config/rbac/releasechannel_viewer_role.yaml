@@ -1,0 +1,23 @@
+# permissions for end users to view releasechannels.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: unleasherator
+    app.kubernetes.io/managed-by: kustomize
+  name: releasechannel-viewer-role
+rules:
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - unleash.nais.io
+  resources:
+  - releasechannels/status
+  verbs:
+  - get
