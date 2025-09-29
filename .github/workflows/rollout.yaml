@@ -21,7 +21,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       name: ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [meta, rollout-controller]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: git tag and push
         run: |
           git tag ${{ needs.meta.outputs.version }}
