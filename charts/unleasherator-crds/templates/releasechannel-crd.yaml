@@ -260,6 +260,14 @@ spec:
               failureReason:
                 description: FailureReason contains the reason for rollout failure
                 type: string
+              instanceImages:
+                additionalProperties:
+                  type: string
+                description: |-
+                  InstanceImages maps instance names to their desired images
+                  This is the source of truth for what image each instance should run
+                  Unleash controller reads from this map to determine desired state
+                type: object
               instanceStatus:
                 description: InstanceStatus provides detailed status for each instance
                 items:
@@ -302,6 +310,13 @@ spec:
                   was reconciled.
                 format: date-time
                 type: string
+              lastTargetImages:
+                additionalProperties:
+                  type: string
+                description: |-
+                  LastTargetImages tracks what target we last attempted to deploy to each instance
+                  Used by decision engine to detect when target changes and force retrigger
+                type: object
               phase:
                 description: Phase represents the current phase of the rollout
                 type: string
