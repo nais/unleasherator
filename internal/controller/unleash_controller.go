@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -47,8 +48,9 @@ const (
 )
 
 var (
-	deploymentTimeout = 5 * time.Minute
-	requeueAfter      = 1 * time.Hour
+	// Unleash controller timeouts - prefixed to avoid conflicts with other controllers
+	unleashDeploymentTimeout      = 5 * time.Minute
+	unleashControllerRequeueAfter = 1 * time.Hour
 
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -243,9 +245,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Secrets")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -256,9 +256,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -269,9 +267,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Deployment")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -282,9 +278,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Service")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -295,9 +289,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Ingresses")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -308,9 +300,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile ServiceMonitor")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -327,12 +317,12 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// avoid testing connection to the previous instance if the Deployment is not
 	// ready yet. Delay requeue to avoid tying up the reconciler since waiting is
 	// done in the same reconcile loop.
-	log.WithValues("timeout", deploymentTimeout).Info("Waiting for Deployment rollout to finish")
-	if err = r.waitForDeployment(ctx, deploymentTimeout, req.NamespacedName); err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", deploymentTimeout)); err != nil {
-			return ctrl.Result{RequeueAfter: deploymentTimeout}, err
+	log.WithValues("timeout", unleashDeploymentTimeout).Info("Waiting for Deployment rollout to finish")
+	if err = r.waitForDeployment(ctx, unleashDeploymentTimeout, req.NamespacedName); err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", unleashDeploymentTimeout)); err != nil {
+			return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
 		}
-		return ctrl.Result{RequeueAfter: deploymentTimeout}, err
+		return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
 	}
 
 	// Set the reconcile status of the Unleash instance to available
@@ -371,7 +361,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	log.Info("Reconciliation of Unleash finished")
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
 }
 
 // publish the Unleash instance to pubsub if federation is enabled.
@@ -681,78 +671,41 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 	getErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
 	isCreating := getErr != nil && apierrors.IsNotFound(getErr)
 
-	// Handle ReleaseChannel resolution - always resolve when ReleaseChannel is specified
-	// to keep status up to date, regardless of CustomImage setting
+	// Determine the image to use based on priority
 	var resolvedImage string
-	if unleash.Spec.ReleaseChannel.Name != "" {
-		var modified bool
-		var err error
-		resolvedImage, modified, err = resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
-		if err != nil {
-			log.Error(err, "Failed to resolve ReleaseChannel image", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
-			// Check if it's a "not found" error - if so, requeue to wait for ReleaseChannel
-			if apierrors.IsNotFound(err) || strings.Contains(fmt.Sprintf("%v", err), "not found, waiting for it to become available") {
-				log.Info("ReleaseChannel not yet available, requeuing", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name)
-				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-			}
-			return ctrl.Result{}, err
+
+	// Priority 1: CustomImage always takes precedence (manual override)
+	if unleash.Spec.CustomImage != "" {
+		resolvedImage = unleash.Spec.CustomImage
+		log.Info("Using custom image", "image", resolvedImage)
+	} else if unleash.Spec.ReleaseChannel.Name != "" {
+		// Priority 2: ReleaseChannel managed - wait for ReleaseChannel controller to set the image
+		if unleash.Status.ResolvedReleaseChannelImage == "" || unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
+			log.Info("Waiting for ReleaseChannel controller to set resolved image",
+				"releaseChannel", unleash.Spec.ReleaseChannel.Name,
+				"currentResolvedImage", unleash.Status.ResolvedReleaseChannelImage,
+				"currentReleaseChannelName", unleash.Status.ReleaseChannelName)
+			// Don't requeue manually - the ReleaseChannel controller will update our status
+			// which will automatically trigger reconciliation
+			return ctrl.Result{}, nil
 		}
-
-		// If the resource was modified (status updated), update it with retry logic
-		if modified {
-			updateErr := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
-				if err := r.Status().Update(ctx, unleash); err != nil {
-					if apierrors.IsConflict(err) {
-						// Refresh the object to get the latest version before retrying
-						if fetchErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); fetchErr != nil {
-							return false, fetchErr
-						}
-						// Re-resolve the ReleaseChannel to update status on the fresh object
-						_, modified, resolveErr := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
-						if resolveErr != nil {
-							return false, resolveErr
-						}
-						if !modified {
-							return true, nil // No changes needed
-						}
-						return false, nil // retry with refreshed object
-					}
-					return false, err
-				}
-				return true, nil
-			})
-
-			if updateErr != nil {
-				log.Error(updateErr, "Failed to update Unleash status with resolved ReleaseChannel image")
-				return ctrl.Result{}, updateErr
-			}
-
-			log.Info("Updated ReleaseChannel image tracking in status", "ReleaseChannel", unleash.Spec.ReleaseChannel.Name, "ResolvedImage", resolvedImage)
-
-			// Fetch the updated resource to get the latest status
-			if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); err != nil {
-				log.Error(err, "Failed to get updated Unleash")
-				return ctrl.Result{}, err
-			}
-		}
+		resolvedImage = unleash.Status.ResolvedReleaseChannelImage
+		log.Info("Using ReleaseChannel managed image", "image", resolvedImage, "releaseChannel", unleash.Spec.ReleaseChannel.Name)
 	} else {
-		// No ReleaseChannel specified, use ResolveReleaseChannelImage for consistency
-		var modified bool
-		var err error
-		resolvedImage, modified, err = resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
-		if err != nil {
-			log.Error(err, "Failed to resolve image", "Name", unleash.Name)
-			return ctrl.Result{}, err
-		}
+		// Priority 3: No ReleaseChannel specified, use environment variable or default
+		resolvedImage = r.getDefaultImage()
+		log.Info("Using default image", "image", resolvedImage)
 
-		// Update status if needed (typically when clearing ReleaseChannel tracking)
-		if modified {
+		// Clear any existing ReleaseChannel tracking when not using ReleaseChannel
+		if unleash.Status.ResolvedReleaseChannelImage != "" || unleash.Status.ReleaseChannelName != "" {
+			unleash.Status.ResolvedReleaseChannelImage = ""
+			unleash.Status.ReleaseChannelName = ""
 			if err := r.Status().Update(ctx, unleash); err != nil {
 				if apierrors.IsConflict(err) {
-					log.Info("Conflict updating Unleash status, will retry", "Name", unleash.Name, "Namespace", unleash.Namespace)
+					log.Info("Conflict clearing ReleaseChannel status, will retry", "Name", unleash.Name)
 					return ctrl.Result{Requeue: true}, nil
 				}
-				log.Error(err, "Failed to update Unleash status")
+				log.Error(err, "Failed to clear ReleaseChannel status")
 				return ctrl.Result{}, err
 			}
 		}
@@ -930,6 +883,18 @@ func (r *UnleashReconciler) isUnleashV7OrLater(ctx context.Context, unleash reso
 		}
 	}
 	return false
+}
+
+// getDefaultImage returns the default image when no ReleaseChannel is specified
+func (r *UnleashReconciler) getDefaultImage() string {
+	// Use environment variable or default
+	var imageEnvVar = "UNLEASH_IMAGE"
+	image, found := os.LookupEnv(imageEnvVar)
+	if !found || image == "" {
+		// Use the same defaults as in the resources package
+		image = "europe-north1-docker.pkg.dev/nais-io/nais/images/unleash-v4:v4.23.1"
+	}
+	return image
 }
 
 func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {

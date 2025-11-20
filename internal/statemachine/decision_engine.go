@@ -185,32 +185,16 @@ func ExtractInstanceStateFromUnleash(instance *unleashv1.Unleash, targetImage st
 	// Determine if this is a canary instance (convention: canary instances have "canary" in name)
 	state.IsCanary = strings.Contains(strings.ToLower(instance.Name), "canary")
 
-	// Extract annotations using the new semantic approach
-	if instance.Annotations != nil {
-		// New semantic annotations
-		state.LastTargetImage = instance.Annotations["releasechannel.unleash.nais.io/target-image"]
+	// In the new status-based architecture, target image tracking is managed by the ReleaseChannel controller
+	// The ReleaseChannel controller sets the ResolvedReleaseChannelImage and ReleaseChannelName in status
+	// Target image tracking happens through status updates and condition transitions
 
-		// Parse rollout intent to extract timing if needed
-		if rolloutIntent := instance.Annotations["releasechannel.unleash.nais.io/rollout-intent"]; rolloutIntent != "" {
-			// Rollout intent format: "image-phase", we can extract the image part
-			parts := strings.Split(rolloutIntent, "-")
-			if len(parts) >= 1 {
-				state.LastTargetImage = parts[0]
-			}
-		}
+	// Note: LastTargetImage is now managed by the ReleaseChannel controller internally
+	// and doesn't need to be exposed in the instance status for coordination purposes.
+	// The decision engine should rely on condition transitions to detect state changes.
 
-		// For backward compatibility, also check old annotations
-		if state.LastTargetImage == "" {
-			state.LastTargetImage = instance.Annotations["releasechannel.unleash.nais.io/last-target-image"]
-		}
-
-		// Extract last trigger time from old annotation if present
-		if lastTrigger := instance.Annotations["releasechannel.unleash.nais.io/last-rollout-trigger"]; lastTrigger != "" {
-			if triggerTime, err := time.Parse(time.RFC3339, lastTrigger); err == nil {
-				state.LastTriggerTime = triggerTime
-			}
-		}
-	}
+	// Extract last trigger time from condition transitions (more reliable than annotations)
+	state.LastTriggerTime = extractLastTriggerTimeFromConditions(instance)
 
 	// Enhanced condition analysis
 	state.IsExplicitlyFailed = isInstanceExplicitlyFailed(instance)
@@ -321,6 +305,25 @@ func determineInstancePhase(instance *unleashv1.Unleash, state InstanceState) In
 
 	// Default to pending
 	return InstancePhasePending
+}
+
+// extractLastTriggerTimeFromConditions attempts to determine when the instance was last triggered
+// by analyzing condition transitions. In the new status-based architecture, trigger timing
+// can be inferred from reconciliation condition changes.
+func extractLastTriggerTimeFromConditions(instance *unleashv1.Unleash) time.Time {
+	// Look for recent reconciliation condition transitions that might indicate triggering
+	for _, condition := range instance.Status.Conditions {
+		if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
+			// A transition to "Processing" or similar states indicates recent triggering
+			if condition.Reason == "Processing" || condition.Reason == "Deploying" ||
+				condition.Reason == "Reconciling" {
+				return condition.LastTransitionTime.Time
+			}
+		}
+	}
+
+	// If no specific trigger indicators found, return zero time
+	return time.Time{}
 }
 
 // extractFailureReason extracts a specific failure reason from conditions

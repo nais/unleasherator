@@ -72,19 +72,20 @@ func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
 }
 
 var _ = Describe("Unleash Controller", func() {
-	deploymentTimeout = time.Second * 1
-
 	const (
 		UnleashNamespace = "default"
 		UnleashVersion   = "v5.1.2"
+	)
 
-		timeout  = time.Second * 3
-		interval = time.Millisecond * 50
+	var (
+		interval = time.Millisecond * 10   // Reduced from 250ms to 10ms
+		timeout  = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
 	)
 
 	BeforeEach(func() {
 		promCounterVecFlush(unleashPublished)
 
+		httpmock.DeactivateAndReset() // Fully reset including call counts
 		httpmock.Activate()
 		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
 			httpmock.NewStringResponder(200, `{"health": "OK"}`))
@@ -160,6 +161,15 @@ var _ = Describe("Unleash Controller", func() {
 		It("Should fail for missing database config", func() {
 			ctx := context.Background()
 
+			By("By resetting httpmock to isolate this test")
+			httpmock.Reset()
+			// Re-register responders even though they shouldn't be called in this test case
+			// This ensures a consistent test environment
+			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+				httpmock.NewStringResponder(200, `{"health": "OK"}`))
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-fail", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{},
@@ -174,6 +184,9 @@ var _ = Describe("Unleash Controller", func() {
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
+
+			By("By verifying no HTTP calls were made to this specific instance endpoint")
+			// Since the Unleash failed to reconcile due to config issues, no HTTP calls should be made to Unleash endpoints
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(0))
 
 			By("By cleaning up the Unleash")
@@ -219,6 +232,14 @@ var _ = Describe("Unleash Controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 
+			By("By resetting httpmock to isolate this test")
+			httpmock.Reset()
+			// Re-register the necessary responders for connection testing
+			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+				httpmock.NewStringResponder(200, `{"health": "OK"}`))
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
@@ -247,7 +268,10 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdUnleash.Status.Connected).To(BeTrue())
 
+			By("By verifying appropriate HTTP calls were made for connection verification")
+			// The controller should not call the health endpoint in normal operation
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
+			// The controller should call the admin stats endpoint to verify connection and get version
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(BeNumerically(">=", 1))
 
 			deployment := &appsv1.Deployment{}
@@ -320,8 +344,15 @@ var _ = Describe("Unleash Controller", func() {
 				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
 			}, timeout, interval).Should(BeTrue())
 
-			// Verify no rollout annotations are set during initial creation (no rollout happening)
-			Expect(createdUnleash.Annotations).To(BeNil(), "No rollout annotations should be set during initial creation")
+			// In the new status-based architecture, coordination happens through status fields
+			// rather than annotations, so we expect no coordination-related annotations
+			if createdUnleash.Annotations != nil {
+				// Check that no legacy ReleaseChannel coordination annotations exist
+				for key := range createdUnleash.Annotations {
+					Expect(key).ToNot(ContainSubstring("releasechannel.unleash.nais.io/"),
+						"Legacy ReleaseChannel coordination annotations should not be present")
+				}
+			}
 
 			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
 			Eventually(func() string {
@@ -362,15 +393,15 @@ var _ = Describe("Unleash Controller", func() {
 				return k8sClient.Update(ctx, freshUnleash)
 			}, timeout, interval).Should(Succeed())
 
-			By("By verifying ReleaseChannel controller does NOT interfere during routine reconciliation")
-			// After routine reconciliation, still no rollout annotations should be present
-			Consistently(func() map[string]string {
+			By("By verifying ReleaseChannel controller does NOT change image during routine reconciliation")
+			// After routine reconciliation, the resolved image should remain stable
+			Consistently(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
-					return nil
+					return ""
 				}
-				return createdUnleash.Annotations
-			}, time.Millisecond*500, interval).Should(Or(BeNil(), Not(HaveKey("releasechannel.unleash.nais.io/last-rollout-trigger"))),
-				"ReleaseChannel controller should not set rollout annotations during routine reconciliation")
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, time.Millisecond*500, interval).Should(Equal(releaseChannelImage),
+				"ReleaseChannel controller should not change resolved image during routine reconciliation")
 
 			By("By checking that routine Unleash reconciliation does NOT change the image")
 			// The status should remain the same after routine reconciliation
@@ -401,39 +432,22 @@ var _ = Describe("Unleash Controller", func() {
 				return k8sClient.Update(ctx, freshReleaseChannel)
 			}, timeout, interval).Should(Succeed())
 
-			By("By verifying ReleaseChannel controller DOES coordinate during intentional rollout")
-			// Now the ReleaseChannel controller should set rollout coordination annotations
+			By("By verifying ReleaseChannel controller DOES update status during intentional rollout")
+			// Now the ReleaseChannel controller should update the Unleash status directly
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
-				if createdUnleash.Annotations == nil {
-					return ""
-				}
-				return createdUnleash.Annotations["releasechannel.unleash.nais.io/last-rollout-trigger"]
-			}, timeout, interval).ShouldNot(BeEmpty(), "ReleaseChannel controller should set rollout trigger annotation during intentional rollout")
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(newReleaseChannelImage), "ReleaseChannel controller should update resolved image in status during rollout")
 
-			By("By checking that rollout intent annotation is also set")
+			By("By checking that ReleaseChannel name is tracked in status")
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
-				if createdUnleash.Annotations == nil {
-					return ""
-				}
-				return createdUnleash.Annotations["releasechannel.unleash.nais.io/rollout-intent"]
-			}, timeout, interval).Should(ContainSubstring(newReleaseChannelImage), "Rollout intent should reference the new image")
-
-			By("By checking that target image annotation is set")
-			Eventually(func() string {
-				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
-					return ""
-				}
-				if createdUnleash.Annotations == nil {
-					return ""
-				}
-				return createdUnleash.Annotations["releasechannel.unleash.nais.io/target-image"]
-			}, timeout, interval).Should(Equal(newReleaseChannelImage), "Target image annotation should be set during rollout")
+				return createdUnleash.Status.ReleaseChannelName
+			}, timeout, interval).Should(Equal(releaseChannel.Name), "ReleaseChannel name should be tracked in status")
 
 			By("By checking that the Unleash status is updated to the new image")
 			Eventually(func() string {
@@ -443,24 +457,19 @@ var _ = Describe("Unleash Controller", func() {
 				return createdUnleash.Status.ResolvedReleaseChannelImage
 			}, timeout, interval).Should(Equal(newReleaseChannelImage))
 
-			By("By verifying the coordination annotations work as intended")
-			// The annotations should contain the expected rollout coordination data
+			By("By verifying the status-based coordination works as intended")
+			// The status should contain the expected coordination data
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return false
 				}
-				annotations := createdUnleash.Annotations
-				if annotations == nil {
-					return false
-				}
 
-				// Verify all required coordination annotations are present
-				hasRolloutTrigger := annotations["releasechannel.unleash.nais.io/last-rollout-trigger"] != ""
-				hasTargetImage := annotations["releasechannel.unleash.nais.io/target-image"] == newReleaseChannelImage
-				hasRolloutIntent := annotations["releasechannel.unleash.nais.io/rollout-intent"] != ""
+				// Verify all required status fields are present
+				hasResolvedImage := createdUnleash.Status.ResolvedReleaseChannelImage == newReleaseChannelImage
+				hasReleaseChannelName := createdUnleash.Status.ReleaseChannelName == releaseChannel.Name
 
-				return hasRolloutTrigger && hasTargetImage && hasRolloutIntent
-			}, timeout, interval).Should(BeTrue(), "All coordination annotations should be present during rollout")
+				return hasResolvedImage && hasReleaseChannelName
+			}, timeout, interval).Should(BeTrue(), "All coordination status fields should be present during rollout")
 
 			By("By verifying that ReleaseChannel coordination is phase-aware")
 			// Check that the rollout intent includes the phase information

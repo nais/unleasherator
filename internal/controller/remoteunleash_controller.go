@@ -31,6 +31,10 @@ import (
 )
 
 var (
+	// RemoteUnleash controller timeouts - prefixed to avoid conflicts with other controllers
+	remoteUnleashErrorRetryDelay = 1 * time.Minute
+	remoteUnleashRequeueAfter    = 1 * time.Hour
+
 	// remoteUnleashStatus is a Prometheus metric which will be used to expose the status of the RemoteUnleash instances
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -195,7 +199,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
 		} else {
 			return ctrl.Result{}, err
 		}
@@ -245,7 +249,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+	return ctrl.Result{RequeueAfter: remoteUnleashRequeueAfter}, nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {

@@ -11,11 +11,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,12 +42,6 @@ const (
 	EnvDatabaseHost      = "DATABASE_HOST"
 	EnvDatabasePort      = "DATABASE_PORT"
 	EnvDatabaseSSL       = "DATABASE_SSL"
-)
-
-// Annotations for tracking resolved ReleaseChannel images
-const (
-	AnnotationResolvedReleaseChannelImage = "unleash.nais.io/resolved-release-channel-image"
-	AnnotationReleaseChannelName          = "unleash.nais.io/release-channel-name"
 )
 
 func GenerateAdminKey() (string, error) {
@@ -541,8 +533,8 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 	return np, nil
 }
 
-// ResolveReleaseChannelImage resolves the image from a ReleaseChannel considering rollout phases.
-// This is the central function for all image resolution logic in the operator.
+// ResolveReleaseChannelImage handles image resolution for non-ReleaseChannel cases.
+// When a ReleaseChannel is specified, the ReleaseChannel controller manages the image directly.
 // Returns the resolved image and a boolean indicating if the Unleash resource was modified.
 func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, unleash *unleashv1.Unleash) (string, bool, error) {
 	// Priority 1: CustomImage always takes precedence (set manually by user)
@@ -558,75 +550,29 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		return unleash.Spec.CustomImage, needsUpdate, nil
 	}
 
+	// If ReleaseChannel is specified, the image should be managed by ReleaseChannel controller
+	// The Unleash controller should not resolve this itself
+	if unleash.Spec.ReleaseChannel.Name != "" {
+		return "", false, fmt.Errorf("ReleaseChannel specified but no resolved image set by ReleaseChannel controller")
+	}
+
 	// If no ReleaseChannel is specified, use environment variable or default
-	if unleash.Spec.ReleaseChannel.Name == "" {
-		// Clear any existing ReleaseChannel tracking when not using ReleaseChannel
-		needsUpdate := false
-		if unleash.Status.ResolvedReleaseChannelImage != "" ||
-			unleash.Status.ReleaseChannelName != "" {
-			unleash.Status.ResolvedReleaseChannelImage = ""
-			unleash.Status.ReleaseChannelName = ""
-			needsUpdate = true
-		}
-
-		// Use environment variable or default
-		var imageEnvVar = "UNLEASH_IMAGE"
-		image, found := os.LookupEnv(imageEnvVar)
-		if !found || image == "" {
-			image = fmt.Sprintf("%s/%s:%s", DefaultUnleashImageRegistry, DefaultUnleashImageName, DefaultUnleashVersion)
-		}
-		return image, needsUpdate, nil
-	}
-
-	// Fetch the ReleaseChannel to get the current image and phase
-	releaseChannel := &unleashv1.ReleaseChannel{}
-	err := k8sClient.Get(ctx, types.NamespacedName{
-		Name:      unleash.Spec.ReleaseChannel.Name,
-		Namespace: unleash.Namespace,
-	}, releaseChannel)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// ReleaseChannel specified but not found - this should fail reconciliation and requeue
-			return "", false, fmt.Errorf("ReleaseChannel %s specified but not found, waiting for it to become available", unleash.Spec.ReleaseChannel.Name)
-		}
-		return "", false, fmt.Errorf("failed to get ReleaseChannel %s: %w", unleash.Spec.ReleaseChannel.Name, err)
-	}
-
-	// Get the current image from the ReleaseChannel
-	if releaseChannel.Spec.Image == "" {
-		return "", false, fmt.Errorf("ReleaseChannel %s has no image specified", releaseChannel.Name)
-	}
-
-	// Determine which image this instance should use based on ReleaseChannel phase and rollout strategy
-	resolvedImage := getImageForInstance(unleash, releaseChannel)
-
-	// Update the status based on mutual exclusivity rules
+	// Clear any existing ReleaseChannel tracking when not using ReleaseChannel
 	needsUpdate := false
-
-	if unleash.Spec.CustomImage != "" {
-		// When CustomImage is set, clear ReleaseChannel tracking (mutual exclusivity)
-		if unleash.Status.ResolvedReleaseChannelImage != "" ||
-			unleash.Status.ReleaseChannelName != "" {
-			unleash.Status.ResolvedReleaseChannelImage = ""
-			unleash.Status.ReleaseChannelName = ""
-			needsUpdate = true
-		}
-	} else {
-		// When CustomImage is NOT set, track the resolved ReleaseChannel image
-		if unleash.Status.ResolvedReleaseChannelImage != resolvedImage ||
-			unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
-			unleash.Status.ResolvedReleaseChannelImage = resolvedImage
-			unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
-			needsUpdate = true
-		}
+	if unleash.Status.ResolvedReleaseChannelImage != "" ||
+		unleash.Status.ReleaseChannelName != "" {
+		unleash.Status.ResolvedReleaseChannelImage = ""
+		unleash.Status.ReleaseChannelName = ""
+		needsUpdate = true
 	}
 
-	// Return the appropriate image based on priority
-	if unleash.Spec.CustomImage != "" {
-		return unleash.Spec.CustomImage, needsUpdate, nil
+	// Use environment variable or default
+	var imageEnvVar = "UNLEASH_IMAGE"
+	image, found := os.LookupEnv(imageEnvVar)
+	if !found || image == "" {
+		image = fmt.Sprintf("%s/%s:%s", DefaultUnleashImageRegistry, DefaultUnleashImageName, DefaultUnleashVersion)
 	}
-
-	return resolvedImage, needsUpdate, nil
+	return image, needsUpdate, nil
 }
 
 // getImageForInstance determines which image a specific Unleash instance should use
