@@ -25,7 +25,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 		releaseChannelUnleashVersion = "v5.1.2"
 	)
 
+	// Use a unique suffix for each test run to avoid conflicts
+	var testID string
+
 	BeforeEach(func() {
+		// Generate unique test ID for resource names to ensure isolation
+		testID = fmt.Sprintf("%d", GinkgoRandomSeed())
+
 		promCounterVecFlush(unleashPublished)
 
 		// Ensure complete httpmock isolation between tests
@@ -169,7 +175,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Creating a basic ReleaseChannel")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "basic-test-channel",
+					Name:      fmt.Sprintf("basic-test-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -188,7 +194,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Verifying finalizer is added")
 			Eventually(func() bool {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
-				return len(releaseChannel.Finalizers) > 0
+				return len(releaseChannel.ObjectMeta.Finalizers) > 0
 			}, timeout, interval).Should(BeTrue())
 		})
 
@@ -196,7 +202,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Creating a ReleaseChannel and one Unleash instance")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "single-instance-channel",
+					Name:      fmt.Sprintf("single-instance-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -204,10 +210,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("single-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash := createUnleash(fmt.Sprintf("single-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, ctx, releaseChannel)
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+			DeferCleanup(k8sClient.Delete, ctx, unleash)
 
 			By("Mocking deployment to be ready")
 			simulateDeploymentReady(unleash)
@@ -223,7 +231,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Creating a ReleaseChannel and Unleash instance")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "update-test-channel",
+					Name:      fmt.Sprintf("update-test-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -231,7 +239,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("update-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash := createUnleash(fmt.Sprintf("update-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
@@ -260,7 +268,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Creating a ReleaseChannel and Unleash instance with CustomImage")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "custom-image-channel",
+					Name:      fmt.Sprintf("custom-image-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -268,7 +276,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("custom-image-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash := createUnleash(fmt.Sprintf("custom-image-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
 			unleash.Spec.CustomImage = "custom:v1" // This should make ReleaseChannel ignore this instance
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
@@ -288,7 +296,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Creating a ReleaseChannel and two Unleash instances")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "multi-instance-channel",
+					Name:      fmt.Sprintf("multi-instance-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -296,8 +304,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash1 := createUnleash("multi-unleash-1", namespace, releaseChannel.ObjectMeta.Name, nil)
-			unleash2 := createUnleash("multi-unleash-2", namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash1 := createUnleash(fmt.Sprintf("multi-unleash-1-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash2 := createUnleash(fmt.Sprintf("multi-unleash-2-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash1)).Should(Succeed())
@@ -334,7 +342,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				_ = k8sClient.List(ctx, unleashList)
 				matchingCount := 0
 				for _, u := range unleashList.Items {
-					if u.Spec.ReleaseChannel.Name == "multi-instance-channel" && u.Spec.CustomImage == "" {
+					if u.Spec.ReleaseChannel.Name == fmt.Sprintf("multi-instance-channel-%s", testID) && u.Spec.CustomImage == "" {
 						matchingCount++
 						GinkgoWriter.Printf("  Found matching instance: %s (RC: %s, CustomImage: %s)\n",
 							u.ObjectMeta.Name, u.Spec.ReleaseChannel.Name, u.Spec.CustomImage)
@@ -362,6 +370,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Verifying ReleaseChannel status shows correct instance counts")
 			Eventually(func() int {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				GinkgoWriter.Printf("After image update - instances: %d, phase: %s, name: %s\n",
+					releaseChannel.Status.Instances, releaseChannel.Status.Phase, releaseChannel.ObjectMeta.Name)
 				return releaseChannel.Status.Instances
 			}, timeout, interval).Should(Equal(2))
 
@@ -388,7 +398,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Step 1: Creating a ReleaseChannel with canary strategy")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "canary-test-channel",
+					Name:      fmt.Sprintf("canary-test-channel-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
@@ -412,12 +422,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}
 
 			By("Step 2: Creating canary instance (staging environment)")
-			canaryUnleash := createUnleash("canary-staging", namespace, releaseChannel.ObjectMeta.Name, map[string]string{
+			canaryUnleash := createUnleash(fmt.Sprintf("canary-staging-%s", testID), namespace, releaseChannel.ObjectMeta.Name, map[string]string{
 				"environment": "staging",
 			})
 
 			By("Step 3: Creating production instance (production environment)")
-			prodUnleash := createUnleash("canary-production", namespace, releaseChannel.ObjectMeta.Name, map[string]string{
+			prodUnleash := createUnleash(fmt.Sprintf("canary-production-%s", testID), namespace, releaseChannel.ObjectMeta.Name, map[string]string{
 				"environment": "production",
 			})
 
