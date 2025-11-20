@@ -16,26 +16,42 @@ ReleaseChannels solve the operational challenge of keeping multiple Unleash inst
 
 ### Architecture Overview
 
-ReleaseChannels use a hybrid approach combining Kubernetes spec fields with status subresources to ensure both functionality and safety:
+ReleaseChannels use a **pull-based coordination model** where Unleash instances actively pull their desired images from the ReleaseChannel status:
 
-1. **ReleaseChannel Definition** - Centrally defines the target container image
-2. **Unleash Instance Connection** - Unleash instances reference ReleaseChannels by name
-3. **Automatic Adoption** - ReleaseChannel controller manages connected instances
-4. **Status Tracking** - Status subresources provide kubectl apply safety
-5. **Priority System** - Clear precedence rules for image resolution
+1. **ReleaseChannel Definition** - Centrally defines the target container image in `spec.image`
+2. **Instance Discovery** - ReleaseChannel controller discovers Unleash instances that reference it by name
+3. **Status Map Update** - Controller writes desired images to `status.instanceImages` map (one entry per instance)
+4. **Unleash Pull** - Unleash controllers periodically poll (every 30s in production, 100ms in tests) and read their desired image from the map
+5. **Deployment** - Unleash controller updates its own Deployment with the pulled image
+6. **Status Reporting** - ReleaseChannel monitors instance readiness via their status fields
+
+This pull-based architecture prevents race conditions and ensures clean separation of concerns.
 
 ### Image Resolution Priority
 
-When determining which container image to use, the system follows this priority order:
+When an Unleash controller determines which container image to use, it follows this priority order:
 
-1. **Manual Override** (`spec.customImage`) - Highest priority for user overrides
-2. **ReleaseChannel Image** (from status) - Controller-managed automatic updates
-3. **Environment Variable** (`UNLEASH_IMAGE`) - Environment defaults
-4. **Default Image** - Built-in fallback image
+1. **Manual Override** (`spec.customImage`) - Highest priority, skips ReleaseChannel entirely
+2. **ReleaseChannel Pull** - Reads from `ReleaseChannel.status.instanceImages[instanceName]`
+3. **ReleaseChannel Fallback** - Uses `ReleaseChannel.spec.image` if not yet in map
+4. **Environment Variable** (`UNLEASH_IMAGE`) - Environment defaults
+5. **Default Image** - Built-in fallback image
 
 This priority system ensures users always have control while benefiting from automated management.
 
 ## Getting Started
+
+### Understanding the Pull Model
+
+Before creating your first ReleaseChannel, it's important to understand how the pull-based coordination works:
+
+1. **No Direct Updates**: ReleaseChannel controller never directly modifies Unleash resources
+2. **Status Map**: Desired images are written to `ReleaseChannel.status.instanceImages` map
+3. **Periodic Polling**: Unleash controllers poll this map every 30 seconds
+4. **Self-Service**: Each Unleash instance pulls its own image and updates itself
+5. **Progress Tracking**: ReleaseChannel monitors `Unleash.status.resolvedReleaseChannelImage` to track progress
+
+This architecture prevents race conditions and ensures clean separation of concerns.
 
 ### Step 1: Create a ReleaseChannel
 
@@ -476,18 +492,56 @@ By leveraging ReleaseChannels, you can:
 
 ## Architecture
 
+### Pull-Based Coordination Model
+
 ```mermaid
 graph TD
-    A[ReleaseChannel CRD] --> B[Controller]
-    B --> C[Discovers Unleash Instances]
-    C --> D{IsCandidate?}
-    D -->|Yes| E{ShouldUpdate?}
-    D -->|No| F[Skip]
-    E -->|Yes| G[Update Instance]
-    E -->|No| H[Already Up-to-Date]
-    G --> I[Wait for Ready]
-    I --> J[Update Status]
+    A[ReleaseChannel CRD] -->|spec.image| B[RC Controller]
+    B -->|Discovers instances| C{Find Unleash<br/>with releaseChannel.name}
+    C -->|Found| D[Update status.instanceImages map]
+    D -->|Image per instance| E[ReleaseChannel Status]
+
+    F[Unleash Controller] -->|Every 30s| G{Pull image from RC?}
+    G -->|Yes: releaseChannel set| H[Read instanceImages map]
+    H -->|Get desiredImage| I[Compare with current]
+    I -->|Different| J[Update Deployment]
+    I -->|Same| K[No action]
+
+    J -->|Wait for ready| L[Update Unleash status]
+    L -->|resolvedReleaseChannelImage| M[RC monitors readiness]
+    M -->|Check status| N{All instances ready?}
+    N -->|Yes| O[Phase: Completed]
+    N -->|No| P[Continue monitoring]
+
+    G -->|No: customImage set| Q[Use customImage]
+
+    style E fill:#e1f5ff
+    style H fill:#e1f5ff
+    style D fill:#ffe1e1
+    style M fill:#ffe1e1
 ```
+
+### Key Components
+
+**ReleaseChannel Controller:**
+- Discovers Unleash instances via `spec.releaseChannel.name` reference
+- Writes desired images to `status.instanceImages` map (one entry per instance name)
+- Monitors instance `status.resolvedReleaseChannelImage` to track rollout progress
+- Implements deployment strategies (canary, rolling)
+- Records metrics for observability
+
+**Unleash Controller:**
+- Polls every 30s (production) / 100ms (tests) via `ResolveReleaseChannelImage()`
+- Reads from `ReleaseChannel.status.instanceImages[instanceName]`
+- Updates own Deployment with pulled image
+- Reports back via `status.resolvedReleaseChannelImage`
+- Respects `spec.customImage` override (highest priority)
+
+**Benefits:**
+- No bidirectional status writes (prevents race conditions)
+- Clear ownership: RC owns desired state, Unleash owns current state
+- Periodic polling ensures eventual consistency
+- Manual overrides (`customImage`) are respected
 
 ## Key Features
 
@@ -523,23 +577,51 @@ graph TD
 - Last reconciliation time
 - Kubernetes conditions for detailed status
 
-## Current Implementation Status
+## Implementation Status
 
-✅ **Implemented Features:**
+### ✅ Fully Implemented Features
 
-- Basic image rollout to matching Unleash instances
-- Conflict resolution with retry logic
-- Phase-based status management
-- Instance discovery and filtering
-- Status reporting and progress tracking
+The following features are production-ready and fully tested:
 
-🚧 **Planned Features (CRD Ready):**
+**Core Functionality:**
+- ✅ Pull-based image coordination via `status.instanceImages` map
+- ✅ Periodic polling by Unleash controllers (30s production, 100ms tests)
+- ✅ Manual override support (`spec.customImage` takes precedence)
+- ✅ Instance discovery and filtering
+- ✅ Phase-based rollout state machine (Idle → Canary → Rolling → Completed)
+- ✅ Conflict resolution with retry logic
 
-- Canary deployment strategy
-- Health checks after deployment
-- Batch interval controls
-- Automatic rollback capabilities
-- Parallel deployment limits
+**Deployment Strategies:**
+- ✅ Sequential deployment (`maxParallel: 1`, default)
+- ✅ Parallel deployment with configurable `maxParallel`
+- ✅ Canary deployment with label selectors
+- ✅ Batch interval controls for staged rollouts
+
+**Health & Safety:**
+- ✅ Health checks after deployment with configurable delays/timeouts
+- ✅ Deployment readiness monitoring
+- ✅ Graceful handling of missing ReleaseChannels
+- ✅ Status reporting and progress tracking
+
+**Observability:**
+- ✅ Comprehensive Prometheus metrics (status, rollouts, duration, health checks, phase transitions)
+- ✅ Rich status reporting (instances, instancesUpToDate, phase, conditions)
+- ✅ Event recording for audit trail
+
+**Testing:**
+- ✅ 6 comprehensive test scenarios
+- ✅ HTTP mock isolation for reliable tests
+- ✅ Canary deployment validation
+- ✅ Multiple instance coordination tests
+
+### 🚧 Planned Features
+
+Features defined in the CRD but not yet implemented:
+
+- ⏳ Automatic rollback on failure (`spec.rollback.enabled`)
+- ⏳ Progressive delivery percentages
+- ⏳ Integration with external monitoring systems
+- ⏳ Cross-namespace ReleaseChannel support
 
 ## Configuration
 
@@ -731,12 +813,12 @@ The ReleaseChannel controller exposes comprehensive Prometheus metrics for monit
 
 ### Available Metrics
 
-The following metrics are exposed for ReleaseChannel operations:
+The following metrics are **currently implemented** and exposed:
 
 #### Core Status Metrics
 
 - **`unleasherator_releasechannel_status`** (Gauge)
-  Current status of ReleaseChannels (1=active/completed, 0.5=in-progress, 0=failed)
+  Current status of ReleaseChannels (1=completed, 0.5=in-progress, 0=failed)
   Labels: `namespace`, `name`
 
 - **`unleasherator_releasechannel_instances_total`** (Gauge)
@@ -750,67 +832,118 @@ The following metrics are exposed for ReleaseChannel operations:
 #### Rollout Performance Metrics
 
 - **`unleasherator_releasechannel_rollouts_total`** (Counter)
-  Total number of rollout events with success/failure tracking
-  Labels: `namespace`, `name`, `result` (success/failed)
+  Total number of rollout events (success/failed)
+  Labels: `namespace`, `name`, `result` (`success`|`failed`)
 
 - **`unleasherator_releasechannel_rollout_duration_seconds`** (Histogram)
   Duration of complete rollouts from start to finish
+  Buckets: Exponential from 1s to ~17 minutes
   Labels: `namespace`, `name`
 
-- **`unleasherator_releasechannel_instance_updates_total`** (Counter)
-  Individual instance update attempts and their outcomes
-  Labels: `namespace`, `name`, `result` (success/failed)
+#### Health Check Metrics
 
-- **`unleasherator_releasechannel_conflicts_total`** (Counter)
-  Resource conflicts encountered during updates (helps identify contention)
-  Labels: `namespace`, `name`
+- **`unleasherator_releasechannel_health_checks_total`** (Counter)
+  Health check results during deployments
+  Labels: `namespace`, `name`, `result` (`success`|`failed`)
+
+#### Operational Metrics
+
+- **`unleasherator_releasechannel_phase_transitions_total`** (Counter)
+  Phase transitions for tracking rollout progression
+  Labels: `namespace`, `name`, `from_phase`, `to_phase`
 
 ### Quick Monitoring Queries
 
-Here are some useful Prometheus queries for monitoring ReleaseChannels:
+Here are useful Prometheus queries for monitoring ReleaseChannels:
 
 ```promql
-# Instances out of sync
-unleasherator_releasechannel_instances_total - unleasherator_releasechannel_instances_up_to_date
+# Instances out of sync (need updating)
+unleasherator_releasechannel_instances_total - unleasherator_releasechannel_instances_up_to_date > 0
 
 # Rollout success rate (last 24h)
-rate(unleasherator_releasechannel_rollouts_total{result="success"}[24h]) /
-rate(unleasherator_releasechannel_rollouts_total[24h]) * 100
+sum(rate(unleasherator_releasechannel_rollouts_total{result="success"}[24h]))
+/
+sum(rate(unleasherator_releasechannel_rollouts_total[24h]))
+* 100
 
-# Average rollout duration
-rate(unleasherator_releasechannel_rollout_duration_seconds_sum[5m]) /
+# Average rollout duration (last 5m)
+rate(unleasherator_releasechannel_rollout_duration_seconds_sum[5m])
+/
 rate(unleasherator_releasechannel_rollout_duration_seconds_count[5m])
 
-# High conflict rate (may indicate resource contention)
-rate(unleasherator_releasechannel_conflicts_total[5m]) > 0.1
+# Failed rollouts
+sum(rate(unleasherator_releasechannel_rollouts_total{result="failed"}[1h])) by (namespace, name)
+
+# Health check failure rate
+sum(rate(unleasherator_releasechannel_health_checks_total{result="failed"}[5m])) by (namespace, name)
+/
+sum(rate(unleasherator_releasechannel_health_checks_total[5m])) by (namespace, name)
+
+# ReleaseChannels currently in progress (not idle/completed)
+unleasherator_releasechannel_status == 0.5
+
+# Phase transition rate (useful for debugging stuck rollouts)
+rate(unleasherator_releasechannel_phase_transitions_total[5m])
 ```
 
-### Basic Alerting Rules
+### Alerting Examples
 
 Consider setting up alerts for these conditions:
 
 ```yaml
-# High failure rate
-- alert: ReleaseChannelHighFailureRate
-  expr: |
-    rate(unleasherator_releasechannel_rollouts_total{result="failed"}[1h]) /
-    rate(unleasherator_releasechannel_rollouts_total[1h]) > 0.1
-  for: 5m
+groups:
+- name: releasechannel_alerts
+  rules:
+  # Alert when rollout has high failure rate
+  - alert: ReleaseChannelHighFailureRate
+    expr: |
+      sum(rate(unleasherator_releasechannel_rollouts_total{result="failed"}[1h])) by (namespace, name)
+      /
+      sum(rate(unleasherator_releasechannel_rollouts_total[1h])) by (namespace, name)
+      > 0.1
+    for: 5m
+    annotations:
+      summary: "ReleaseChannel {{ $labels.namespace }}/{{ $labels.name }} has >10% rollout failure rate"
+      description: "{{ $value | humanizePercentage }} of rollouts failed in the last hour"
 
-# Instances stuck out of sync
-- alert: ReleaseChannelInstancesOutOfSync
-  expr: |
-    (unleasherator_releasechannel_instances_total -
-     unleasherator_releasechannel_instances_up_to_date) > 0
-  for: 30m
+  # Alert when instances stuck out of sync
+  - alert: ReleaseChannelInstancesOutOfSync
+    expr: |
+      (unleasherator_releasechannel_instances_total -
+       unleasherator_releasechannel_instances_up_to_date) > 0
+    for: 30m
+    annotations:
+      summary: "ReleaseChannel {{ $labels.namespace }}/{{ $labels.name }} has instances out of sync for 30m"
+      description: "{{ $value }} instance(s) have not updated to target image"
 
-# Slow rollouts
-- alert: ReleaseChannelSlowRollout
-  expr: |
-    histogram_quantile(0.95,
-      rate(unleasherator_releasechannel_rollout_duration_seconds_bucket[5m])
-    ) > 300
-  for: 10m
+  # Alert on slow rollouts
+  - alert: ReleaseChannelSlowRollout
+    expr: |
+      histogram_quantile(0.95,
+        rate(unleasherator_releasechannel_rollout_duration_seconds_bucket[5m])
+      ) > 300
+    for: 10m
+    annotations:
+      summary: "ReleaseChannel {{ $labels.namespace }}/{{ $labels.name }} rollouts are slow"
+      description: "95th percentile rollout duration is {{ $value | humanizeDuration }}"
+
+  # Alert when ReleaseChannel is stuck in a phase
+  - alert: ReleaseChannelStuckInProgress
+    expr: unleasherator_releasechannel_status == 0.5
+    for: 1h
+    annotations:
+      summary: "ReleaseChannel {{ $labels.namespace }}/{{ $labels.name }} stuck in progress"
+      description: "ReleaseChannel has been in a non-final state for over 1 hour"
+
+  # Alert on health check failures
+  - alert: ReleaseChannelHealthChecksFailing
+    expr: |
+      sum(rate(unleasherator_releasechannel_health_checks_total{result="failed"}[15m])) by (namespace, name)
+      > 0
+    for: 5m
+    annotations:
+      summary: "ReleaseChannel {{ $labels.namespace }}/{{ $labels.name }} health checks failing"
+      description: "Health checks have failed during deployment"
 ```
 
 For comprehensive observability guidance, monitoring setup, and advanced troubleshooting techniques for the entire Unleasherator controller, see the [Observability Guide](observability.md).
