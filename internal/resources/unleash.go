@@ -55,8 +55,8 @@ func ServiceMonitorForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 
 	serviceMonitor := &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.Name,
-			Namespace: unleash.Namespace,
+			Name:      unleash.ObjectMeta.Name,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    ls,
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
@@ -86,7 +86,7 @@ func InstanceSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.GetInstanceSecretName(),
-			Namespace: unleash.Namespace,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    ls,
 		},
 		StringData: map[string]string{
@@ -124,8 +124,8 @@ func ServiceAccountForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.Name,
-			Namespace: unleash.Namespace,
+			Name:      unleash.ObjectMeta.Name,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    ls,
 		},
 	}
@@ -142,8 +142,8 @@ func ServiceForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme) (*cor
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.Name,
-			Namespace: unleash.Namespace,
+			Name:      unleash.ObjectMeta.Name,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    ls,
 		},
 		Spec: corev1.ServiceSpec{
@@ -197,8 +197,8 @@ func DeploymentForUnleashWithImage(unleash *unleashv1.Unleash, scheme *runtime.S
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.Name,
-			Namespace: unleash.Namespace,
+			Name:      unleash.ObjectMeta.Name,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    ls,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -372,7 +372,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 	ingress := &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      unleash.NamespacedNameWithSuffix(nameSuffix).Name,
-			Namespace: unleash.Namespace,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    labels,
 		},
 		Spec: networkingv1.IngressSpec{
@@ -388,7 +388,7 @@ func IngressForUnleash(unleash *unleashv1.Unleash, config *unleashv1.UnleashIngr
 									PathType: &pathType,
 									Backend: networkingv1.IngressBackend{
 										Service: &networkingv1.IngressServiceBackend{
-											Name: unleash.Name,
+											Name: unleash.ObjectMeta.Name,
 											Port: networkingv1.ServiceBackendPort{
 												Name: DefaultUnleashPortName,
 											},
@@ -415,8 +415,8 @@ func NetworkPolicyForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme,
 
 	np := &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      unleash.Name,
-			Namespace: unleash.Namespace,
+			Name:      unleash.ObjectMeta.Name,
+			Namespace: unleash.ObjectMeta.Namespace,
 			Labels:    labels,
 		},
 		Spec: networkingv1.NetworkPolicySpec{
@@ -548,7 +548,7 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 		releaseChannel := &unleashv1.ReleaseChannel{}
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      unleash.Spec.ReleaseChannel.Name,
-			Namespace: unleash.Namespace,
+			Namespace: unleash.ObjectMeta.Namespace,
 		}, releaseChannel)
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get ReleaseChannel %s: %w", unleash.Spec.ReleaseChannel.Name, err)
@@ -556,7 +556,7 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 
 		// Pull desired image from ReleaseChannel's InstanceImages map
 		if releaseChannel.Status.InstanceImages != nil {
-			if desiredImage, ok := releaseChannel.Status.InstanceImages[unleash.Name]; ok && desiredImage != "" {
+			if desiredImage, ok := releaseChannel.Status.InstanceImages[unleash.ObjectMeta.Name]; ok && desiredImage != "" {
 				return desiredImage, false, nil
 			}
 		}
