@@ -415,7 +415,7 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Contains(t, image, "unleash-v4") // Should be the default image
 	})
 
-	t.Run("should return error when ReleaseChannel specified (should be handled by controller)", func(t *testing.T) {
+	t.Run("should return error when ReleaseChannel not found", func(t *testing.T) {
 		unleashWithRC := &unleashv1.Unleash{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-unleash",
@@ -434,10 +434,10 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Error(t, err)
 		assert.False(t, modified)
 		assert.Empty(t, image)
-		assert.Contains(t, err.Error(), "ReleaseChannel specified but no resolved image set by ReleaseChannel controller")
+		assert.Contains(t, err.Error(), "failed to get ReleaseChannel")
 	})
 
-	t.Run("should prioritize CustomImage over ReleaseChannel and clear status", func(t *testing.T) {
+	t.Run("should prioritize CustomImage over ReleaseChannel", func(t *testing.T) {
 		unleashWithCustom := &unleashv1.Unleash{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-unleash",
@@ -450,7 +450,7 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 				CustomImage: "custom-image:latest",
 			},
 			Status: unleashv1.UnleashStatus{
-				// Set some existing ReleaseChannel status that should be cleared
+				// Existing ReleaseChannel status is not cleared in pull model
 				ResolvedReleaseChannelImage: "old-image:v1.0",
 				ReleaseChannelName:          "old-channel",
 			},
@@ -460,10 +460,8 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 
 		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleashWithCustom)
 		assert.NoError(t, err)
-		assert.True(t, modified) // Status should be cleared when CustomImage is set
+		assert.False(t, modified) // Pull model doesn't clear status - Unleash controller handles cleanup
 		assert.Equal(t, "custom-image:latest", image)
-		assert.Empty(t, unleashWithCustom.Status.ResolvedReleaseChannelImage)
-		assert.Empty(t, unleashWithCustom.Status.ReleaseChannelName)
 	})
 
 	t.Run("should return CustomImage without modifying status when no previous ReleaseChannel status", func(t *testing.T) {
@@ -485,7 +483,7 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Equal(t, "custom-image:latest", image)
 	})
 
-	t.Run("should clear ReleaseChannel status when switching from ReleaseChannel to no ReleaseChannel", func(t *testing.T) {
+	t.Run("should return default image when no ReleaseChannel specified", func(t *testing.T) {
 		unleashSwitchingFromRC := &unleashv1.Unleash{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-unleash",
@@ -495,7 +493,7 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 				// No ReleaseChannel specified anymore
 			},
 			Status: unleashv1.UnleashStatus{
-				// But still has old ReleaseChannel status that should be cleared
+				// Old ReleaseChannel status remains - Unleash controller will clean up
 				ResolvedReleaseChannelImage: "old-image:v1.0",
 				ReleaseChannelName:          "old-channel",
 			},
@@ -505,9 +503,7 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 
 		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unleashSwitchingFromRC)
 		assert.NoError(t, err)
-		assert.True(t, modified)                // Status should be cleared
+		assert.False(t, modified)               // Pull model doesn't clear status
 		assert.Contains(t, image, "unleash-v4") // Should be the default image
-		assert.Empty(t, unleashSwitchingFromRC.Status.ResolvedReleaseChannelImage)
-		assert.Empty(t, unleashSwitchingFromRC.Status.ReleaseChannelName)
 	})
 }

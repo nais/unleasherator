@@ -137,6 +137,15 @@ type ReleaseChannelStatus struct {
 
 	// PreviousImage stores the previous image for rollback purposes
 	PreviousImage string `json:"previousImage,omitempty"`
+
+	// InstanceImages maps instance names to their desired images
+	// This is the source of truth for what image each instance should run
+	// Unleash controller reads from this map to determine desired state
+	InstanceImages map[string]string `json:"instanceImages,omitempty"`
+
+	// LastTargetImages tracks what target we last attempted to deploy to each instance
+	// Used by decision engine to detect when target changes and force retrigger
+	LastTargetImages map[string]string `json:"lastTargetImages,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout

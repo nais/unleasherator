@@ -26,10 +26,11 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -50,7 +51,7 @@ const (
 var (
 	// Unleash controller timeouts - prefixed to avoid conflicts with other controllers
 	unleashDeploymentTimeout      = 5 * time.Minute
-	unleashControllerRequeueAfter = 1 * time.Hour
+	unleashControllerRequeueAfter = 30 * time.Second // Poll ReleaseChannel status for image changes
 
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -361,7 +362,15 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	log.Info("Reconciliation of Unleash finished")
-	return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+
+	// Only requeue periodically if using ReleaseChannel (for pull-based coordination)
+	// Instances with CustomImage or default image don't need periodic polling
+	if unleash.Spec.ReleaseChannel.Name != "" {
+		log.V(1).Info("Requeuing for periodic ReleaseChannel polling", "interval", unleashControllerRequeueAfter)
+		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // publish the Unleash instance to pubsub if federation is enabled.
@@ -679,17 +688,42 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 		resolvedImage = unleash.Spec.CustomImage
 		log.Info("Using custom image", "image", resolvedImage)
 	} else if unleash.Spec.ReleaseChannel.Name != "" {
-		// Priority 2: ReleaseChannel managed - wait for ReleaseChannel controller to set the image
-		if unleash.Status.ResolvedReleaseChannelImage == "" || unleash.Status.ReleaseChannelName != unleash.Spec.ReleaseChannel.Name {
-			log.Info("Waiting for ReleaseChannel controller to set resolved image",
+		// Priority 2: ReleaseChannel managed - PULL image from ReleaseChannel status
+		pulledImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+		if err != nil {
+			log.Info("Waiting for ReleaseChannel to become available",
 				"releaseChannel", unleash.Spec.ReleaseChannel.Name,
-				"currentResolvedImage", unleash.Status.ResolvedReleaseChannelImage,
-				"currentReleaseChannelName", unleash.Status.ReleaseChannelName)
-			// Don't requeue manually - the ReleaseChannel controller will update our status
-			// which will automatically trigger reconciliation
-			return ctrl.Result{}, nil
+				"error", err.Error())
+			// Don't return error - just requeue to retry later
+			// This allows the controller to wait for ReleaseChannel creation
+			return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
 		}
-		resolvedImage = unleash.Status.ResolvedReleaseChannelImage
+		resolvedImage = pulledImage
+
+		log.Info("Pulled image from ReleaseChannel", "pulledImage", pulledImage,
+			"currentStatus", unleash.Status.ResolvedReleaseChannelImage,
+			"releaseChannel", unleash.Spec.ReleaseChannel.Name)
+
+		// Update our own status to track what we resolved (for monitoring/debugging)
+		if unleash.Status.ResolvedReleaseChannelImage != resolvedImage ||
+			unleash.Spec.ReleaseChannel.Name != unleash.Status.ReleaseChannelName {
+			log.Info("Updating Unleash status with new resolved image",
+				"oldImage", unleash.Status.ResolvedReleaseChannelImage,
+				"newImage", resolvedImage)
+			unleash.Status.ResolvedReleaseChannelImage = resolvedImage
+			unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(1).Info("Conflict updating Unleash status, will retry with backoff", "Name", unleash.Name)
+					// Retry with exponential backoff to avoid tight reconciliation loop
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
+				}
+				log.Error(err, "Failed to update Unleash status")
+				return ctrl.Result{}, err
+			}
+			log.Info("Successfully updated Unleash status")
+		}
+
 		log.Info("Using ReleaseChannel managed image", "image", resolvedImage, "releaseChannel", unleash.Spec.ReleaseChannel.Name)
 	} else {
 		// Priority 3: No ReleaseChannel specified, use environment variable or default
@@ -702,8 +736,8 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			unleash.Status.ReleaseChannelName = ""
 			if err := r.Status().Update(ctx, unleash); err != nil {
 				if apierrors.IsConflict(err) {
-					log.Info("Conflict clearing ReleaseChannel status, will retry", "Name", unleash.Name)
-					return ctrl.Result{Requeue: true}, nil
+					log.V(1).Info("Conflict clearing ReleaseChannel status, will retry with backoff", "Name", unleash.Name)
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
 				}
 				log.Error(err, "Failed to clear ReleaseChannel status")
 				return ctrl.Result{}, err
@@ -1004,46 +1038,16 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	return nil
 }
 
-// findUnleashInstancesForReleaseChannel finds all Unleash instances that reference a given ReleaseChannel
-func (r *UnleashReconciler) findUnleashInstancesForReleaseChannel(ctx context.Context, obj client.Object) []ctrl.Request {
-	releaseChannel, ok := obj.(*unleashv1.ReleaseChannel)
-	if !ok {
-		return nil
-	}
-
-	// Find all Unleash instances in the same namespace that reference this ReleaseChannel
-	unleashList := &unleashv1.UnleashList{}
-	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.Namespace)); err != nil {
-		return nil
-	}
-
-	var requests []ctrl.Request
-	for _, unleash := range unleashList.Items {
-		if unleash.Spec.ReleaseChannel.Name == releaseChannel.Name {
-			requests = append(requests, ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      unleash.Name,
-					Namespace: unleash.Namespace,
-				},
-			})
-		}
-	}
-
-	return requests
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
-		Watches(
-			&unleashv1.ReleaseChannel{},
-			handler.EnqueueRequestsFromMapFunc(r.findUnleashInstancesForReleaseChannel),
-		).
-		//Owns(&appsv1.Deployment{}).
-		// Note: Removed GenerationChangedPredicate to allow status-only changes to trigger reconciliation
-		// This is needed because ReleaseChannel status changes (phase transitions) need to trigger
-		// Unleash controller reconciliation, but GenerationChangedPredicate only triggers on spec changes
-		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1, // Prevent concurrent reconciles that could cause race conditions
+		}).
+		WithEventFilter(predicate.Or(
+			predicate.GenerationChangedPredicate{}, // Spec changes (user updates)
+			predicate.LabelChangedPredicate{},      // Label changes (might affect ReleaseChannel matching)
+		)).
 		Complete(r)
 }

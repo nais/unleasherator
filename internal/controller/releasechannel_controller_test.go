@@ -28,8 +28,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	BeforeEach(func() {
 		promCounterVecFlush(unleashPublished)
 
+		// Ensure complete httpmock isolation between tests
+		httpmock.DeactivateAndReset()
 		httpmock.Activate()
-		httpmock.Reset()
+
 		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
 			httpmock.NewStringResponder(200, `{"health": "OK"}`))
 		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
@@ -37,7 +39,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	})
 
 	AfterEach(func() {
-		httpmock.DeactivateAndReset()
+		// Clean up httpmock state after each test
+		httpmock.Reset()
 	})
 
 	// Helper functions to reduce test duplication

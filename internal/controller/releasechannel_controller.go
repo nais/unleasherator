@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -18,15 +17,17 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -650,8 +651,9 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 
 	log.Info("Processing canary instances", "count", len(canaryInstances))
 
-	// Deploy to canary instances
-	result, err := r.deployToInstances(ctx, releaseChannel, canaryInstances, log)
+	// Deploy to ALL instances - canaries get new image, others stay on previous
+	// The getExpectedImageForInstance function determines correct image per instance
+	result, err := r.deployToInstances(ctx, releaseChannel, targetInstances, log)
 	if err != nil {
 		newPhase := releasePhaseFailedCanary(releaseChannel.Spec.Rollback.Enabled)
 		r.recordPhaseTransition(releaseChannel, newPhase)
@@ -913,29 +915,27 @@ func (r *ReleaseChannelReconciler) shouldTriggerDeployment(ctx context.Context, 
 
 // needsStatusUpdate checks if an instance needs its status updated with the correct resolved image
 func (r *ReleaseChannelReconciler) needsStatusUpdate(ctx context.Context, instance unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) bool {
-	// First, check if the instance is already rolling out - if so, don't interfere
-	if r.isInstanceRollingOut(instance) {
-		log.V(1).Info("Instance is already rolling out, skipping status update",
-			"name", instance.Name)
-		return false
-	}
-
 	// Determine what image this instance should have
 	expectedImage := r.getExpectedImageForInstance(ctx, &instance, string(releaseChannel.Spec.Image))
 
-	// Check if status needs updating
-	if instance.Status.ResolvedReleaseChannelImage != expectedImage ||
-		instance.Status.ReleaseChannelName != releaseChannel.Name {
-		log.V(1).Info("Instance needs status update",
-			"name", instance.Name,
-			"currentImage", instance.Status.ResolvedReleaseChannelImage,
-			"expectedImage", expectedImage,
-			"currentReleaseChannel", instance.Status.ReleaseChannelName,
-			"expectedReleaseChannel", releaseChannel.Name)
-		return true
+	// Check if the InstanceImages map already has the correct image for this instance
+	if releaseChannel.Status.InstanceImages != nil {
+		currentMappedImage := releaseChannel.Status.InstanceImages[instance.Name]
+		if currentMappedImage == expectedImage {
+			// Map is already correct, no update needed
+			log.V(1).Info("InstanceImages map already has correct image",
+				"name", instance.Name,
+				"mappedImage", currentMappedImage)
+			return false
+		}
 	}
 
-	return false
+	// Map needs updating - set the desired image
+	log.V(1).Info("InstanceImages map needs update",
+		"name", instance.Name,
+		"currentMapped", releaseChannel.Status.InstanceImages[instance.Name],
+		"expectedImage", expectedImage)
+	return true
 }
 
 // getBackoffDuration calculates backoff duration based on phase transition attempts
@@ -1013,58 +1013,45 @@ func (r *ReleaseChannelReconciler) getInstancesToUpdate(instances []unleashv1.Un
 
 // deployToInstances coordinates rollout by setting resolved image in Unleash status
 func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash, log logr.Logger) (ctrl.Result, error) {
-	log.Info("Coordinating deployment via status updates", "instances", len(instances), "phase", releaseChannel.Status.Phase)
+	log.Info("Coordinating deployment by updating InstanceImages map", "instances", len(instances), "phase", releaseChannel.Status.Phase)
 
-	// Update each instance's status with the resolved image
+	// Initialize InstanceImages map if needed
+	if releaseChannel.Status.InstanceImages == nil {
+		releaseChannel.Status.InstanceImages = make(map[string]string)
+	}
+
+	// Initialize LastTargetImages map if needed - tracks what we last deployed to detect changes
+	if releaseChannel.Status.LastTargetImages == nil {
+		releaseChannel.Status.LastTargetImages = make(map[string]string)
+	}
+
+	// Update ReleaseChannel's InstanceImages map with desired images for each instance
+	// Unleash controllers will PULL from this map
 	for _, instance := range instances {
 		// Determine the target image for this specific instance based on the rollout phase
 		targetImage := r.getExpectedImageForInstance(ctx, &instance, string(releaseChannel.Spec.Image))
 
-		// Re-fetch to get latest resource version
-		currentInstance := &unleashv1.Unleash{}
-		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, currentInstance); err != nil {
-			log.Error(err, "Failed to get Unleash instance", "name", instance.Name)
-			continue
+		// Set desired image in ReleaseChannel status (Unleash will pull this)
+		if releaseChannel.Status.InstanceImages[instance.Name] != targetImage {
+			releaseChannel.Status.InstanceImages[instance.Name] = targetImage
+			log.Info("Set desired image for instance in ReleaseChannel", "instance", instance.Name, "image", targetImage)
 		}
 
-		// Check if the status needs updating
-		needsUpdate := currentInstance.Status.ResolvedReleaseChannelImage != targetImage ||
-			currentInstance.Status.ReleaseChannelName != releaseChannel.Name
-
-		if !needsUpdate {
-			log.V(1).Info("Instance status already up to date", "name", instance.Name, "image", targetImage)
-			continue
-		}
-
-		// Update status with retry logic for conflicts
-		err := wait.PollUntilContextTimeout(ctx, time.Millisecond*100, time.Second*2, true, func(ctx context.Context) (bool, error) {
-			// Re-fetch to get latest resource version before each attempt
-			if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, currentInstance); err != nil {
-				return false, err
-			}
-
-			// Set the resolved image and ReleaseChannel name in status
-			currentInstance.Status.ResolvedReleaseChannelImage = targetImage
-			currentInstance.Status.ReleaseChannelName = releaseChannel.Name
-
-			if err := r.Status().Update(ctx, currentInstance); err != nil {
-				if apierrors.IsConflict(err) {
-					log.V(1).Info("Resource conflict when updating Unleash status, retrying", "name", instance.Name)
-					return false, nil // Retry on conflict
-				}
-				return false, err // Stop retrying on other errors
-			}
-			return true, nil // Success
-		})
-
-		if err != nil {
-			log.Error(err, "Failed to update Unleash status", "name", instance.Name)
-			return ctrl.Result{}, fmt.Errorf("failed to update status for %s: %w", instance.Name, err)
-		}
-
-		log.Info("Updated Unleash status with resolved image", "name", instance.Name, "image", targetImage, "releaseChannel", releaseChannel.Name)
+		// Track last target for change detection
+		releaseChannel.Status.LastTargetImages[instance.Name] = targetImage
 	}
 
+	// Update ReleaseChannel status with the new InstanceImages map
+	// This single update replaces all the individual Unleash status updates
+	if err := r.Status().Update(ctx, releaseChannel); err != nil {
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Resource conflict when updating ReleaseChannel status, will retry on next reconcile")
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
+	}
+
+	log.Info("Updated ReleaseChannel InstanceImages map", "instanceCount", len(instances))
 	return ctrl.Result{}, nil
 }
 
@@ -1233,14 +1220,6 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 		}
 
 		if !connected {
-			// For test scenarios with broken images, check if deployment is explicitly failing
-			if currentInstance.Status.ResolvedReleaseChannelImage != "" &&
-				strings.Contains(currentInstance.Status.ResolvedReleaseChannelImage, "broken") {
-				// Record failed health check for broken images
-				releaseChannelHealthChecks.WithLabelValues(releaseChannel.Namespace, releaseChannel.Name, "failed").Inc()
-				return false, fmt.Errorf("instance %s using broken image %s", instance.Name, currentInstance.Status.ResolvedReleaseChannelImage)
-			}
-
 			log.V(1).Info("Instance not connected/healthy yet", "name", instance.Name)
 			return false, nil
 		}
@@ -1398,6 +1377,28 @@ func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&unleashv1.Unleash{},
 			handler.EnqueueRequestsFromMapFunc(r.findReleaseChannelsForUnleash),
+			builder.WithPredicates(predicate.Funcs{
+				// Only react to Unleash status.conditions changes for readiness detection
+				// Ignore other status changes to prevent reconciliation loops
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldUnleash, oldOk := e.ObjectOld.(*unleashv1.Unleash)
+					newUnleash, newOk := e.ObjectNew.(*unleashv1.Unleash)
+					if !oldOk || !newOk {
+						return false
+					}
+
+					// Only trigger if conditions actually changed (readiness state)
+					// This prevents reconciliation on every status update
+					return !conditionsEqual(oldUnleash.Status.Conditions, newUnleash.Status.Conditions)
+				},
+				// Don't react to create/delete events - only updates matter for readiness tracking
+				CreateFunc: func(e event.CreateEvent) bool {
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return false
+				},
+			}),
 		).
 		Complete(r)
 }
@@ -1423,4 +1424,32 @@ func (r *ReleaseChannelReconciler) findReleaseChannelsForUnleash(ctx context.Con
 			},
 		},
 	}
+}
+
+// conditionsEqual checks if two condition slices are equal (ignoring LastTransitionTime)
+func conditionsEqual(a, b []metav1.Condition) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	aMap := make(map[string]metav1.Condition)
+	for _, cond := range a {
+		aMap[cond.Type] = cond
+	}
+
+	for _, condB := range b {
+		condA, exists := aMap[condB.Type]
+		if !exists {
+			return false
+		}
+		// Compare relevant fields, ignoring LastTransitionTime
+		if condA.Type != condB.Type ||
+			condA.Status != condB.Status ||
+			condA.Reason != condB.Reason ||
+			condA.Message != condB.Message {
+			return false
+		}
+	}
+
+	return true
 }
