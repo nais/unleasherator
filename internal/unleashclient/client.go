@@ -24,13 +24,10 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 	// In tests, create a new client using the current http.DefaultTransport
 	// This allows httpmock to work since it replaces http.DefaultTransport
 	var httpClient *http.Client
-	testMode := os.Getenv("UNLEASH_TEST_MODE")
-	if testMode == "true" {
+	if os.Getenv("UNLEASH_TEST_MODE") == "true" {
 		// Create a new client that uses whatever http.DefaultTransport currently is
 		// If httpmock has been activated, this will be the mock transport
 		httpClient = &http.Client{Transport: http.DefaultTransport}
-		// Debug: print transport type
-		fmt.Printf("[DEBUG] Test mode enabled, transport type: %T\n", http.DefaultTransport)
 	} else {
 		httpClient = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 	}

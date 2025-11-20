@@ -386,7 +386,7 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		log.Info("All instances are up to date")
 		// Update instance counts even when no updates are needed to maintain accurate status
 		r.updateInstanceCounts(releaseChannel, targetInstances)
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 
 		// Update status to persist instance counts
@@ -414,30 +414,30 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		for _, instance := range targetInstances {
 			// Re-fetch to get latest resource version
 			currentInstance := &unleashv1.Unleash{}
-			if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, currentInstance); err != nil {
-				log.Error(err, "Failed to get Unleash instance during initial deployment", "name", instance.Name)
+			if err := r.Get(ctx, types.NamespacedName{Name: instance.ObjectMeta.Name, Namespace: instance.ObjectMeta.Namespace}, currentInstance); err != nil {
+				log.Error(err, "Failed to get Unleash instance during initial deployment", "name", instance.ObjectMeta.Name)
 				continue
 			}
 
 			// Set the resolved image for initial deployment
 			if currentInstance.Status.ResolvedReleaseChannelImage != targetImage ||
-				currentInstance.Status.ReleaseChannelName != releaseChannel.Name {
+				currentInstance.Status.ReleaseChannelName != releaseChannel.ObjectMeta.Name {
 
 				currentInstance.Status.ResolvedReleaseChannelImage = targetImage
-				currentInstance.Status.ReleaseChannelName = releaseChannel.Name
+				currentInstance.Status.ReleaseChannelName = releaseChannel.ObjectMeta.Name
 
 				if err := r.Status().Update(ctx, currentInstance); err != nil {
-					log.Error(err, "Failed to update Unleash status during initial deployment", "name", instance.Name)
+					log.Error(err, "Failed to update Unleash status during initial deployment", "name", instance.ObjectMeta.Name)
 					continue
 				}
 
-				log.Info("Set initial resolved image for Unleash instance", "name", instance.Name, "image", targetImage)
+				log.Info("Set initial resolved image for Unleash instance", "name", instance.ObjectMeta.Name, "image", targetImage)
 			}
 		}
 
 		// Update instance counts for status tracking
 		r.updateInstanceCounts(releaseChannel, targetInstances)
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 
 		// Update status to persist instance counts
@@ -467,7 +467,7 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 
 	// Update instance counts before transitioning phases
 	r.updateInstanceCounts(releaseChannel, targetInstances)
-	labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
 	// Determine which strategy to use
@@ -569,7 +569,7 @@ func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, r
 	r.updateInstanceCounts(releaseChannel, targetInstances)
 
 	// Record updated metrics after counting instances
-	labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
 	// Update status to persist instance counts
@@ -660,7 +660,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Canary deployment failed: %v", err)
 		// Record metrics for failure state
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
 			log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
@@ -670,7 +670,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 
 	// Update instance counts after deployment (use targetInstances for total counts)
 	r.updateInstanceCounts(releaseChannel, targetInstances)
-	labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
 	// Check if canary deployment is complete
@@ -693,7 +693,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 			releaseChannel.Status.Phase = newPhase
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Canary health check failed: %v", err)
 			// Record metrics for failure state
-			labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+			labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 			r.recordMetrics(releaseChannel, labels)
 			if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
 				log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
@@ -712,7 +712,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseRolling)
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseRolling
 	// Record metrics for successful phase transition
-	labels = []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels = []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
 }
@@ -728,7 +728,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to get target instances: %v", err)
 		// Record metrics for failure state
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
 			log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
@@ -738,7 +738,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 
 	// Update instance counts
 	r.updateInstanceCounts(releaseChannel, targetInstances)
-	labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
 	// Update status to persist instance counts using improved conflict handling
@@ -853,7 +853,7 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 		releaseChannel.Status.FailureReason = "No previous image available for rollback"
 		// Record metrics for failure state
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 		return r.updateReleaseChannelStatus(ctx, releaseChannel)
 	}
@@ -864,7 +864,7 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to get target instances for rollback: %v", err)
 		// Record metrics for failure state
-		labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
 			log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
@@ -874,7 +874,7 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 
 	// Update instance counts and record metrics
 	r.updateInstanceCounts(releaseChannel, targetInstances)
-	labels := []string{releaseChannel.Namespace, releaseChannel.Name}
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
 	// Set phase to RollingBack - the Unleash controller will handle image resolution
@@ -920,11 +920,11 @@ func (r *ReleaseChannelReconciler) needsStatusUpdate(ctx context.Context, instan
 
 	// Check if the InstanceImages map already has the correct image for this instance
 	if releaseChannel.Status.InstanceImages != nil {
-		currentMappedImage := releaseChannel.Status.InstanceImages[instance.Name]
+		currentMappedImage := releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name]
 		if currentMappedImage == expectedImage {
 			// Map is already correct, no update needed
 			log.V(1).Info("InstanceImages map already has correct image",
-				"name", instance.Name,
+				"name", instance.ObjectMeta.Name,
 				"mappedImage", currentMappedImage)
 			return false
 		}
@@ -932,8 +932,8 @@ func (r *ReleaseChannelReconciler) needsStatusUpdate(ctx context.Context, instan
 
 	// Map needs updating - set the desired image
 	log.V(1).Info("InstanceImages map needs update",
-		"name", instance.Name,
-		"currentMapped", releaseChannel.Status.InstanceImages[instance.Name],
+		"name", instance.ObjectMeta.Name,
+		"currentMapped", releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name],
 		"expectedImage", expectedImage)
 	return true
 }
@@ -963,17 +963,30 @@ func (r *ReleaseChannelReconciler) getBackoffDuration(releaseChannel *unleashv1.
 // and do not have CustomImage set (since CustomImage and ReleaseChannel are mutually exclusive)
 func (r *ReleaseChannelReconciler) getTargetInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) ([]unleashv1.Unleash, error) {
 	unleashList := &unleashv1.UnleashList{}
-	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.Namespace)); err != nil {
+	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.ObjectMeta.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list Unleash instances: %w", err)
 	}
 
+	log := log.FromContext(ctx)
+	log.V(1).Info("Listing all Unleash instances in namespace",
+		"namespace", releaseChannel.ObjectMeta.Namespace,
+		"totalFound", len(unleashList.Items),
+		"lookingForRC", releaseChannel.ObjectMeta.Name)
+
 	var targetInstances []unleashv1.Unleash
 	for _, unleash := range unleashList.Items {
+		log.V(1).Info("Checking Unleash instance",
+			"name", unleash.ObjectMeta.Name,
+			"releaseChannel", unleash.Spec.ReleaseChannel.Name,
+			"customImage", unleash.Spec.CustomImage,
+			"matches", unleash.Spec.ReleaseChannel.Name == releaseChannel.ObjectMeta.Name && unleash.Spec.CustomImage == "")
 		// Only manage instances that reference this ReleaseChannel AND do not have CustomImage set
-		if unleash.Spec.ReleaseChannel.Name == releaseChannel.Name && unleash.Spec.CustomImage == "" {
+		if unleash.Spec.ReleaseChannel.Name == releaseChannel.ObjectMeta.Name && unleash.Spec.CustomImage == "" {
 			targetInstances = append(targetInstances, unleash)
 		}
 	}
+
+	log.V(1).Info("Finished filtering instances", "targetCount", len(targetInstances))
 
 	return targetInstances, nil
 }
@@ -1032,13 +1045,13 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 		targetImage := r.getExpectedImageForInstance(ctx, &instance, string(releaseChannel.Spec.Image))
 
 		// Set desired image in ReleaseChannel status (Unleash will pull this)
-		if releaseChannel.Status.InstanceImages[instance.Name] != targetImage {
-			releaseChannel.Status.InstanceImages[instance.Name] = targetImage
-			log.Info("Set desired image for instance in ReleaseChannel", "instance", instance.Name, "image", targetImage)
+		if releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] != targetImage {
+			releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] = targetImage
+			log.Info("Set desired image for instance in ReleaseChannel", "instance", instance.ObjectMeta.Name, "image", targetImage)
 		}
 
 		// Track last target for change detection
-		releaseChannel.Status.LastTargetImages[instance.Name] = targetImage
+		releaseChannel.Status.LastTargetImages[instance.ObjectMeta.Name] = targetImage
 	}
 
 	// Update ReleaseChannel status with the new InstanceImages map
@@ -1060,8 +1073,8 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 	for _, instance := range instances {
 		// Re-fetch instance to get current status
 		currentInstance := &unleashv1.Unleash{}
-		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, currentInstance); err != nil {
-			log.Error(err, "Failed to get instance status", "name", instance.Name)
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.ObjectMeta.Name, Namespace: instance.ObjectMeta.Namespace}, currentInstance); err != nil {
+			log.Error(err, "Failed to get instance status", "name", instance.ObjectMeta.Name)
 			return false
 		}
 
@@ -1069,7 +1082,7 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 		// The Unleash controller should have resolved the correct image based on ReleaseChannel phase
 		expectedImage := r.getExpectedImageForInstance(ctx, currentInstance, targetImage)
 		if currentInstance.Status.ResolvedReleaseChannelImage != expectedImage {
-			log.V(1).Info("Instance not updated yet", "name", instance.Name,
+			log.V(1).Info("Instance not updated yet", "name", instance.ObjectMeta.Name,
 				"resolved", currentInstance.Status.ResolvedReleaseChannelImage,
 				"expected", expectedImage)
 			return false
@@ -1077,7 +1090,7 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 
 		// Check if instance is ready
 		if !r.isInstanceReady(currentInstance) {
-			log.V(1).Info("Instance not ready yet", "name", instance.Name)
+			log.V(1).Info("Instance not ready yet", "name", instance.ObjectMeta.Name)
 			return false
 		}
 	}
@@ -1101,7 +1114,7 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 	releaseChannel := &unleashv1.ReleaseChannel{}
 	err := r.Get(ctx, types.NamespacedName{
 		Name:      releaseChannelName,
-		Namespace: instance.Namespace,
+		Namespace: instance.ObjectMeta.Namespace,
 	}, releaseChannel)
 	if err != nil {
 		// If we can't get the release channel, expect the target image
@@ -1167,8 +1180,8 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 	for _, instance := range instances {
 		// Re-fetch to get latest status
 		currentInstance := &unleashv1.Unleash{}
-		if err := r.Get(ctx, types.NamespacedName{Name: instance.Name, Namespace: instance.Namespace}, currentInstance); err != nil {
-			return false, fmt.Errorf("failed to get instance %s: %w", instance.Name, err)
+		if err := r.Get(ctx, types.NamespacedName{Name: instance.ObjectMeta.Name, Namespace: instance.ObjectMeta.Namespace}, currentInstance); err != nil {
+			return false, fmt.Errorf("failed to get instance %s: %w", instance.ObjectMeta.Name, err)
 		}
 
 		// Check for explicit failure conditions first
@@ -1177,8 +1190,8 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 				condition.Status == metav1.ConditionFalse &&
 				condition.Reason == "Failed" {
 				// Record failed health check
-				releaseChannelHealthChecks.WithLabelValues(releaseChannel.Namespace, releaseChannel.Name, "failed").Inc()
-				return false, fmt.Errorf("instance %s failed: %s", instance.Name, condition.Message)
+				releaseChannelHealthChecks.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name, "failed").Inc()
+				return false, fmt.Errorf("instance %s failed: %s", instance.ObjectMeta.Name, condition.Message)
 			}
 		}
 
@@ -1192,14 +1205,14 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 		}
 
 		if !connected {
-			log.V(1).Info("Instance not connected/healthy yet", "name", instance.Name)
+			log.V(1).Info("Instance not connected/healthy yet", "name", instance.ObjectMeta.Name)
 			return false, nil
 		}
 	}
 
 	log.Info("All instances passed health checks")
 	// Record successful health check
-	releaseChannelHealthChecks.WithLabelValues(releaseChannel.Namespace, releaseChannel.Name, "success").Inc()
+	releaseChannelHealthChecks.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name, "success").Inc()
 	return true, nil
 }
 
@@ -1251,7 +1264,7 @@ func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unlea
 	}
 
 	// Create a label set from the instance's labels
-	instanceLabels := labels.Set(instance.Labels)
+	instanceLabels := labels.Set(instance.ObjectMeta.Labels)
 
 	// Check if the selector matches the instance's labels
 	return sel.Matches(instanceLabels)
@@ -1283,8 +1296,8 @@ func min(a, b int) int {
 // recordPhaseTransition records metrics for phase transitions
 func (r *ReleaseChannelReconciler) recordPhaseTransition(releaseChannel *unleashv1.ReleaseChannel, newPhase unleashv1.ReleaseChannelPhase) {
 	labels := []string{
-		releaseChannel.Namespace,
-		releaseChannel.Name,
+		releaseChannel.ObjectMeta.Namespace,
+		releaseChannel.ObjectMeta.Name,
 		string(newPhase),
 	}
 	releaseChannelPhaseTransitions.WithLabelValues(labels...).Inc()
@@ -1350,6 +1363,15 @@ func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&unleashv1.Unleash{},
 			handler.EnqueueRequestsFromMapFunc(r.findReleaseChannelsForUnleash),
 			builder.WithPredicates(predicate.Funcs{
+				// React to create events so ReleaseChannel discovers new instances immediately
+				CreateFunc: func(e event.CreateEvent) bool {
+					unleash, ok := e.Object.(*unleashv1.Unleash)
+					if !ok {
+						return false
+					}
+					// Only trigger if the instance references a ReleaseChannel
+					return unleash.Spec.ReleaseChannel.Name != ""
+				},
 				// Only react to Unleash status.conditions changes for readiness detection
 				// Ignore other status changes to prevent reconciliation loops
 				UpdateFunc: func(e event.UpdateEvent) bool {
@@ -1363,10 +1385,7 @@ func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					// This prevents reconciliation on every status update
 					return !conditionsEqual(oldUnleash.Status.Conditions, newUnleash.Status.Conditions)
 				},
-				// Don't react to create/delete events - only updates matter for readiness tracking
-				CreateFunc: func(e event.CreateEvent) bool {
-					return false
-				},
+				// Don't react to delete events
 				DeleteFunc: func(e event.DeleteEvent) bool {
 					return false
 				},
@@ -1392,7 +1411,7 @@ func (r *ReleaseChannelReconciler) findReleaseChannelsForUnleash(ctx context.Con
 		{
 			NamespacedName: types.NamespacedName{
 				Name:      unleashInstance.Spec.ReleaseChannel.Name,
-				Namespace: unleashInstance.Namespace,
+				Namespace: unleashInstance.ObjectMeta.Namespace,
 			},
 		},
 	}

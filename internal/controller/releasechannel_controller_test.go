@@ -204,7 +204,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("single-unleash", namespace, releaseChannel.Name, nil)
+			unleash := createUnleash("single-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
@@ -231,7 +231,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("update-unleash", namespace, releaseChannel.Name, nil)
+			unleash := createUnleash("update-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
@@ -268,7 +268,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash := createUnleash("custom-image-unleash", namespace, releaseChannel.Name, nil)
+			unleash := createUnleash("custom-image-unleash", namespace, releaseChannel.ObjectMeta.Name, nil)
 			unleash.Spec.CustomImage = "custom:v1" // This should make ReleaseChannel ignore this instance
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
@@ -296,12 +296,20 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 			}
 
-			unleash1 := createUnleash("multi-unleash-1", namespace, releaseChannel.Name, nil)
-			unleash2 := createUnleash("multi-unleash-2", namespace, releaseChannel.Name, nil)
+			unleash1 := createUnleash("multi-unleash-1", namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash2 := createUnleash("multi-unleash-2", namespace, releaseChannel.ObjectMeta.Name, nil)
 
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash1)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash2)).Should(Succeed())
+
+			By("Verifying both Unleash instances exist in the API server")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash1.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "unleash1 should be created")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash2.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "unleash2 should be created")
 
 			By("Mocking deployments to be ready")
 			simulateDeploymentReady(unleash1)
@@ -315,10 +323,37 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			waitForImageResolution(unleash1, "multi-test:v1")
 			waitForImageResolution(unleash2, "multi-test:v1")
 
+			By("Verifying ReleaseChannel discovers both instances")
+			// After both instances are connected and have resolved images,
+			// the ReleaseChannel should have reconciled and discovered them
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+
+				// Also check what instances exist in the namespace for debugging
+				unleashList := &unleashv1.UnleashList{}
+				_ = k8sClient.List(ctx, unleashList)
+				matchingCount := 0
+				for _, u := range unleashList.Items {
+					if u.Spec.ReleaseChannel.Name == "multi-instance-channel" && u.Spec.CustomImage == "" {
+						matchingCount++
+						GinkgoWriter.Printf("  Found matching instance: %s (RC: %s, CustomImage: %s)\n",
+							u.ObjectMeta.Name, u.Spec.ReleaseChannel.Name, u.Spec.CustomImage)
+					}
+				}
+
+				GinkgoWriter.Printf("Multi-instance test - RC status instances: %d, phase: %s, list query found: %d\n",
+					releaseChannel.Status.Instances, releaseChannel.Status.Phase, matchingCount)
+				return releaseChannel.Status.Instances
+			}, timeout, interval).Should(Equal(2), "ReleaseChannel should discover both instances")
+
 			By("Updating the ReleaseChannel to trigger a rollout")
-			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
-			releaseChannel.Spec.Image = "multi-test:v2"
-			Expect(k8sClient.Update(ctx, releaseChannel)).Should(Succeed())
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "multi-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
 
 			By("Verifying both instances eventually get the new image")
 			waitForImageResolution(unleash1, "multi-test:v2")
@@ -377,12 +412,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}
 
 			By("Step 2: Creating canary instance (staging environment)")
-			canaryUnleash := createUnleash("canary-staging", namespace, releaseChannel.Name, map[string]string{
+			canaryUnleash := createUnleash("canary-staging", namespace, releaseChannel.ObjectMeta.Name, map[string]string{
 				"environment": "staging",
 			})
 
 			By("Step 3: Creating production instance (production environment)")
-			prodUnleash := createUnleash("canary-production", namespace, releaseChannel.Name, map[string]string{
+			prodUnleash := createUnleash("canary-production", namespace, releaseChannel.ObjectMeta.Name, map[string]string{
 				"environment": "production",
 			})
 
@@ -391,7 +426,15 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Create(ctx, canaryUnleash)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, prodUnleash)).Should(Succeed())
 
-			By("Step 4a: Setting up HTTP mocks for instance health checks")
+			By("Step 4a: Verifying both Unleash instances were created successfully")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, canaryUnleash.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "canary-staging instance should exist")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, prodUnleash.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "canary-production instance should exist")
+
+			By("Step 4b: Setting up HTTP mocks for instance health checks")
 			registerHTTPMocksForInstance(canaryUnleash)
 			registerHTTPMocksForInstance(prodUnleash)
 
@@ -418,7 +461,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 						}
 
 						currentPhase := currentRC.Status.Phase
-						currentGeneration := currentRC.Generation
+						currentGeneration := currentRC.ObjectMeta.Generation
 
 						// React to phase transitions or generation changes (indicating spec updates)
 						if currentPhase != lastPhase || currentGeneration != lastGeneration {
@@ -452,20 +495,35 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				}
 			}()
 
-			By("Step 5: Verifying initial state - ReleaseChannel in Idle phase")
+			By("Step 5: Waiting for both Unleash instances to become ready")
+			// This ensures both instances exist and their controllers have processed them
+			// before we check the ReleaseChannel status
+			waitForImageResolution(canaryUnleash, "canary-test:v1")
+			waitForImageResolution(prodUnleash, "canary-test:v1")
+
+			By("Step 6: Verifying ReleaseChannel discovers both instances")
+			// The status.conditions changes on Unleash instances should trigger ReleaseChannel reconciliation
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				GinkgoWriter.Printf("ReleaseChannel instances: %d, phase: %s\n",
+					releaseChannel.Status.Instances, releaseChannel.Status.Phase)
+				return releaseChannel.Status.Instances
+			}, timeout, interval).Should(Equal(2), "ReleaseChannel should discover both instances")
+
+			By("Step 7: Verifying ReleaseChannel is in Idle phase")
 			Eventually(func() unleashv1.ReleaseChannelPhase {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
 				return releaseChannel.Status.Phase
 			}, timeout, interval).Should(Equal(unleashv1.ReleaseChannelPhaseIdle))
 
-			By("Step 6: Verifying both instances get initial image (v1)")
-			waitForImageResolution(canaryUnleash, "canary-test:v1")
-			waitForImageResolution(prodUnleash, "canary-test:v1")
-
 			By("Step 7: Triggering canary deployment by updating image")
-			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
-			releaseChannel.Spec.Image = "canary-test:v2"
-			Expect(k8sClient.Update(ctx, releaseChannel)).Should(Succeed())
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "canary-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
 
 			By("Step 8: Verifying ReleaseChannel progresses from Idle through deployment phases")
 			Eventually(func() unleashv1.ReleaseChannelPhase {
