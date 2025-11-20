@@ -48,8 +48,10 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 		}
 	}
 
-	// 2. Check for new target image first (highest priority - force retrigger scenario)
-	if state.LastTargetImage != "" && state.LastTargetImage != state.TargetImage {
+	// 2. CRITICAL: Check if target image has changed from last target
+	// This forces a retrigger when ReleaseChannel updates to a new image,
+	// even if we recently triggered the previous image
+	if state.LastTargetImage != "" && state.TargetImage != state.LastTargetImage {
 		return TriggerDecision{
 			ShouldTrigger: true,
 			Reason:        "New target image detected",
@@ -57,13 +59,16 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 		}
 	}
 
-	// 3. COORDINATION FIX: If instance is actively being deployed to target image,
-	// don't trigger even if annotations show a different last target
-	if state.LastTargetImage == state.TargetImage && state.CurrentImage != "" {
-		return TriggerDecision{
-			ShouldTrigger: false,
-			Reason:        "Instance already triggered for current target image",
-			NewPhase:      InstancePhaseTriggered,
+	// 3. Check if we've already triggered for this exact target image
+	// This prevents duplicate triggers when reconciling the same target
+	if state.LastTargetImage == state.TargetImage && state.TargetImage != "" {
+		// Only skip if not actively processing (might need retrigger if stuck)
+		if !de.isInstanceActivelyProcessing(state) {
+			return TriggerDecision{
+				ShouldTrigger: false,
+				Reason:        "Instance already triggered for current target image",
+				NewPhase:      InstancePhaseTriggered,
+			}
 		}
 	}
 
@@ -104,7 +109,7 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 		}
 	}
 
-	// 5. Check if instance was recently triggered
+	// 6. Check if instance was recently triggered (for same target)
 	if !state.LastTriggerTime.IsZero() {
 		timeSinceTrigger := de.timeProvider.Since(state.LastTriggerTime)
 
@@ -117,7 +122,7 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 			}
 		}
 
-		// If recently triggered, wait for minimum interval
+		// If recently triggered for current target, wait for minimum interval
 		if timeSinceTrigger < de.config.MinTriggerInterval {
 			waitTime := de.config.MinTriggerInterval - timeSinceTrigger
 			return TriggerDecision{
@@ -129,7 +134,7 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 		}
 	}
 
-	// 6. Instance needs initial trigger or retry
+	// 7. Instance needs initial trigger or retry
 	return TriggerDecision{
 		ShouldTrigger: true,
 		Reason:        "Instance needs deployment",
@@ -142,24 +147,13 @@ func (de *DecisionEngine) ShouldTriggerInstance(state InstanceState) TriggerDeci
 func (de *DecisionEngine) isInstanceActivelyProcessing(state InstanceState) bool {
 	now := de.timeProvider.Now()
 
-	// Check if there are very recent condition transitions (within last 30 seconds)
+	// Check if there are recent condition transitions (within last 2 minutes)
 	// This indicates the Unleash controller is actively working on the instance
+	// Adjusted to 2min to balance between preventing duplicate triggers and allowing retries
 	if !state.LastTransitionTime.IsZero() {
 		timeSinceTransition := now.Sub(state.LastTransitionTime)
-		if timeSinceTransition < 30*time.Second {
+		if timeSinceTransition < 2*time.Minute {
 			return true
-		}
-	}
-
-	// Check if instance has a current image that's not the target, but recent transitions
-	// suggest it's being updated (common during deployments)
-	if state.CurrentImage != "" && state.CurrentImage != state.TargetImage {
-		// If we've seen recent activity, assume it's being processed
-		if !state.LastTransitionTime.IsZero() {
-			timeSinceTransition := now.Sub(state.LastTransitionTime)
-			if timeSinceTransition < 2*time.Minute {
-				return true
-			}
 		}
 	}
 

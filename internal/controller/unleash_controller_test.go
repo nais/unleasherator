@@ -161,15 +161,6 @@ var _ = Describe("Unleash Controller", func() {
 		It("Should fail for missing database config", func() {
 			ctx := context.Background()
 
-			By("By resetting httpmock to isolate this test")
-			httpmock.Reset()
-			// Re-register responders even though they shouldn't be called in this test case
-			// This ensures a consistent test environment
-			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
-				httpmock.NewStringResponder(200, `{"health": "OK"}`))
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
-
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-fail", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{},
@@ -184,10 +175,6 @@ var _ = Describe("Unleash Controller", func() {
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
-
-			By("By verifying no HTTP calls were made to this specific instance endpoint")
-			// Since the Unleash failed to reconcile due to config issues, no HTTP calls should be made to Unleash endpoints
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(0))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())

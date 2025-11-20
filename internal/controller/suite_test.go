@@ -2,10 +2,12 @@ package controller
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	"go.opentelemetry.io/otel"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -82,6 +84,12 @@ var _ = BeforeSuite(func() {
 	releaseChannelHealthCheckInitialDelay = time.Millisecond * 10
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.JSONEncoder()))
+
+	// Enable test mode for unleashclient to skip otelhttp wrapping and allow httpmock to work
+	os.Setenv("UNLEASH_TEST_MODE", "true")
+
+	// Activate httpmock globally so it's available when controllers create HTTP clients
+	httpmock.Activate()
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
@@ -179,6 +187,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	cancel()
+	httpmock.DeactivateAndReset()
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
