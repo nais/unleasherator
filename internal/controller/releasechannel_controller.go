@@ -1147,34 +1147,6 @@ func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) 
 	return false
 }
 
-// isInstanceRollingOut checks if an instance is currently in the middle of a deployment rollout
-func (r *ReleaseChannelReconciler) isInstanceRollingOut(instance unleashv1.Unleash) bool {
-	// Check if the instance is in a degraded state (might indicate ongoing deployment)
-	for _, condition := range instance.Status.Conditions {
-		if condition.Type == unleashv1.UnleashStatusConditionTypeDegraded {
-			return condition.Status == metav1.ConditionTrue
-		}
-	}
-
-	// Check if reconciled condition is False (indicating ongoing work)
-	for _, condition := range instance.Status.Conditions {
-		if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
-			// If reconciled is False, the controller is likely working on it
-			return condition.Status == metav1.ConditionFalse
-		}
-	}
-
-	// Check if connected condition is False (indicating deployment/connectivity issues)
-	for _, condition := range instance.Status.Conditions {
-		if condition.Type == unleashv1.UnleashStatusConditionTypeConnected {
-			// If connected is False, there might be an ongoing rollout
-			return condition.Status == metav1.ConditionFalse
-		}
-	}
-
-	return false
-}
-
 // performHealthChecks performs health checks on the given instances
 func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (bool, error) {
 	// Wait for initial delay if configured
