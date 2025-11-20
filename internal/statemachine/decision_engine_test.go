@@ -215,27 +215,35 @@ func TestExtractInstanceStateFromUnleash(t *testing.T) {
 			},
 		},
 		{
-			name: "instance with annotations and trigger time",
+			name: "instance with status-based trigger tracking",
 			instance: &unleashv1.Unleash{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-instance",
-					Annotations: map[string]string{
-						"releasechannel.unleash.nais.io/last-target-image":    "app:v1.5",
-						"releasechannel.unleash.nais.io/last-rollout-trigger": baseTime.Format(time.RFC3339),
-					},
 				},
 				Status: unleashv1.UnleashStatus{
 					ResolvedReleaseChannelImage: "app:v1.0",
+					// In the new architecture, trigger tracking happens through status updates
+					// and condition transitions rather than annotations
+					Conditions: []metav1.Condition{
+						{
+							Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+							Status:             metav1.ConditionTrue,
+							LastTransitionTime: metav1.NewTime(baseTime),
+							Reason:             "DeploymentReady",
+							Message:            "Deployment is ready",
+						},
+					},
 				},
 			},
 			targetImage: "app:v2.0",
 			expectedState: InstanceState{
-				Name:            "test-instance",
-				CurrentImage:    "app:v1.0",
-				TargetImage:     "app:v2.0",
-				LastTargetImage: "app:v1.5",
-				LastTriggerTime: baseTime,
-				Phase:           InstancePhaseDeploying, // Different images = deployment in progress
+				Name:               "test-instance",
+				CurrentImage:       "app:v1.0",
+				TargetImage:        "app:v2.0",
+				LastTargetImage:    "",                     // No longer tracked in annotations - managed by ReleaseChannel controller
+				LastTriggerTime:    time.Time{},            // No trigger indicators in this condition set
+				LastTransitionTime: baseTime,               // From condition LastTransitionTime
+				Phase:              InstancePhaseDeploying, // Different images = deployment in progress
 			},
 		},
 		{

@@ -50,6 +50,37 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// Speed up tests by setting shorter timeouts for all package-level timeout variables
+	// Keep some timeouts at expected values to match test assertions
+	unleashDeploymentTimeout = time.Second * 1 // Test expects "timed out after 1s"
+	unleashControllerRequeueAfter = time.Millisecond * 100
+
+	// Remote Unleash controller timeouts
+	remoteUnleashErrorRetryDelay = time.Millisecond * 50
+	remoteUnleashRequeueAfter = time.Millisecond * 100
+
+	// API Token controller timeouts
+	apiTokenRequeueAfter = time.Millisecond * 100
+
+	// Release Channel controller timeouts
+	releaseChannelErrorRetryDelay = time.Millisecond * 50
+	releaseChannelIdleRequeueInterval = time.Millisecond * 100
+	releaseChannelInitialDeploymentCheck = time.Millisecond * 100
+	releaseChannelValidatingRetryDelay = time.Millisecond * 200
+	releaseChannelValidatingTransition = time.Millisecond * 50
+	releaseChannelCanaryWaitDelay = time.Millisecond * 100
+	releaseChannelRollingWaitDelay = time.Millisecond * 100
+	releaseChannelRollingBackWaitDelay = time.Millisecond * 100
+	releaseChannelRollingBackIdleDelay = time.Millisecond * 200
+	releaseChannelFailedRetryDelay = time.Millisecond * 200
+	releaseChannelStatusUpdateSuccess = time.Millisecond * 50
+	releaseChannelStatusUpdateRetry = time.Millisecond * 50
+	releaseChannelBackoffBase = time.Millisecond * 10
+	releaseChannelBackoffMedium = time.Millisecond * 20
+	releaseChannelBackoffLong = time.Millisecond * 30
+	releaseChannelBatchInterval = time.Millisecond * 10
+	releaseChannelHealthCheckInitialDelay = time.Millisecond * 10
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.JSONEncoder()))
 
 	ctx, cancel = context.WithCancel(context.TODO())

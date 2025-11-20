@@ -161,12 +161,12 @@ func TestRaceConditionPrevention(t *testing.T) {
 
 	t.Run("simultaneous processing detection", func(t *testing.T) {
 		// Scenario: Unleash controller just started processing, but ReleaseChannel
-		// hasn't applied annotations yet
+		// hasn't updated status yet
 		state := InstanceState{
 			Name:               "unleash-v7-channel",
 			CurrentImage:       "", // No image yet (initial deployment)
 			TargetImage:        "unleashorg/unleash-server:7",
-			LastTargetImage:    "",                               // No annotations yet
+			LastTargetImage:    "",                               // No previous target tracking yet
 			LastTriggerTime:    time.Time{},                      // No trigger yet
 			LastTransitionTime: time.Now().Add(-5 * time.Second), // Recent activity from Unleash controller
 		}
@@ -180,8 +180,8 @@ func TestRaceConditionPrevention(t *testing.T) {
 		assert.Equal(t, InstancePhaseReconciling, decision.NewPhase)
 	})
 
-	t.Run("annotation already applied - no retrigger", func(t *testing.T) {
-		// Scenario: ReleaseChannel already triggered, annotation exists
+	t.Run("status already updated - no retrigger", func(t *testing.T) {
+		// Scenario: ReleaseChannel already triggered, status tracking exists
 		state := InstanceState{
 			Name:            "unleash-v7-channel",
 			CurrentImage:    "unleashorg/unleash-server:6",     // Old image
