@@ -44,8 +44,7 @@ func InitTracing(ctx context.Context, config *config.Config) (*sdktrace.TracerPr
 func resourceFromConfig(config *config.Config) (*resource.Resource, error) {
 	return resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+		resource.NewSchemaless(
 			semconv.ServiceName(fmt.Sprintf("unleasherator-%s", config.ClusterName)),
 			semconv.ServiceInstanceID(config.PodName),
 			semconv.ServiceNamespace(config.PodNamespace),
