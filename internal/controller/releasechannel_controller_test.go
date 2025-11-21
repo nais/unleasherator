@@ -27,10 +27,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 
 	// Use a unique suffix for each test run to avoid conflicts
 	var testID string
+	var testCounter int
 
 	BeforeEach(func() {
 		// Generate unique test ID for resource names to ensure isolation
-		testID = fmt.Sprintf("%d", GinkgoRandomSeed())
+		// Use both timestamp and counter to ensure uniqueness across tests
+		testCounter++
+		testID = fmt.Sprintf("%d-%d", time.Now().UnixNano(), testCounter)
 
 		promCounterVecFlush(unleashPublished)
 
@@ -322,6 +325,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash1)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, unleash2)).Should(Succeed())
+
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, unleash1)
+				_ = k8sClient.Delete(ctx, unleash2)
+				_ = k8sClient.Delete(ctx, releaseChannel)
+			})
 
 			By("Verifying both Unleash instances exist in the API server")
 			Eventually(func() error {
