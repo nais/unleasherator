@@ -300,7 +300,7 @@ spec:
           fi
           echo "✓ ReleaseChannel spec correctly configured"
 
-# Wait for Unleash deployments to be available
+          # Wait for Unleash deployments to be available
           echo ""
           echo "3. Waiting for Unleash deployments to be available..."
           echo "   Note: This test validates ReleaseChannel functionality, not Unleash connectivity."
