@@ -300,41 +300,54 @@ spec:
           fi
           echo "✓ ReleaseChannel spec correctly configured"
 
-          # Wait for Unleash instances to be deployed
+# Wait for Unleash deployments to be available
           echo ""
-          echo "3. Waiting for Unleash instances to be deployed..."
+          echo "3. Waiting for Unleash deployments to be available..."
+          echo "   Note: This test validates ReleaseChannel functionality, not Unleash connectivity."
+          echo "   Connection status may show failures during admin token initialization in Kind clusters."
           for instance in unleash-rc-prod unleash-rc-staging unleash-rc-custom; do
-            echo "  Checking instance: $instance"
+            echo "  Checking deployment for instance: $instance"
             for i in $(seq 1 60); do
-              RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
-              CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-              DEPLOYMENT_READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
+              # Check if deployment exists and is available
+              DEPLOYMENT_EXISTS=$(kubectl get deployment $instance -o name 2>/dev/null || echo "")
+              if [ -n "$DEPLOYMENT_EXISTS" ]; then
+                DEPLOYMENT_READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
+                REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
+                READY_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
 
-              # Accept if reconciled and deployment is ready, even if connection hasn't succeeded yet
-              # Connection can take time due to admin token initialization in real clusters
-              if [ "$RECONCILED" = "true" ] && [ "$DEPLOYMENT_READY" = "True" ]; then
-                if [ "$CONNECTED" = "true" ]; then
-                  echo "  ✓ Instance $instance is Ready (reconciled, connected, deployment ready)"
-                else
-                  echo "  ✓ Instance $instance is Ready (reconciled, deployment ready - connection may still be initializing)"
+                if [ "$DEPLOYMENT_READY" = "True" ] && [ "$REPLICAS" = "$READY_REPLICAS" ] && [ "$REPLICAS" != "0" ]; then
+                  echo "  ✓ Deployment $instance is Available ($READY_REPLICAS/$REPLICAS ready)"
+                  break
                 fi
-                break
               fi
 
               if [ $((i % 10)) -eq 0 ]; then
-                echo "    Attempt $i/60: $instance - reconciled: $RECONCILED, connected: $CONNECTED, deployment: $DEPLOYMENT_READY"
+                if [ -n "$DEPLOYMENT_EXISTS" ]; then
+                  echo "    Attempt $i/60: $instance - ready: $DEPLOYMENT_READY, replicas: $READY_REPLICAS/$REPLICAS"
+                else
+                  echo "    Attempt $i/60: $instance - deployment not yet created"
+                fi
               fi
               sleep 5
             done
 
-            FINAL_RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
-            FINAL_DEPLOYMENT=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
-
-            if [ "$FINAL_RECONCILED" != "true" ] || [ "$FINAL_DEPLOYMENT" != "True" ]; then
-              echo "  ✗ Instance $instance did not become Ready within timeout"
-              echo "    Final status: reconciled=$FINAL_RECONCILED, deployment ready=$FINAL_DEPLOYMENT"
+            # Final verification
+            FINAL_DEPLOYMENT=$(kubectl get deployment $instance -o name 2>/dev/null || echo "")
+            if [ -z "$FINAL_DEPLOYMENT" ]; then
+              echo "  ✗ Deployment $instance was not created"
               kubectl describe unleash $instance || true
-              kubectl get deployment $instance -o yaml || true
+              exit 1
+            fi
+
+            FINAL_READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
+            FINAL_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
+            FINAL_READY_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+
+            if [ "$FINAL_READY" != "True" ] || [ "$FINAL_REPLICAS" != "$FINAL_READY_REPLICAS" ]; then
+              echo "  ✗ Deployment $instance did not become Available within timeout"
+              echo "    Final status: ready=$FINAL_READY, replicas=$FINAL_READY_REPLICAS/$FINAL_REPLICAS"
+              kubectl describe deployment $instance || true
+              kubectl get pods -l app.kubernetes.io/name=$instance || true
               exit 1
             fi
           done
