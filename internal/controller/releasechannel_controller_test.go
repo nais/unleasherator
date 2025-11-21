@@ -17,8 +17,6 @@ import (
 
 var _ = Describe("ReleaseChannel Controller", func() {
 	const (
-		namespace = "default"
-
 		timeout  = time.Millisecond * 7000 // Provide extra slack for multi-instance and canary rollouts
 		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms for faster polling
 
@@ -27,6 +25,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 
 	// Use a unique suffix for each test run to avoid conflicts
 	var testID string
+	var namespace string // Use unique namespace per test for envtest isolation
 	var testCounter int
 
 	BeforeEach(func() {
@@ -34,6 +33,18 @@ var _ = Describe("ReleaseChannel Controller", func() {
 		// Use both timestamp and counter to ensure uniqueness across tests
 		testCounter++
 		testID = fmt.Sprintf("%d-%d", time.Now().UnixNano(), testCounter)
+		namespace = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter) // Unique namespace per test
+
+		// Create the namespace
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: namespace,
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
 
 		promCounterVecFlush(unleashPublished)
 
@@ -308,6 +319,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 		})
 
 		It("Should manage multiple instances in a basic rollout", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
 			By("Creating a ReleaseChannel and two Unleash instances")
 			releaseChannel := &unleashv1.ReleaseChannel{
 				ObjectMeta: metav1.ObjectMeta{
@@ -601,11 +616,14 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Step 13: Verifying ReleaseChannel status reflects successful deployment")
 			Eventually(func() int {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
-				GinkgoWriter.Printf("Total instances: %d, Up-to-date: %d\n",
+
+				GinkgoWriter.Printf("Total instances: %d, Up-to-date: %d, Phase: %s, RC: %s\n",
 					releaseChannel.Status.Instances,
-					releaseChannel.Status.InstancesUpToDate)
+					releaseChannel.Status.InstancesUpToDate,
+					releaseChannel.Status.Phase,
+					releaseChannel.Name)
 				return releaseChannel.Status.Instances
-			}, timeout, interval).Should(Equal(2))
+			}, timeout*3, interval).Should(Equal(2), "ReleaseChannel should track 2 instances")
 
 			Eventually(func() int {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())

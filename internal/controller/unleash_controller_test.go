@@ -73,16 +73,33 @@ func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
 
 var _ = Describe("Unleash Controller", func() {
 	const (
-		UnleashNamespace = "default"
-		UnleashVersion   = "v5.1.2"
+		UnleashVersion = "v5.1.2"
 	)
 
 	var (
-		interval = time.Millisecond * 10   // Reduced from 250ms to 10ms
-		timeout  = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
+		UnleashNamespace string // Use unique namespace per test for envtest isolation
+		testCounter      int
+		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
+		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
 	)
 
 	BeforeEach(func() {
+		// Generate unique namespace for resource isolation
+		// Use timestamp to prevent collisions during rapid test execution
+		testCounter++
+		UnleashNamespace = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter)
+
+		// Create the namespace
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: UnleashNamespace,
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
 		promCounterVecFlush(unleashPublished)
 
 		// Reset federation publisher mocks between tests to avoid leakage

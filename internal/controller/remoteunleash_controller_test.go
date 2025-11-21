@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/mock"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,7 +30,6 @@ func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleas
 
 var _ = Describe("RemoteUnleash Controller", func() {
 	const (
-		RemoteUnleashNamespace = "default"
 		RemoteUnleashServerURL = "http://remoteunleash.nais.io"
 		RemoteUnleashToken     = "test"
 		RemoteUnleashVersion   = "v5.1.2"
@@ -38,7 +38,28 @@ var _ = Describe("RemoteUnleash Controller", func() {
 		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms
 	)
 
+	var (
+		RemoteUnleashNamespace string // Use unique namespace per test for envtest isolation
+		testCounter            int
+	)
+
 	BeforeEach(func() {
+		// Generate unique namespace for resource isolation
+		// Use timestamp to prevent collisions during rapid test execution
+		testCounter++
+		RemoteUnleashNamespace = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter)
+
+		// Create the namespace
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: RemoteUnleashNamespace,
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
 		promCounterVecFlush(remoteUnleashReceived)
 
 		// Ensure httpmock is fully reset and activated for each test

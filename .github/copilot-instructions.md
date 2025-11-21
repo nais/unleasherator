@@ -63,3 +63,67 @@ if os.Getenv("UNLEASH_TEST_MODE") == "true" {
 ```
 
 This is necessary because httpmock replaces `http.DefaultTransport`, but wrappers like otelhttp create new transports that bypass the mock.
+
+### Envtest Best Practices for Controller Tests
+
+We use [envtest](https://book.kubebuilder.io/reference/envtest.html) (controller-runtime's testing framework) which runs tests against an in-memory Kubernetes API server. To prevent flaky tests and ensure proper isolation:
+
+**Unique Namespaces Per Test:**
+```go
+var _ = Describe("MyController", func() {
+    var (
+        namespace   string // Use unique namespace per test for envtest isolation
+        testCounter int
+    )
+
+    BeforeEach(func() {
+        // Generate unique namespace for resource isolation
+        testCounter++
+        namespace = fmt.Sprintf("test-%d", testCounter)
+
+        // Create the namespace
+        ns := &corev1.Namespace{
+            ObjectMeta: metav1.ObjectMeta{
+                Name: namespace,
+            },
+        }
+        Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+        DeferCleanup(func() {
+            _ = k8sClient.Delete(ctx, ns)
+        })
+    })
+})
+```
+
+**Unique Resource Names (when needed):**
+```go
+var (
+    testID      string
+    testCounter int
+)
+
+BeforeEach(func() {
+    testCounter++
+    testID = fmt.Sprintf("%d-%d", time.Now().UnixNano(), testCounter)
+
+    // Use testID in resource names for additional uniqueness
+    unleashName := fmt.Sprintf("unleash-%s", testID)
+})
+```
+
+**Why This Matters:**
+- **Shared etcd state**: All tests run against the same in-memory etcd instance
+- **Cache pollution**: Without isolation, tests can see resources from other tests
+- **Parallel safety**: Unique namespaces enable safe parallel test execution
+- **Deterministic behavior**: Prevents race conditions where controllers process resources from other tests
+
+**Don't:**
+- ❌ Use hardcoded namespaces like `"default"` in test constants
+- ❌ Use `GinkgoRandomSeed()` for test IDs (same value across all tests in a suite run)
+- ❌ Rely on namespace deletion between tests for cleanup (use `DeferCleanup` instead)
+
+**Do:**
+- ✅ Generate unique namespaces per test using incrementing counters
+- ✅ Use `DeferCleanup` for guaranteed resource cleanup
+- ✅ Combine timestamp + counter for truly unique IDs when needed
+- ✅ Use `Eventually` with appropriate timeouts for envtest cache synchronization
