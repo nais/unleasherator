@@ -85,6 +85,9 @@ var _ = Describe("Unleash Controller", func() {
 	BeforeEach(func() {
 		promCounterVecFlush(unleashPublished)
 
+		// Reset federation publisher mocks between tests to avoid leakage
+		mockPublisher.Mock = mock.Mock{}
+
 		httpmock.DeactivateAndReset() // Fully reset including call counts
 		httpmock.Activate()
 		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
@@ -479,7 +482,7 @@ var _ = Describe("Unleash Controller", func() {
 			matcher := func(unleash *unleashv1.Unleash) bool {
 				return unleash.Name == "test-unleash-federate"
 			}
-			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
+			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -510,8 +513,11 @@ var _ = Describe("Unleash Controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
-			Expect(mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)).To(BeTrue()) // Controller reconciles once
+			Eventually(func() int {
+				return len(mockPublisher.Calls)
+			}, timeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
+
+			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 
 			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
 			Expect(err).To(BeNil())

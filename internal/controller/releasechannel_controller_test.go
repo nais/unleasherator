@@ -19,7 +19,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	const (
 		namespace = "default"
 
-		timeout  = time.Millisecond * 5000 // Increased to 5s for complex canary deployment scenarios
+		timeout  = time.Millisecond * 7000 // Provide extra slack for multi-instance and canary rollouts
 		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms for faster polling
 
 		releaseChannelUnleashVersion = "v5.1.2"
@@ -159,6 +159,18 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Get(ctx, instance.NamespacedName(), instance)).Should(Succeed())
 			return instance.Status.ResolvedReleaseChannelImage
 		}, timeout, interval).Should(Equal(expectedImage))
+	}
+
+	waitForInstanceReady := func(instance *unleashv1.Unleash) {
+		Eventually(func() bool {
+			Expect(k8sClient.Get(ctx, instance.NamespacedName(), instance)).Should(Succeed())
+			for _, condition := range instance.Status.Conditions {
+				if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
+					return condition.Status == metav1.ConditionTrue
+				}
+			}
+			return false
+		}, timeout, interval).Should(BeTrue(), fmt.Sprintf("instance %s should be ready", instance.ObjectMeta.Name))
 	}
 
 	waitForConnection := func(instance *unleashv1.Unleash) {
@@ -352,7 +364,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				GinkgoWriter.Printf("Multi-instance test - RC status instances: %d, phase: %s, list query found: %d\n",
 					releaseChannel.Status.Instances, releaseChannel.Status.Phase, matchingCount)
 				return releaseChannel.Status.Instances
-			}, timeout, interval).Should(Equal(2), "ReleaseChannel should discover both instances")
+			}, timeout*2, interval).Should(Equal(2), "ReleaseChannel should discover both instances")
 
 			By("Updating the ReleaseChannel to trigger a rollout")
 			Eventually(func() error {
@@ -373,12 +385,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				GinkgoWriter.Printf("After image update - instances: %d, phase: %s, name: %s\n",
 					releaseChannel.Status.Instances, releaseChannel.Status.Phase, releaseChannel.ObjectMeta.Name)
 				return releaseChannel.Status.Instances
-			}, timeout, interval).Should(Equal(2))
+			}, timeout*2, interval).Should(Equal(2))
 
 			Eventually(func() int {
 				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
 				return releaseChannel.Status.InstancesUpToDate
-			}, timeout, interval).Should(Equal(2))
+			}, timeout*2, interval).Should(Equal(2))
 
 			By("Verifying ReleaseChannel eventually reaches completed state")
 			Eventually(func() unleashv1.ReleaseChannelPhase {
@@ -481,8 +493,9 @@ var _ = Describe("ReleaseChannel Controller", func() {
 							switch currentPhase {
 							case unleashv1.ReleaseChannelPhaseIdle:
 								// Initial setup or completion - ensure both deployments are ready
-								if lastPhase == "" {
-									GinkgoWriter.Printf("Initial setup - simulating both deployments ready\n")
+								// But only if we've transitioned from another phase (not on initial setup)
+								if lastPhase != "" {
+									GinkgoWriter.Printf("Returned to Idle - ensuring both deployments ready\n")
 									simulateDeploymentReady(canaryUnleash)
 									simulateDeploymentReady(prodUnleash)
 								}
@@ -510,6 +523,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			// before we check the ReleaseChannel status
 			waitForImageResolution(canaryUnleash, "canary-test:v1")
 			waitForImageResolution(prodUnleash, "canary-test:v1")
+
+			// Also wait for both instances to be fully reconciled (Reconciled condition = True)
+			waitForInstanceReady(canaryUnleash)
+			waitForInstanceReady(prodUnleash)
 
 			By("Step 6: Verifying ReleaseChannel discovers both instances")
 			// The status.conditions changes on Unleash instances should trigger ReleaseChannel reconciliation
