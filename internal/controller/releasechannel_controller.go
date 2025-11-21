@@ -389,9 +389,8 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 
-		// Update status to persist instance counts
-		if err := r.Status().Update(ctx, releaseChannel); err != nil {
-			log.V(1).Info("Failed to update ReleaseChannel status with instance counts", "error", err)
+		if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+			return statusResult, err
 		}
 		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
 	}
@@ -440,9 +439,8 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 		r.recordMetrics(releaseChannel, labels)
 
-		// Update status to persist instance counts
-		if err := r.Status().Update(ctx, releaseChannel); err != nil {
-			log.V(1).Info("Failed to update ReleaseChannel status with instance counts", "error", err)
+		if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+			return statusResult, err
 		}
 		// Requeue to check progress
 		return ctrl.Result{RequeueAfter: releaseChannelInitialDeploymentCheck}, nil
