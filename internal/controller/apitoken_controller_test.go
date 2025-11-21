@@ -30,7 +30,6 @@ func getApiToken(k8sClient client.Client, ctx context.Context, apiToken *unleash
 
 var _ = Describe("ApiToken Controller", Ordered, func() {
 	const (
-		ApiTokenNamespace = "default"
 		ApiTokenServerURL = "http://api-token-unleash.nais.io"
 		ApiTokenSecret    = "*:*.be44368985f7fb3237c584ef86f3d6bdada42ddbd63a019d26955178"
 
@@ -38,11 +37,32 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms
 	)
 
+	var (
+		ApiTokenNamespace string // Use unique namespace per test for envtest isolation
+		testCounter       int
+	)
+
 	var existingTokens = unleashclient.ApiTokenResult{
 		Tokens: []unleashclient.ApiToken{},
 	}
 
 	BeforeEach(func() {
+		// Generate unique namespace for resource isolation
+		// Use timestamp to prevent collisions during rapid test execution
+		testCounter++
+		ApiTokenNamespace = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter)
+
+		// Create the namespace
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: ApiTokenNamespace,
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
 		existingTokens.Tokens = []unleashclient.ApiToken{}
 
 		httpmock.Activate()
@@ -120,7 +140,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
 				Status:  metav1.ConditionTrue,
 				Reason:  "UnleashNotFound",
-				Message: "Unleash resource with name test-unleash-not-exist not found in namespace default",
+				Message: fmt.Sprintf("Unleash resource with name test-unleash-not-exist not found in namespace %s", ApiTokenNamespace),
 			}))
 
 			Expect(apiTokenCreated.Status.Created).Should(Equal(false))
@@ -149,7 +169,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
 				Status:  metav1.ConditionTrue,
 				Reason:  "UnleashNotFound",
-				Message: "RemoteUnleash resource with name test-remoteunleash-not-exist not found in namespace default",
+				Message: fmt.Sprintf("RemoteUnleash resource with name test-remoteunleash-not-exist not found in namespace %s", ApiTokenNamespace),
 			}))
 			Expect(apiTokenCreated.Status.Created).Should(Equal(false))
 			Expect(apiTokenCreated.Status.Failed).Should(Equal(true))
