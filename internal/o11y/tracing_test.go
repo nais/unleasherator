@@ -7,7 +7,7 @@ import (
 
 	"github.com/nais/unleasherator/internal/config"
 	"github.com/stretchr/testify/assert"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
 
 func TestNewTraceExporter(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -30,6 +31,10 @@ import (
 )
 
 var (
+	// RemoteUnleash controller timeouts - prefixed to avoid conflicts with other controllers
+	remoteUnleashErrorRetryDelay = 1 * time.Minute
+	remoteUnleashRequeueAfter    = 1 * time.Hour
+
 	// remoteUnleashStatus is a Prometheus metric which will be used to expose the status of the RemoteUnleash instances
 	remoteUnleashStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -194,7 +199,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		if apierrors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
 		} else {
 			return ctrl.Result{}, err
 		}
@@ -244,7 +249,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: 1 * time.Hour}, nil
+	return ctrl.Result{RequeueAfter: remoteUnleashRequeueAfter}, nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
@@ -428,5 +433,8 @@ func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.RemoteUnleash{}).
 		WithEventFilter(pred).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1, // Prevent race conditions with rapid simultaneous changes
+		}).
 		Complete(r)
 }

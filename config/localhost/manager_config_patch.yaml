@@ -9,3 +9,14 @@ spec:
       containers:
       - name: manager
         imagePullPolicy: IfNotPresent
+        env:
+        - name: CLUSTER_NAME
+          value: "localhost"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace

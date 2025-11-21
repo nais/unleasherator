@@ -46,6 +46,9 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	// Initialize logger BEFORE config loading to ensure errors are visible
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
+
 	// Load configuration from environment
 	cfg, err := config.LoadFromEnv()
 	if err != nil {
@@ -57,8 +60,6 @@ func main() {
 	signalHandlerContext := ctrl.SetupSignalHandler()
 	ctx, cancel := context.WithCancel(signalHandlerContext)
 	defer cancel()
-
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.JSONEncoder()))
 
 	tp, err := o11y.InitTracing(ctx, cfg)
 	if err != nil {
@@ -139,6 +140,16 @@ func main() {
 		Tracer:                tp.Tracer("apitoken-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ReleaseChannelReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("releasechannel-controller"),
+		Tracer:   tp.Tracer("releasechannel-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ReleaseChannel")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

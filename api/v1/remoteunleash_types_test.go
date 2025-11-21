@@ -55,6 +55,10 @@ func (m *mockClient) Patch(ctx context.Context, obj client.Object, patch client.
 	return nil
 }
 
+func (m *mockClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	return nil
+}
+
 func (m *mockClient) DeleteAllOf(ctx context.Context, obj client.Object, opts ...client.DeleteAllOfOption) error {
 	return nil
 }
