@@ -214,7 +214,45 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
-		PIt("Should fail when it cannot connect to Unleash")
+		It("Should fail when it cannot connect to Unleash", func() {
+			ctx := context.Background()
+
+			By("By creating a new Unleash")
+			unleash := unleashResource("test-unleash-connect-fail", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By faking Deployment status as available")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By mocking connection failure")
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(500, `{"error": "Internal Server Error"}`))
+
+			By("By checking that Unleash is reconciled but not connected")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+			}))
+
+			Expect(createdUnleash.IsReady()).To(BeFalse())
+			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
+			Expect(createdUnleash.Status.Connected).To(BeFalse())
+
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).ToNot(Equal(0))
+
+			By("By cleaning up the Unleash")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
 
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
