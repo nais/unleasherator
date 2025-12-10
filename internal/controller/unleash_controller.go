@@ -687,6 +687,20 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 	if unleash.Spec.CustomImage != "" {
 		resolvedImage = unleash.Spec.CustomImage
 		log.Info("Using custom image", "image", resolvedImage)
+
+		// Clear any existing ReleaseChannel tracking when CustomImage takes precedence
+		if unleash.Status.ResolvedReleaseChannelImage != "" || unleash.Status.ReleaseChannelName != "" {
+			unleash.Status.ResolvedReleaseChannelImage = ""
+			unleash.Status.ReleaseChannelName = ""
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(1).Info("Conflict clearing ReleaseChannel status, will retry with backoff", "Name", unleash.Name)
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
+				}
+				log.Error(err, "Failed to clear ReleaseChannel status")
+				return ctrl.Result{}, err
+			}
+		}
 	} else if unleash.Spec.ReleaseChannel.Name != "" {
 		// Priority 2: ReleaseChannel managed - PULL image from ReleaseChannel status
 		pulledImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
