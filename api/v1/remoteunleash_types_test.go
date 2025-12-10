@@ -75,6 +75,10 @@ func (m *mockClient) SubResource(subResource string) client.SubResourceClient {
 	return nil
 }
 
+func (m *mockClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	return nil
+}
+
 func TestRemoteUnleash_URL(t *testing.T) {
 	unleash := &RemoteUnleash{
 		Spec: RemoteUnleashSpec{
