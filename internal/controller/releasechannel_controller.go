@@ -1393,8 +1393,9 @@ func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					// Only trigger if the instance references a ReleaseChannel
 					return unleash.Spec.ReleaseChannel.Name != ""
 				},
-				// Only react to Unleash status.conditions changes for readiness detection
-				// Ignore other status changes to prevent reconciliation loops
+				// React to Unleash status changes that affect ReleaseChannel coordination:
+				// - ResolvedImage changes: allows ReleaseChannel to detect when instances are up-to-date
+				// - Conditions changes: allows ReleaseChannel to detect readiness state
 				UpdateFunc: func(e event.UpdateEvent) bool {
 					oldUnleash, oldOk := e.ObjectOld.(*unleashv1.Unleash)
 					newUnleash, newOk := e.ObjectNew.(*unleashv1.Unleash)
@@ -1402,8 +1403,18 @@ func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 						return false
 					}
 
-					// Only trigger if conditions actually changed (readiness state)
-					// This prevents reconciliation on every status update
+					// Only trigger for instances that reference a ReleaseChannel
+					if newUnleash.Spec.ReleaseChannel.Name == "" {
+						return false
+					}
+
+					// Trigger if ResolvedReleaseChannelImage changed - this is critical for detecting
+					// when Unleash instances have pulled and applied the new image
+					if oldUnleash.Status.ResolvedReleaseChannelImage != newUnleash.Status.ResolvedReleaseChannelImage {
+						return true
+					}
+
+					// Trigger if conditions changed (readiness state)
 					return !conditionsEqual(oldUnleash.Status.Conditions, newUnleash.Status.Conditions)
 				},
 				// Don't react to delete events
