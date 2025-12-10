@@ -112,6 +112,8 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
+    - name: DATABASE_SCHEMA
+      value: "unleash_prod"
   networkPolicy:
     enabled: true
     allowDNS: true
@@ -148,6 +150,8 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
+    - name: DATABASE_SCHEMA
+      value: "unleash_staging"
   networkPolicy:
     enabled: true
     allowDNS: true
@@ -185,6 +189,8 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
+    - name: DATABASE_SCHEMA
+      value: "unleash_custom"
   networkPolicy:
     enabled: true
     allowDNS: true
