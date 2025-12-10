@@ -45,7 +45,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Set up Go environment
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.24"
           cache: false
@@ -67,7 +67,7 @@ jobs:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-bin-${{ hashFiles('Makefile', 'go.mod') }}
       - name: Set up Go environment
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: "1.24"
       - name: Install make
