@@ -121,7 +121,8 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 	})
 
 	AfterEach(func() {
-		httpmock.DeactivateAndReset()
+		// Only clear call history, don't deactivate (allows other concurrent tests to continue)
+		httpmock.Reset()
 	})
 
 	Context("Missing Unleash Server", func() {

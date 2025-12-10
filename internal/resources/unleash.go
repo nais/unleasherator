@@ -561,8 +561,20 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 			}
 		}
 
-		// Fallback: Use ReleaseChannel's target image if instance not yet in map
-		// This handles initial deployment before ReleaseChannel controller has populated the map
+		// Phase-aware fallback logic to prevent race conditions during canary deployment
+		// During canary phase, production instances should NOT get the target image until
+		// canary validation completes. Use PreviousImage as safe fallback.
+		if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseCanary {
+			// During canary, if this instance is not in the map yet, use previous image
+			// This prevents production instances from skipping canary protection
+			if releaseChannel.Status.PreviousImage != "" {
+				return releaseChannel.Status.PreviousImage, false, nil
+			}
+			// If no previous image, this is initial deployment - safe to use target
+		}
+
+		// Safe fallback for non-canary phases or initial deployment:
+		// Use ReleaseChannel's target image if instance not yet in map
 		if releaseChannel.Spec.Image != "" {
 			return string(releaseChannel.Spec.Image), false, nil
 		}

@@ -73,7 +73,6 @@ var _ = BeforeSuite(func() {
 	releaseChannelCanaryWaitDelay = time.Millisecond * 100
 	releaseChannelRollingWaitDelay = time.Millisecond * 100
 	releaseChannelRollingBackWaitDelay = time.Millisecond * 100
-	releaseChannelRollingBackIdleDelay = time.Millisecond * 200
 	releaseChannelFailedRetryDelay = time.Millisecond * 200
 	releaseChannelStatusUpdateSuccess = time.Millisecond * 50
 	releaseChannelStatusUpdateRetry = time.Millisecond * 50

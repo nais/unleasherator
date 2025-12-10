@@ -268,6 +268,13 @@ spec:
                   This is the source of truth for what image each instance should run
                   Unleash controller reads from this map to determine desired state
                 type: object
+              instanceImagesGeneration:
+                default: 0
+                description: |-
+                  InstanceImagesGeneration tracks when InstanceImages was last updated
+                  Incremented each time the map is modified, allowing Unleash controller to detect stale reads
+                format: int64
+                type: integer
               instanceStatus:
                 description: InstanceStatus provides detailed status for each instance
                 items:

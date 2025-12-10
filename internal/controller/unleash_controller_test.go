@@ -114,7 +114,8 @@ var _ = Describe("Unleash Controller", func() {
 	})
 
 	AfterEach(func() {
-		httpmock.DeactivateAndReset()
+		// Only clear call history, don't deactivate (allows other concurrent tests to continue)
+		httpmock.Reset()
 	})
 
 	Context("When comparing Unleash deployments", func() {

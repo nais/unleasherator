@@ -146,6 +146,11 @@ type ReleaseChannelStatus struct {
 	// LastTargetImages tracks what target we last attempted to deploy to each instance
 	// Used by decision engine to detect when target changes and force retrigger
 	LastTargetImages map[string]string `json:"lastTargetImages,omitempty"`
+
+	// InstanceImagesGeneration tracks when InstanceImages was last updated
+	// Incremented each time the map is modified, allowing Unleash controller to detect stale reads
+	// +kubebuilder:default=0
+	InstanceImagesGeneration int64 `json:"instanceImagesGeneration,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout
