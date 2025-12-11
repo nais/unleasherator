@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -31,7 +32,8 @@ import (
 const tokenFinalizer = "unleash.nais.io/finalizer"
 
 var (
-	unleashRequeueAfter = 1 * time.Hour
+	// API Token controller timeouts - prefixed to avoid conflicts with other controllers
+	apiTokenRequeueAfter = 1 * time.Hour
 
 	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	apiTokenStatus = prometheus.NewGaugeVec(
@@ -345,7 +347,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Set ApiToken status to success
 	err = r.updateStatusSuccess(ctx, token)
-	return ctrl.Result{RequeueAfter: unleashRequeueAfter}, err
+	return ctrl.Result{RequeueAfter: apiTokenRequeueAfter}, err
 }
 
 // getUnleashInstance returns the Unleash instance that the ApiToken belongs to
@@ -471,5 +473,8 @@ func (r *ApiTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.ApiToken{}).
 		WithEventFilter(pred).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1, // Prevent race conditions with rapid simultaneous changes
+		}).
 		Complete(r)
 }

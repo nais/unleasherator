@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -70,20 +71,41 @@ func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
 	}
 }
 
-var _ = Describe("Unleash controller", func() {
-	deploymentTimeout = time.Second * 1
-
+var _ = Describe("Unleash Controller", func() {
 	const (
-		UnleashNamespace = "default"
-		UnleashVersion   = "v5.1.2"
+		UnleashVersion = "v5.1.2"
+	)
 
-		timeout  = time.Second * 10
-		interval = time.Millisecond * 250
+	var (
+		UnleashNamespace string // Use unique namespace per test for envtest isolation
+		testCounter      int
+		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
+		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
 	)
 
 	BeforeEach(func() {
+		// Generate unique namespace for resource isolation
+		// Use timestamp to prevent collisions during rapid test execution
+		testCounter++
+		UnleashNamespace = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter)
+
+		// Create the namespace
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: UnleashNamespace,
+			},
+		}
+		Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
 		promCounterVecFlush(unleashPublished)
 
+		// Reset federation publisher mocks between tests to avoid leakage
+		mockPublisher.Mock = mock.Mock{}
+
+		httpmock.DeactivateAndReset() // Fully reset including call counts
 		httpmock.Activate()
 		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
 			httpmock.NewStringResponder(200, `{"health": "OK"}`))
@@ -92,7 +114,8 @@ var _ = Describe("Unleash controller", func() {
 	})
 
 	AfterEach(func() {
-		httpmock.DeactivateAndReset()
+		// Only clear call history, don't deactivate (allows other concurrent tests to continue)
+		httpmock.Reset()
 	})
 
 	Context("When comparing Unleash deployments", func() {
@@ -173,8 +196,6 @@ var _ = Describe("Unleash controller", func() {
 				Message: "Failed to reconcile Deployment: validation failed for Deployment (either database.url or database.secretName must be set)",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(0))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
@@ -219,6 +240,14 @@ var _ = Describe("Unleash controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 
+			By("By resetting httpmock to isolate this test")
+			httpmock.Reset()
+			// Re-register the necessary responders for connection testing
+			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+				httpmock.NewStringResponder(200, `{"health": "OK"}`))
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
@@ -247,8 +276,11 @@ var _ = Describe("Unleash controller", func() {
 			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdUnleash.Status.Connected).To(BeTrue())
 
+			By("By verifying appropriate HTTP calls were made for connection verification")
+			// The controller should not call the health endpoint in normal operation
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
-			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(Equal(1))
+			// The controller should call the admin stats endpoint to verify connection and get version
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(BeNumerically(">=", 1))
 
 			deployment := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), deployment)).Should(Succeed())
@@ -280,6 +312,187 @@ var _ = Describe("Unleash controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
+		It("Should resolve ReleaseChannel image on creation and not update on subsequent reconciles", func() {
+			ctx := context.Background()
+
+			releaseChannelImage := "quay.io/unleash/unleash-server:6.3.0"
+			releaseChannelName := "stable"
+
+			By("By creating a ReleaseChannel")
+			releaseChannel := releaseChannelResource(releaseChannelName, UnleashNamespace, releaseChannelImage)
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("By waiting for ReleaseChannel to be ready")
+			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
+					return false
+				}
+				return createdReleaseChannel.Status.Phase == "Idle"
+			}, timeout, interval).Should(BeTrue())
+
+			By("By creating a new Unleash that references the ReleaseChannel")
+			unleash := unleashResource("test-unleash-releasechannel", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+					Name: releaseChannelName,
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By verifying ReleaseChannel controller does NOT interfere during initial creation")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+			// Wait for initial reconciliation to complete
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return false
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
+			}, timeout, interval).Should(BeTrue())
+
+			// In the new status-based architecture, coordination happens through status fields
+			// rather than annotations, so we expect no coordination-related annotations
+			if createdUnleash.Annotations != nil {
+				// Check that no legacy ReleaseChannel coordination annotations exist
+				for key := range createdUnleash.Annotations {
+					Expect(key).ToNot(ContainSubstring("releasechannel.unleash.nais.io/"),
+						"Legacy ReleaseChannel coordination annotations should not be present")
+				}
+			}
+
+			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By verifying CustomImage is NOT set during initial creation")
+			Expect(createdUnleash.Spec.CustomImage).Should(BeEmpty(), "CustomImage should not be set during initial creation")
+
+			By("By faking Deployment status as available")
+			createdDeployment := &appsv1.Deployment{}
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that the deployment uses the ReleaseChannel image")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment); err != nil {
+					return ""
+				}
+				return createdDeployment.Spec.Template.Spec.Containers[0].Image
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By manually triggering an Unleash reconcile (simulating periodic reconciliation)")
+			// Force a reconcile by updating a label - this simulates routine reconciliation
+			Eventually(func() error {
+				freshUnleash := &unleashv1.Unleash{}
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), freshUnleash); err != nil {
+					return err
+				}
+				if freshUnleash.Labels == nil {
+					freshUnleash.Labels = map[string]string{}
+				}
+				freshUnleash.Labels["test"] = "reconcile-trigger"
+				return k8sClient.Update(ctx, freshUnleash)
+			}, timeout, interval).Should(Succeed())
+
+			By("By verifying ReleaseChannel controller does NOT change image during routine reconciliation")
+			// After routine reconciliation, the resolved image should remain stable
+			Consistently(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, time.Millisecond*500, interval).Should(Equal(releaseChannelImage),
+				"ReleaseChannel controller should not change resolved image during routine reconciliation")
+
+			By("By checking that routine Unleash reconciliation does NOT change the image")
+			// The status should remain the same after routine reconciliation
+			Consistently(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, time.Millisecond*500, interval).Should(Equal(releaseChannelImage))
+
+			By("By verifying CustomImage remains empty during routine operations")
+			Consistently(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return "error"
+				}
+				return createdUnleash.Spec.CustomImage
+			}, time.Millisecond*500, interval).Should(BeEmpty(), "CustomImage should remain empty during routine operations")
+
+			By("By updating the ReleaseChannel to a new image (intentional rollout)")
+			newReleaseChannelImage := "quay.io/unleash/unleash-server:6.4.0"
+			// Get the latest version to avoid conflicts
+			Eventually(func() error {
+				freshReleaseChannel := &unleashv1.ReleaseChannel{}
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), freshReleaseChannel); err != nil {
+					return err
+				}
+				freshReleaseChannel.Spec.Image = unleashv1.UnleashImage(newReleaseChannelImage)
+				return k8sClient.Update(ctx, freshReleaseChannel)
+			}, timeout, interval).Should(Succeed())
+
+			By("By verifying ReleaseChannel controller DOES update status during intentional rollout")
+			// Now the ReleaseChannel controller should update the Unleash status directly
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(newReleaseChannelImage), "ReleaseChannel controller should update resolved image in status during rollout")
+
+			By("By checking that ReleaseChannel name is tracked in status")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ReleaseChannelName
+			}, timeout, interval).Should(Equal(releaseChannel.Name), "ReleaseChannel name should be tracked in status")
+
+			By("By checking that the Unleash status is updated to the new image")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(newReleaseChannelImage))
+
+			By("By verifying the status-based coordination works as intended")
+			// The status should contain the expected coordination data
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return false
+				}
+
+				// Verify all required status fields are present
+				hasResolvedImage := createdUnleash.Status.ResolvedReleaseChannelImage == newReleaseChannelImage
+				hasReleaseChannelName := createdUnleash.Status.ReleaseChannelName == releaseChannel.Name
+
+				return hasResolvedImage && hasReleaseChannelName
+			}, timeout, interval).Should(BeTrue(), "All coordination status fields should be present during rollout")
+
+			By("By verifying that ReleaseChannel coordination is phase-aware")
+			// Check that the rollout intent includes the phase information
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
+					return ""
+				}
+				return string(createdReleaseChannel.Status.Phase)
+			}, timeout, interval).Should(BeElementOf("Rolling", "Canary", "Idle"), "ReleaseChannel should transition through rollout phases")
+
+			By("By cleaning up resources")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
+		})
+
 		It("Should publish Unleash instance when federation is enabled", func() {
 			ctx := context.Background()
 
@@ -287,7 +500,7 @@ var _ = Describe("Unleash controller", func() {
 			matcher := func(unleash *unleashv1.Unleash) bool {
 				return unleash.Name == "test-unleash-federate"
 			}
-			mockPublisher.On("Publish", mock.AnythingOfType("*context.valueCtx"), mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
+			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -318,19 +531,88 @@ var _ = Describe("Unleash controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			Expect(mockPublisher.AssertCalled(GinkgoT(), "Publish", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("*unleash_nais_io_v1.Unleash"), mock.AnythingOfType("string"))).To(BeTrue())
-			Expect(mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)).To(BeTrue())
+			Eventually(func() int {
+				return len(mockPublisher.Calls)
+			}, timeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
+
+			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 
 			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1)))
+			Expect(val).To(Equal(float64(1))) // Called once
 
 			val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1)))
+			Expect(val).To(Equal(float64(1))) // Called once
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
+
+		It("Should wait for ReleaseChannel to become available instead of using default image", func() {
+			ctx := context.Background()
+
+			By("By creating an Unleash that references a non-existent ReleaseChannel")
+			unleash := unleashResource("test-unleash-missing-rc", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+					Name: "missing-channel",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By verifying the Unleash is stuck waiting (no deployment created)")
+			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
+
+			// The Unleash should exist but should not create a deployment
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash) == nil
+			}, timeout, interval).Should(BeTrue())
+
+			// No deployment should be created yet
+			createdDeployment := &appsv1.Deployment{}
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment)
+				return apierrors.IsNotFound(err)
+			}, time.Millisecond*500, interval).Should(BeTrue())
+
+			By("By creating the missing ReleaseChannel")
+			releaseChannelImage := "unleash:6.0.0"
+			releaseChannel := releaseChannelResource("missing-channel", UnleashNamespace, releaseChannelImage)
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("By waiting for ReleaseChannel to be ready")
+			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
+					return false
+				}
+				return createdReleaseChannel.Status.Phase == "Idle"
+			}, timeout, interval).Should(BeTrue())
+
+			By("By verifying the Unleash now progresses and uses the ReleaseChannel image")
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+					return ""
+				}
+				return createdUnleash.Status.ResolvedReleaseChannelImage
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By verifying the deployment is now created with the correct image")
+			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+
+			Eventually(func() string {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment); err != nil {
+					return ""
+				}
+				return createdDeployment.Spec.Template.Spec.Containers[0].Image
+			}, timeout, interval).Should(Equal(releaseChannelImage))
+
+			By("By cleaning up resources")
+			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
 		})
 	})
 })

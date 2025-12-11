@@ -1,6 +1,9 @@
 namespace: unleasherator-system
 resources:
-- ../default
+- ../crd
+- ../rbac
+- ../manager
+# Prometheus resources excluded for local development
 
 patchesStrategicMerge:
 - manager_config_patch.yaml

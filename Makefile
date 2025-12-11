@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/nais/unleasherator:main
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.32.0
+ENVTEST_K8S_VERSION = 1.33.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -63,10 +63,8 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
-
-##@ Build
+test: envtest ## Run tests. Use FOCUS="test name" to run specific tests.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(if $(FOCUS),./internal/controller -run TestAPIs --ginkgo.focus="$(FOCUS)",./...) -coverprofile cover.out
 
 .PHONY: build
 build: manifests generate proto ## Build manager binary.
@@ -82,12 +80,99 @@ helm: manifests kustomize helmify ## Generate Helm chart.
 	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
 	rm charts/unleasherator/templates/*-crd.yaml # delete superflous crds from the file tree
 
+##@ End-to-End Testing
+
+# Image tag for e2e tests
+E2E_IMG ?= ghcr.io/nais/unleasherator:main
+# Namespace for e2e tests
+E2E_NAMESPACE ?= unleasherator-e2e-test
+
+.PHONY: test-e2e
+test-e2e: test-e2e-setup ## Run end-to-end tests using ct install (same as CI).
+	ct install \
+		--charts ./charts/unleasherator \
+		--namespace $(E2E_NAMESPACE) \
+		--helm-extra-args '--timeout 400s'
+
+.PHONY: test-e2e-debug
+test-e2e-debug: test-e2e-setup ## Run e2e tests but keep resources for debugging (--skip-clean-up).
+	ct install \
+		--charts ./charts/unleasherator \
+		--namespace $(E2E_NAMESPACE) \
+		--helm-extra-args '--timeout 400s' \
+		--skip-clean-up \
+		--debug
+
+.PHONY: test-e2e-setup
+test-e2e-setup: docker-build ## Set up e2e test environment (build image, install CRDs).
+	@echo "=== Verifying cluster connectivity ==="
+	@kubectl cluster-info || (echo "❌ No cluster available. Start colima or another k8s cluster." && exit 1)
+	@echo ""
+	@echo "=== Installing CRDs ==="
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+	helm repo update
+	helm upgrade --install prometheus-operator-crds prometheus-community/prometheus-operator-crds --wait
+	helm upgrade --install unleasherator-crds ./charts/unleasherator-crds --wait
+	@echo ""
+	@echo "=== Creating test namespace ==="
+	kubectl create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@echo ""
+	@echo "✅ E2E setup complete"
+
+.PHONY: test-e2e-clean
+test-e2e-clean: ## Clean up e2e test resources (use after test-e2e-debug).
+	@echo "=== Cleaning up e2e test resources in $(E2E_NAMESPACE) ==="
+	@echo ""
+	@echo "Removing finalizers from custom resources..."
+	@for crd in unleash apitoken releasechannel; do \
+		for res in $$(kubectl get $$crd -n $(E2E_NAMESPACE) -o name 2>/dev/null); do \
+			echo "  Removing finalizers from $$res"; \
+			kubectl patch $$res -n $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
+		done; \
+	done
+	@echo ""
+	@echo "Uninstalling Helm release..."
+	helm uninstall unleasherator -n $(E2E_NAMESPACE) --ignore-not-found 2>/dev/null || true
+	@echo ""
+	@echo "Deleting namespace..."
+	kubectl delete ns $(E2E_NAMESPACE) --timeout=30s --ignore-not-found=true 2>/dev/null || true
+	@echo ""
+	@echo "Cleaning cluster-scoped test resources..."
+	kubectl delete clusterrole -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
+	kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
+	@echo ""
+	@echo "Resetting imagePullPolicy in values.yaml..."
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		sed -i '' 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
+	else \
+		sed -i 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
+	fi
+	@echo ""
+	@echo "✅ Cleanup complete"
+
+.PHONY: test-e2e-status
+test-e2e-status: ## Check current status of e2e test resources.
+	@echo "=== Namespace: $(E2E_NAMESPACE) ==="
+	@kubectl get ns $(E2E_NAMESPACE) 2>/dev/null || echo "Namespace not found"
+	@echo ""
+	@echo "=== Pods ==="
+	@kubectl get pods -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo ""
+	@echo "=== Unleash ==="
+	@kubectl get unleash -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo ""
+	@echo "=== ReleaseChannel ==="
+	@kubectl get releasechannel -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo ""
+	@echo "=== ApiToken ==="
+	@kubectl get apitoken -n $(E2E_NAMESPACE) 2>/dev/null || true
+
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	docker build --pull --build-arg TARGETOS=linux --build-arg TARGETARCH=$$(uname -m | sed 's/x86_64/amd64/') -t ${IMG} .
 
 .PHONY: docker-image
 docker-image: ## Echo the docker image name.
@@ -105,7 +190,7 @@ docker-push: ## Push docker image with the manager.
 # To properly provided solutions that supports more than one platform you should use this option.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
-docker-buildx: test ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## Build and push docker image for the manager for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- docker buildx create --name project-v3-builder
@@ -113,6 +198,25 @@ docker-buildx: test ## Build and push docker image for the manager for cross-pla
 	- docker buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross
 	- docker buildx rm project-v3-builder
 	rm Dockerfile.cross
+
+.PHONY: docker-buildx-local
+docker-buildx-local: ## Build docker image locally for the current platform without tests
+	@echo "Building for platform: $$(uname -m)"
+	docker buildx build --load --platform=linux/$$(uname -m) --tag ${IMG} .
+
+.PHONY: docker-inspect
+docker-inspect: ## Inspect the architecture of the built docker image
+	@echo "Image: ${IMG}"
+	@echo "Architecture: $$(docker inspect ${IMG} --format='{{.Architecture}}')"
+	@echo "OS: $$(docker inspect ${IMG} --format='{{.Os}}')"
+	@echo "Platform: $$(docker inspect ${IMG} --format='{{.Os}}/{{.Architecture}}')"
+
+.PHONY: docker-build-info
+docker-build-info: ## Show what build arguments will be used
+	@echo "Host architecture: $$(uname -m)"
+	@echo "TARGETOS will be: linux"
+	@echo "TARGETARCH will be: $$(uname -m | sed 's/x86_64/amd64/')"
+	@echo "Platform: linux/$$(uname -m | sed 's/x86_64/amd64/')"
 
 ##@ Deployment
 
@@ -133,8 +237,8 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: restart
 restart: manifests kustomize ## Restart controller in the K8s cluster specified in ~/.kube/config.
-	kubectl rollout restart deployment/unleasherator-controller-manager -n unleasherator-system
-	kubectl rollout status deployment/unleasherator-controller-manager -n unleasherator-system --timeout=60s
+	kubectl rollout restart deployment/controller-manager -n unleasherator-system
+	kubectl rollout status deployment/controller-manager -n unleasherator-system --timeout=60s
 
 .PHONY: logs
 logs: manifests kustomize ## Show logs for controller in the K8s cluster specified in ~/.kube/config.
@@ -161,7 +265,7 @@ PROTOC ?= $(LOCALBIN)/protoc
 PROTOC_GEN ?= $(LOCALBIN)/protoc-gen-go
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.6.0
+KUSTOMIZE_VERSION ?= v5.8.0
 PROTOBUF_VERSION ?= 26.1# without v-prefix
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"

@@ -1,12 +1,23 @@
 ---
 controllerManagerGcp:
   serviceAccountCredentialsJson: "{}"
+
+# Test configuration - faster timeouts for local/CI testing
+# For slower CI systems, override these with higher values
+test:
+  jobDeadlineSeconds: 420       # 7 minutes total for the test job
+  waitIterations: 60            # Number of attempts to wait for resources
+  intervalSeconds: 5            # Seconds between wait attempts
+  connectionRetries: 20         # Number of API connection retries
+  connectionIntervalSeconds: 3  # Seconds between connection retries
+
 networkPolicy:
   enabled: true
   apiServerCIDR: 10.43.0.1/32
   allowDNS: true
   allowedNamespaces:
     - unleasherator-system
+    - unleasherator-e2e-test  # Used by ct install --namespace
     - foo
     - bar
   extraOutboundIPs:

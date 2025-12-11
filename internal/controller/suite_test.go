@@ -2,10 +2,12 @@ package controller
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	"go.opentelemetry.io/otel"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -50,7 +52,43 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// Speed up tests by setting shorter timeouts for all package-level timeout variables
+	// Keep some timeouts at expected values to match test assertions
+	unleashDeploymentTimeout = time.Second * 1 // Test expects "timed out after 1s"
+	unleashControllerRequeueAfter = time.Millisecond * 100
+
+	// Remote Unleash controller timeouts
+	remoteUnleashErrorRetryDelay = time.Millisecond * 50
+	remoteUnleashRequeueAfter = time.Millisecond * 100
+
+	// API Token controller timeouts
+	apiTokenRequeueAfter = time.Millisecond * 100
+
+	// Release Channel controller timeouts
+	releaseChannelErrorRetryDelay = time.Millisecond * 50
+	releaseChannelIdleRequeueInterval = time.Millisecond * 100
+	releaseChannelInitialDeploymentCheck = time.Millisecond * 100
+	releaseChannelValidatingRetryDelay = time.Millisecond * 200
+	releaseChannelValidatingTransition = time.Millisecond * 50
+	releaseChannelCanaryWaitDelay = time.Millisecond * 100
+	releaseChannelRollingWaitDelay = time.Millisecond * 100
+	releaseChannelRollingBackWaitDelay = time.Millisecond * 100
+	releaseChannelFailedRetryDelay = time.Millisecond * 200
+	releaseChannelStatusUpdateSuccess = time.Millisecond * 50
+	releaseChannelStatusUpdateRetry = time.Millisecond * 50
+	releaseChannelBackoffBase = time.Millisecond * 10
+	releaseChannelBackoffMedium = time.Millisecond * 20
+	releaseChannelBackoffLong = time.Millisecond * 30
+	releaseChannelBatchInterval = time.Millisecond * 10
+	releaseChannelHealthCheckInitialDelay = time.Millisecond * 10
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.JSONEncoder()))
+
+	// Enable test mode for unleashclient to skip otelhttp wrapping and allow httpmock to work
+	os.Setenv("UNLEASH_TEST_MODE", "true")
+
+	// Activate httpmock globally so it's available when controllers create HTTP clients
+	httpmock.Activate()
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
@@ -131,6 +169,14 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&ReleaseChannelReconciler{
+		Client:   k8sManager.GetClient(),
+		Scheme:   k8sManager.GetScheme(),
+		Recorder: k8sManager.GetEventRecorderFor("releasechannel-controller"),
+		Tracer:   otel.Tracer("releasechannel-controller"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
@@ -140,6 +186,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	cancel()
+	httpmock.DeactivateAndReset()
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())

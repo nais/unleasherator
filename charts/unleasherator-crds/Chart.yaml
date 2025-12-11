@@ -8,4 +8,4 @@ sources:
   - https://github.com/nais/unleasherator/tree/main/charts/unleasherator-crds
 name: unleasherator-crds
 type: application
-version: 1.14.0
+version: 1.99.0  # --- IGNORE ---

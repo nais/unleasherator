@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -20,8 +21,18 @@ type Client struct {
 }
 
 func NewClient(instanceUrl string, apiToken string) (*Client, error) {
-	client := http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
-	return NewClientWithHttpClient(instanceUrl, apiToken, &client)
+	// In tests, create a new client using the current http.DefaultTransport
+	// This allows httpmock to work since it replaces http.DefaultTransport
+	var httpClient *http.Client
+	if os.Getenv("UNLEASH_TEST_MODE") == "true" {
+		// Create a new client that uses whatever http.DefaultTransport currently is
+		// If httpmock has been activated, this will be the mock transport
+		httpClient = &http.Client{Transport: http.DefaultTransport}
+	} else {
+		httpClient = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+	}
+
+	return NewClientWithHttpClient(instanceUrl, apiToken, httpClient)
 }
 
 func NewClientWithHttpClient(instanceUrl string, apiToken string, httpClient *http.Client) (*Client, error) {
@@ -100,6 +111,8 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 	if err != nil {
 		return err
 	}
+	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected http status code %d", res.StatusCode)
 	}

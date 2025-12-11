@@ -108,6 +108,22 @@ func unleashApiTokenResource(name, namespace, secretName string, unleash *unleas
 	}
 }
 
+func releaseChannelResource(name, namespace, image string) *unleashv1.ReleaseChannel {
+	return &unleashv1.ReleaseChannel{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "unleash.nais.io/v1",
+			Kind:       "ReleaseChannel",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image: unleashv1.UnleashImage(image),
+		},
+	}
+}
+
 func unsetConditionLastTransitionTime(conditions []metav1.Condition) []metav1.Condition {
 	for i := range conditions {
 		conditions[i].LastTransitionTime = metav1.Time{}

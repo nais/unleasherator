@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -24,6 +26,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -46,8 +49,9 @@ const (
 )
 
 var (
-	deploymentTimeout = 5 * time.Minute
-	requeueAfter      = 1 * time.Hour
+	// Unleash controller timeouts - prefixed to avoid conflicts with other controllers
+	unleashDeploymentTimeout      = 5 * time.Minute
+	unleashControllerRequeueAfter = 30 * time.Second // Poll ReleaseChannel status for image changes
 
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -206,7 +210,25 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, nil
 		}
 
-		if err = r.Update(ctx, unleash); err != nil {
+		// Retry update on conflicts (common when multiple controllers are operating)
+		err = wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
+			if updateErr := r.Update(ctx, unleash); updateErr != nil {
+				if apierrors.IsConflict(updateErr) {
+					// Refetch and retry
+					if fetchErr := r.Get(ctx, req.NamespacedName, unleash); fetchErr != nil {
+						return false, fetchErr
+					}
+					if !controllerutil.ContainsFinalizer(unleash, unleashFinalizer) {
+						controllerutil.AddFinalizer(unleash, unleashFinalizer)
+					}
+					return false, nil // retry
+				}
+				return false, updateErr
+			}
+			return true, nil
+		})
+
+		if err != nil {
 			log.Error(err, "Failed to update Unleash to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -224,9 +246,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Secrets")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -237,9 +257,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -250,9 +268,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Deployment")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -263,9 +279,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Service")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -276,9 +290,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Ingresses")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -289,9 +301,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile ServiceMonitor")
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor"); err != nil {
-			return ctrl.Result{}, err
-		}
+		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -308,18 +318,25 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// avoid testing connection to the previous instance if the Deployment is not
 	// ready yet. Delay requeue to avoid tying up the reconciler since waiting is
 	// done in the same reconcile loop.
-	log.WithValues("timeout", deploymentTimeout).Info("Waiting for Deployment rollout to finish")
-	if err = r.waitForDeployment(ctx, deploymentTimeout, req.NamespacedName); err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", deploymentTimeout)); err != nil {
-			return ctrl.Result{RequeueAfter: deploymentTimeout}, err
+	log.WithValues("timeout", unleashDeploymentTimeout).Info("Waiting for Deployment rollout to finish")
+	if err = r.waitForDeployment(ctx, unleashDeploymentTimeout, req.NamespacedName); err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", unleashDeploymentTimeout)); err != nil {
+			return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
 		}
-		return ctrl.Result{RequeueAfter: deploymentTimeout}, err
+		return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
 	}
 
 	// Set the reconcile status of the Unleash instance to available
 	log.Info("Successfully reconciled Unleash resources")
 	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Additional wait for Unleash v7+ instances to ensure admin tokens are properly initialized
+	// This helps prevent 401 authentication errors during multi-instance deployments
+	if r.isUnleashV7OrLater(ctx, unleash) {
+		log.Info("Unleash v7+ detected, allowing additional time for admin token initialization")
+		time.Sleep(time.Second * 3)
 	}
 
 	span.AddEvent("Testing connection to Unleash instance")
@@ -345,7 +362,15 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	log.Info("Reconciliation of Unleash finished")
-	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+
+	// Only requeue periodically if using ReleaseChannel (for pull-based coordination)
+	// Instances with CustomImage or default image don't need periodic polling
+	if unleash.Spec.ReleaseChannel.Name != "" {
+		log.V(1).Info("Requeuing for periodic ReleaseChannel polling", "interval", unleashControllerRequeueAfter)
+		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // publish the Unleash instance to pubsub if federation is enabled.
@@ -651,14 +676,95 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithName("unleash")
 
-	dep, err := resources.DeploymentForUnleash(unleash, r.Scheme)
+	found := &appsv1.Deployment{}
+	getErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
+	isCreating := getErr != nil && apierrors.IsNotFound(getErr)
+
+	// Determine the image to use based on priority
+	var resolvedImage string
+
+	// Priority 1: CustomImage always takes precedence (manual override)
+	if unleash.Spec.CustomImage != "" {
+		resolvedImage = unleash.Spec.CustomImage
+		log.Info("Using custom image", "image", resolvedImage)
+
+		// Clear any existing ReleaseChannel tracking when CustomImage takes precedence
+		if unleash.Status.ResolvedReleaseChannelImage != "" || unleash.Status.ReleaseChannelName != "" {
+			unleash.Status.ResolvedReleaseChannelImage = ""
+			unleash.Status.ReleaseChannelName = ""
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(1).Info("Conflict clearing ReleaseChannel status, will retry with backoff", "Name", unleash.Name)
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
+				}
+				log.Error(err, "Failed to clear ReleaseChannel status")
+				return ctrl.Result{}, err
+			}
+		}
+	} else if unleash.Spec.ReleaseChannel.Name != "" {
+		// Priority 2: ReleaseChannel managed - PULL image from ReleaseChannel status
+		pulledImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, unleash)
+		if err != nil {
+			log.Info("Waiting for ReleaseChannel to become available",
+				"releaseChannel", unleash.Spec.ReleaseChannel.Name,
+				"error", err.Error())
+			// Don't return error - just requeue to retry later
+			// This allows the controller to wait for ReleaseChannel creation
+			return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+		}
+		resolvedImage = pulledImage
+
+		log.Info("Pulled image from ReleaseChannel", "pulledImage", pulledImage,
+			"currentStatus", unleash.Status.ResolvedReleaseChannelImage,
+			"releaseChannel", unleash.Spec.ReleaseChannel.Name)
+
+		// Update our own status to track what we resolved (for monitoring/debugging)
+		if unleash.Status.ResolvedReleaseChannelImage != resolvedImage ||
+			unleash.Spec.ReleaseChannel.Name != unleash.Status.ReleaseChannelName {
+			log.Info("Updating Unleash status with new resolved image",
+				"oldImage", unleash.Status.ResolvedReleaseChannelImage,
+				"newImage", resolvedImage)
+			unleash.Status.ResolvedReleaseChannelImage = resolvedImage
+			unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(1).Info("Conflict updating Unleash status, will retry with backoff", "Name", unleash.Name)
+					// Retry with exponential backoff to avoid tight reconciliation loop
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
+				}
+				log.Error(err, "Failed to update Unleash status")
+				return ctrl.Result{}, err
+			}
+			log.Info("Successfully updated Unleash status")
+		}
+
+		log.Info("Using ReleaseChannel managed image", "image", resolvedImage, "releaseChannel", unleash.Spec.ReleaseChannel.Name)
+	} else {
+		// Priority 3: No ReleaseChannel specified, use environment variable or default
+		resolvedImage = r.getDefaultImage()
+		log.Info("Using default image", "image", resolvedImage)
+
+		// Clear any existing ReleaseChannel tracking when not using ReleaseChannel
+		if unleash.Status.ResolvedReleaseChannelImage != "" || unleash.Status.ReleaseChannelName != "" {
+			unleash.Status.ResolvedReleaseChannelImage = ""
+			unleash.Status.ReleaseChannelName = ""
+			if err := r.Status().Update(ctx, unleash); err != nil {
+				if apierrors.IsConflict(err) {
+					log.V(1).Info("Conflict clearing ReleaseChannel status, will retry with backoff", "Name", unleash.Name)
+					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
+				}
+				log.Error(err, "Failed to clear ReleaseChannel status")
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	dep, err := resources.DeploymentForUnleashWithImage(unleash, r.Scheme, resolvedImage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	found := &appsv1.Deployment{}
-	err = r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, found)
-	if err != nil && apierrors.IsNotFound(err) {
+	if isCreating {
 		log.Info("Creating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 		if err = r.Create(ctx, dep); err != nil {
 			log.Error(err, "Failed to create Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
@@ -666,9 +772,9 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 		}
 
 		return ctrl.Result{}, nil
-	} else if err != nil {
-		log.Error(err, "Failed to get Deployment")
-		return ctrl.Result{}, err
+	} else if getErr != nil {
+		log.Error(getErr, "Failed to get Deployment")
+		return ctrl.Result{}, getErr
 	} else if !equality.Semantic.DeepDerivative(dep.Spec, found.Spec) || !equality.Semantic.DeepEqual(dep.ObjectMeta.Labels, found.ObjectMeta.Labels) {
 		log.Info("Updating Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
 
@@ -742,7 +848,7 @@ func (r *UnleashReconciler) waitForDeployment(ctx context.Context, timeout time.
 	return err
 }
 
-// testConnection will test the connection to the Unleash instance
+// testConnection will test the connection to the Unleash instance with retry logic for authentication failures
 func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
@@ -750,19 +856,93 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 		return nil, err
 	}
 
-	stats, res, err := client.GetInstanceAdminStats(ctx)
+	// Retry logic for 401 authentication errors - common with Unleash v7 during initialization
+	maxRetries := 3
+	retryDelay := time.Second * 2
 
-	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s", unleash.URL()))
-		return nil, err
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		stats, res, err := client.GetInstanceAdminStats(ctx)
+
+		if err != nil {
+			log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s (attempt %d/%d)", unleash.URL(), attempt, maxRetries))
+
+			// For connection refused errors, fail immediately (service not ready)
+			if strings.Contains(err.Error(), "connection refused") {
+				return nil, err
+			}
+
+			// For other errors, retry if we have attempts left
+			if attempt < maxRetries {
+				log.Info(fmt.Sprintf("Retrying connection test in %v", retryDelay))
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // exponential backoff
+				continue
+			}
+			return nil, err
+		}
+
+		if res.StatusCode == http.StatusUnauthorized {
+			log.Info(fmt.Sprintf("Authentication failed (attempt %d/%d) - admin token may not be initialized yet", attempt, maxRetries))
+
+			if attempt < maxRetries {
+				log.Info(fmt.Sprintf("Retrying authentication in %v", retryDelay))
+				time.Sleep(retryDelay)
+				retryDelay *= 2 // exponential backoff
+				continue
+			}
+
+			err = fmt.Errorf("authentication failed after %d attempts - admin token not properly initialized", maxRetries)
+			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+			return nil, err
+		}
+
+		if res.StatusCode != http.StatusOK {
+			err = fmt.Errorf("unexpected http status code %d", res.StatusCode)
+			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
+			return nil, err
+		}
+
+		// If we reach here, connection was successful
+		log.Info("Successfully connected to Unleash instance")
+		return stats, nil
 	}
 
-	if res.StatusCode != http.StatusOK {
-		log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
-		return nil, err
-	}
+	// This should never be reached, but just in case
+	return nil, fmt.Errorf("unexpected error in connection retry loop")
+}
 
-	return stats, nil
+// isUnleashV7OrLater determines if this is an Unleash v7+ instance based on the image
+func (r *UnleashReconciler) isUnleashV7OrLater(ctx context.Context, unleash resources.UnleashInstance) bool {
+	// Check if this is an Unleash instance (not RemoteUnleash)
+	if u, ok := unleash.(*unleashv1.Unleash); ok {
+		// Check for custom image first
+		if u.Spec.CustomImage != "" {
+			// Check if custom image contains version 7 indicators
+			return strings.Contains(u.Spec.CustomImage, ":7") ||
+				strings.Contains(u.Spec.CustomImage, "v7") ||
+				strings.Contains(u.Spec.CustomImage, "unleash-server")
+		}
+
+		// Try to resolve the actual image being used
+		if resolvedImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, u); err == nil {
+			return strings.Contains(resolvedImage, ":7") ||
+				strings.Contains(resolvedImage, "v7") ||
+				strings.Contains(resolvedImage, "unleash-server")
+		}
+	}
+	return false
+}
+
+// getDefaultImage returns the default image when no ReleaseChannel is specified
+func (r *UnleashReconciler) getDefaultImage() string {
+	// Use environment variable or default
+	var imageEnvVar = "UNLEASH_IMAGE"
+	image, found := os.LookupEnv(imageEnvVar)
+	if !found || image == "" {
+		// Use the same defaults as in the resources package
+		image = "europe-north1-docker.pkg.dev/nais-io/nais/images/unleash-v4:v4.23.1"
+	}
+	return image
 }
 
 func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
@@ -833,7 +1013,38 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type).Set(val)
 
 	meta.SetStatusCondition(&unleash.Status.Conditions, status)
-	if err := r.Status().Update(ctx, unleash); err != nil {
+
+	// Retry status updates on conflicts (common when multiple controllers are operating)
+	err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 2*time.Second, false, func(ctx context.Context) (done bool, err error) {
+		if updateErr := r.Status().Update(ctx, unleash); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				// Refresh the object to get the latest version before retrying
+				if fetchErr := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); fetchErr != nil {
+					return false, fetchErr
+				}
+				// Reapply the status changes to the fresh object
+				switch status.Type {
+				case unleashv1.UnleashStatusConditionTypeReconciled:
+					unleash.Status.Reconciled = status.Status == metav1.ConditionTrue
+				case unleashv1.UnleashStatusConditionTypeConnected:
+					unleash.Status.Connected = status.Status == metav1.ConditionTrue
+				}
+				if stats != nil {
+					if stats.VersionEnterprise != "" {
+						unleash.Status.Version = stats.VersionEnterprise
+					} else {
+						unleash.Status.Version = stats.VersionOSS
+					}
+				}
+				meta.SetStatusCondition(&unleash.Status.Conditions, status)
+				return false, nil // retry with refreshed object
+			}
+			return false, updateErr
+		}
+		return true, nil
+	})
+
+	if err != nil {
 		log.Error(err, "Failed to update status for Unleash")
 		return err
 	}
@@ -843,11 +1054,14 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	pred := predicate.GenerationChangedPredicate{}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
-		//Owns(&appsv1.Deployment{}).
-		WithEventFilter(pred).
-		//WithOptions(controller.Options{MaxConcurrentReconciles: 2}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 1, // Prevent concurrent reconciles that could cause race conditions
+		}).
+		WithEventFilter(predicate.Or(
+			predicate.GenerationChangedPredicate{}, // Spec changes (user updates)
+			predicate.LabelChangedPredicate{},      // Label changes (might affect ReleaseChannel matching)
+		)).
 		Complete(r)
 }

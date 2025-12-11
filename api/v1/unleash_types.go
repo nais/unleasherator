@@ -30,8 +30,10 @@ type UnleashList struct {
 // +kubebuilder:printcolumn:name="API Ingress",type=string,JSONPath=`.spec.apiIngress.host`
 // +kubebuilder:printcolumn:name="Web Ingress",type=string,JSONPath=`.spec.webIngress.host`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
+// +kubebuilder:printcolumn:name="Channel",type=string,JSONPath=`.status.releaseChannelName`
 // +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 // +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Unleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -39,6 +41,9 @@ type Unleash struct {
 	Spec   UnleashSpec   `json:"spec,omitempty"`
 	Status UnleashStatus `json:"status,omitempty"`
 }
+
+// UnleashImage defines a container image for Unleash
+type UnleashImage string
 
 // UnleashSpec defines the desired state of Unleash
 // UnleashSpec represents the specification for an Unleash deployment.
@@ -51,6 +56,10 @@ type UnleashSpec struct {
 	// Use at your own risk.
 	// +kubebuilder:validation:Optional
 	CustomImage string `json:"customImage,omitempty"`
+
+	// ReleaseChannel is the release channel to use for the Unleash deployment.
+	// +kubebuilder:validation:Optional
+	ReleaseChannel UnleashReleaseChannelConfig `json:"releaseChannel,omitempty"`
 
 	// Prometheus defines the Prometheus metrics collection configuration.
 	// +kubebuilder:validation:Optional
@@ -108,6 +117,12 @@ type UnleashSpec struct {
 	// PodLabels are additional labels to add to the Unleash pods.
 	// +kubebuilder:validation:Optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
+}
+
+type UnleashReleaseChannelConfig struct {
+	// Name is the name of the release channel
+	// +kubebuilder:validation:Optional
+	Name string `json:"name,omitempty"`
 }
 
 // UnleashFederationConfig defines the configuration for Unleash federation
@@ -283,6 +298,17 @@ type UnleashStatus struct {
 	// Version is the reported version of the Unleash server
 	// +kubebuilder:default="unknown"
 	Version string `json:"version,omitempty"`
+
+	// ResolvedReleaseChannelImage is the image resolved from the ReleaseChannel
+	// This is set by the controller when a ReleaseChannel is specified and tracks
+	// the current image that should be used for this Unleash instance.
+	// +kubebuilder:validation:Optional
+	ResolvedReleaseChannelImage string `json:"resolvedReleaseChannelImage,omitempty"`
+
+	// ReleaseChannelName tracks which ReleaseChannel was used to resolve the image
+	// This ensures we only use the resolved image if it matches the current ReleaseChannel
+	// +kubebuilder:validation:Optional
+	ReleaseChannelName string `json:"releaseChannelName,omitempty"`
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {

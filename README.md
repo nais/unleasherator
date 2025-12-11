@@ -37,11 +37,21 @@ graph LR
 
 Unleasherator is a Kubernetes operator for managing Unleash instances and API tokens across multiple clusters or environments. It is built using the [Kubebuilder](https://book.kubebuilder.io/) framework and is cloud and infrastructure agnostic.
 
+## Key Features
+
+- **Unleash Instance Management**: Deploy and manage Unleash feature flag servers
+- **API Token Management**: Create and manage Unleash API tokens across instances
+- **Release Channels**: Coordinate image updates across multiple Unleash instances
+- **Federation**: Share feature flags between Unleash instances
+- **Remote Unleash**: Connect to external Unleash instances
+- **Cloud Agnostic**: Works on any Kubernetes cluster
+
 You'll find the documentation for various Unleash resources in the [docs](./docs) directory.
 
 * [Unleash](./docs/unleash.md)
 * [ApiToken](./docs/apitoken.md)
 * [RemoteUnleash](./docs/remoteunleash.md)
+* [ReleaseChannel](./docs/releasechannel.md)
 * [Federation](./docs/federation.md)
 
 ### Creating an Unleash instance
