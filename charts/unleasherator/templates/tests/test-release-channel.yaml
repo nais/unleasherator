@@ -8,6 +8,27 @@ type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  labels:
+    app.kubernetes.io/name: postgresql-rc-test
+    app.kubernetes.io/part-of: unleasherator
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+    # Create separate databases for each Unleash instance to avoid conflicts
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        CREATE DATABASE unleash_prod;
+        CREATE DATABASE unleash_staging;
+        CREATE DATABASE unleash_custom;
+        GRANT ALL PRIVILEGES ON DATABASE unleash_prod TO postgres;
+        GRANT ALL PRIVILEGES ON DATABASE unleash_staging TO postgres;
+        GRANT ALL PRIVILEGES ON DATABASE unleash_custom TO postgres;
+    EOSQL
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,9 +64,14 @@ spec:
         volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
       volumes:
       - name: postgres-data
         emptyDir: {}
+      - name: init-scripts
+        configMap:
+          name: postgres-init-scripts
 ---
 apiVersion: v1
 kind: Service
@@ -103,7 +129,7 @@ spec:
     secretName: postgres-rc-test
     secretPassKey: postgres-password
     host: postgres-rc-test
-    databaseName: postgres
+    databaseName: unleash_prod
     port: "5432"
     user: postgres
     ssl: "false"
@@ -112,8 +138,6 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
-    - name: DATABASE_SCHEMA
-      value: "unleash_prod"
   networkPolicy:
     enabled: true
     allowDNS: true
@@ -141,7 +165,7 @@ spec:
     secretName: postgres-rc-test
     secretPassKey: postgres-password
     host: postgres-rc-test
-    databaseName: postgres
+    databaseName: unleash_staging
     port: "5432"
     user: postgres
     ssl: "false"
@@ -150,8 +174,6 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
-    - name: DATABASE_SCHEMA
-      value: "unleash_staging"
   networkPolicy:
     enabled: true
     allowDNS: true
@@ -180,7 +202,7 @@ spec:
     secretName: postgres-rc-test
     secretPassKey: postgres-password
     host: postgres-rc-test
-    databaseName: postgres
+    databaseName: unleash_custom
     port: "5432"
     user: postgres
     ssl: "false"
@@ -189,8 +211,6 @@ spec:
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
-    - name: DATABASE_SCHEMA
-      value: "unleash_custom"
   networkPolicy:
     enabled: true
     allowDNS: true
