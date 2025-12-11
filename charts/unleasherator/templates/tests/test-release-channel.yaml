@@ -96,7 +96,7 @@ metadata:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
 spec:
-  image: "unleashorg/unleash-server:6"
+  image: "unleashorg/unleash-server:6.10.0"
   strategy:
     canary:
       enabled: true
@@ -312,11 +312,11 @@ spec:
           CANARY_ENABLED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.strategy.canary.enabled}')
           MAX_PARALLEL=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.strategy.maxParallel}')
 
-          echo "  Image: $RC_IMAGE (expected: unleashorg/unleash-server:6)"
+          echo "  Image: $RC_IMAGE (expected: unleashorg/unleash-server:6.10.0)"
           echo "  Canary enabled: $CANARY_ENABLED (expected: true)"
           echo "  MaxParallel: $MAX_PARALLEL (expected: 1)"
 
-          if [ "$RC_IMAGE" != "unleashorg/unleash-server:6" ]; then
+          if [ "$RC_IMAGE" != "unleashorg/unleash-server:6.10.0" ]; then
             echo "✗ ReleaseChannel image mismatch"
             exit 1
           fi
@@ -429,11 +429,11 @@ spec:
             RESOLVED_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
             RC_NAME=$(kubectl get unleash $instance -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
 
-            if [ "$RESOLVED_IMAGE" = "unleashorg/unleash-server:6" ] && [ "$RC_NAME" = "release-channel-test" ]; then
+            if [ "$RESOLVED_IMAGE" = "unleashorg/unleash-server:6.10.0" ] && [ "$RC_NAME" = "release-channel-test" ]; then
               echo "  ✓ Instance $instance: image=$RESOLVED_IMAGE, channel=$RC_NAME"
             else
               echo "  ✗ Instance $instance image mismatch"
-              echo "    Expected image: unleashorg/unleash-server:6, Got: $RESOLVED_IMAGE"
+              echo "    Expected image: unleashorg/unleash-server:6.10.0, Got: $RESOLVED_IMAGE"
               echo "    Expected channel: release-channel-test, Got: $RC_NAME"
               exit 1
             fi
@@ -443,13 +443,13 @@ spec:
           echo ""
           echo "7. Testing canary deployment scenario..."
           echo "  Updating ReleaseChannel from v6 to v7..."
-          kubectl patch releasechannel release-channel-test --type='merge' -p='{"spec":{"image":"unleashorg/unleash-server:7"}}'
+          kubectl patch releasechannel release-channel-test --type='merge' -p='{"spec":{"image":"unleashorg/unleash-server:6.10.1"}}'
 
           # Verify PreviousImage is tracked
           sleep 5
           PREVIOUS_IMAGE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.previousImage}' 2>/dev/null || echo "")
-          echo "  Previous image stored: $PREVIOUS_IMAGE (expected: unleashorg/unleash-server:6)"
-          if [ "$PREVIOUS_IMAGE" != "unleashorg/unleash-server:6" ]; then
+          echo "  Previous image stored: $PREVIOUS_IMAGE (expected: unleashorg/unleash-server:6.10.0)"
+          if [ "$PREVIOUS_IMAGE" != "unleashorg/unleash-server:6.10.0" ]; then
             echo "  ⚠ PreviousImage not tracked correctly (may not be implemented yet)"
           fi
 
@@ -476,13 +476,13 @@ spec:
             fi
 
             # Check if canary (staging) updates before production
-            if [ "$STAGING_IMAGE" = "unleashorg/unleash-server:7" ] && [ "$PROD_IMAGE" = "unleashorg/unleash-server:6" ]; then
-              echo "  ✓ Canary (staging) updated to v7 before production"
+            if [ "$STAGING_IMAGE" = "unleashorg/unleash-server:6.10.1" ] && [ "$PROD_IMAGE" = "unleashorg/unleash-server:6.10.0" ]; then
+              echo "  ✓ Canary (staging) updated to 6.10.1 before production"
             fi
 
             # Check completion
-            if [ "$STAGING_IMAGE" = "unleashorg/unleash-server:7" ] && [ "$PROD_IMAGE" = "unleashorg/unleash-server:7" ]; then
-              echo "  ✓ Both instances successfully updated to v7"
+            if [ "$STAGING_IMAGE" = "unleashorg/unleash-server:6.10.1" ] && [ "$PROD_IMAGE" = "unleashorg/unleash-server:6.10.1" ]; then
+              echo "  ✓ Both instances successfully updated to 6.10.1"
               break
             fi
 
@@ -510,8 +510,8 @@ spec:
 
           # We accept partial completion in CI environment
           SUCCESS_COUNT=0
-          [ "$FINAL_STAGING" = "unleashorg/unleash-server:7" ] && SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-          [ "$FINAL_PROD" = "unleashorg/unleash-server:7" ] && SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+          [ "$FINAL_STAGING" = "unleashorg/unleash-server:6.10.1" ] && SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+          [ "$FINAL_PROD" = "unleashorg/unleash-server:6.10.1" ] && SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
 
           if [ $SUCCESS_COUNT -eq 2 ]; then
             echo "✓ All managed instances successfully upgraded"
