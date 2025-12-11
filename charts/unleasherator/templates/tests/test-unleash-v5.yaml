@@ -5,7 +5,7 @@ metadata:
   name: postgres-postgresql
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
@@ -19,7 +19,7 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   replicas: 1
   selector:
@@ -61,7 +61,7 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   ports:
   - port: 5432
@@ -78,7 +78,7 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   size: 1
   customImage: unleashorg/unleash-server:5
@@ -114,7 +114,7 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
@@ -135,9 +135,10 @@ metadata:
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    #"helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 1
+  activeDeadlineSeconds: 300
   template:
     metadata:
       labels:
@@ -146,7 +147,7 @@ spec:
     spec:
       containers:
       - name: connection-test
-        image: curlimages/curl:7.88.1
+        image: curlimages/curl:latest
         command:
         - sh
         - -c

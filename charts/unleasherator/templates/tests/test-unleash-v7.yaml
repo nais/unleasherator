@@ -220,224 +220,127 @@ spec:
 #   projects:
 #     - default
 ---
-# Test job to verify Unleash v7 functionality and investigate connectivity issues
-# apiVersion: batch/v1
-# kind: Job
-# metadata:
-#   name: unleash-v7-test-probe
-#   labels:
-#     app.kubernetes.io/name: unleash-v7-test
-#     app.kubernetes.io/part-of: unleasherator
-#   annotations:
-#     "helm.sh/hook": test
-#     #"helm.sh/hook-delete-policy": hook-succeeded
-# spec:
-#   backoffLimit: 3
-#   template:
-#     metadata:
-#       labels:
-#         app.kubernetes.io/name: unleash-v7-test
-#         app.kubernetes.io/part-of: unleasherator
-#     spec:
-#       serviceAccountName: controller-manager
-#       containers:
-#       - name: unleash-v7-test
-#         image: bitnami/kubectl:latest
-#         command:
-#         - sh
-#         - -c
-#         - |
-#           set -e
-#           echo "=== Unleash v7 Connectivity Investigation Test ==="
-#
-#           # Function to check and display detailed status
-#           check_instance_status() {
-#             local instance=$1
-#             local test_type=$2
-#             echo "--- Checking $instance ($test_type) ---"
-#
-#             # Basic status
-#             RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
-#             CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-#             PHASE=$(kubectl get unleash $instance -o jsonpath='{.status.phase}' 2>/dev/null || echo "unknown")
-#             echo "Status: reconciled=$RECONCILED, connected=$CONNECTED, phase=$PHASE"
-#
-#             # Image information
-#             if [ "$test_type" = "direct" ]; then
-#               CUSTOM_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.spec.customImage}' 2>/dev/null || echo "")
-#               RESOLVED_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedImage}' 2>/dev/null || echo "")
-#               echo "Images: custom=$CUSTOM_IMAGE, resolved=$RESOLVED_IMAGE"
-#             else
-#               RC_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
-#               RC_NAME=$(kubectl get unleash $instance -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
-#               echo "ReleaseChannel: name=$RC_NAME, image=$RC_IMAGE"
-#             fi
-#
-#             # Pod status
-#             POD_STATUS=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $3}' || echo "NotFound")
-#             POD_READY=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $2}' || echo "0/0")
-#             echo "Pod: status=$POD_STATUS, ready=$POD_READY"
-#
-#             # Deployment status
-#             DEPLOY_IMAGE=$(kubectl get deployment $instance -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "NotFound")
-#             echo "Deployment image: $DEPLOY_IMAGE"
-#
-#             # Health endpoint check
-#             echo "Testing health endpoint directly..."
-#             POD_NAME=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $1}' | head -n 1)
-#             if [ -n "$POD_NAME" ] && [ "$POD_NAME" != "" ]; then
-#               echo "Pod name: $POD_NAME"
-#               HEALTH_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/health 2>/dev/null || echo "failed")
-#               echo "Health endpoint (/health): HTTP $HEALTH_CHECK"
-#
-#               # Check specific Unleash endpoints
-#               API_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/api/admin/features 2>/dev/null || echo "failed")
-#               echo "Admin API (/api/admin/features): HTTP $API_CHECK"
-#
-#               CLIENT_CHECK=$(kubectl exec $POD_NAME -- curl -s -o /dev/null -w "%{http_code}" http://localhost:4242/api/client/features 2>/dev/null || echo "failed")
-#               echo "Client API (/api/client/features): HTTP $CLIENT_CHECK"
-#
-#               # Check logs for any errors
-#               echo "Recent container logs (last 10 lines):"
-#               kubectl logs $POD_NAME --tail=10 2>/dev/null || echo "Failed to get logs"
-#             else
-#               echo "No pod found for $instance"
-#             fi
-#
-#             echo ""
-#           }
-#
-#           # Wait for PostgreSQL to be ready
-#           echo "1. Waiting for PostgreSQL to be ready..."
-#           for i in $(seq 1 30); do
-#             PG_READY=$(kubectl get deployment postgres-v7-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-#             if [ "$PG_READY" = "1" ]; then
-#               echo "✓ PostgreSQL is ready"
-#               break
-#             fi
-#             echo "Attempt $i/30: PostgreSQL not ready yet..."
-#             sleep 5
-#           done
-#
-#           # Wait for ReleaseChannel to be created
-#           echo "2. Waiting for ReleaseChannel to be created..."
-#           for i in $(seq 1 30); do
-#             if kubectl get releasechannel release-channel-v7-test -o jsonpath='{.metadata.name}' 2>/dev/null; then
-#               echo "✓ ReleaseChannel 'release-channel-v7-test' found"
-#               break
-#             fi
-#             echo "Attempt $i/30: Waiting for ReleaseChannel..."
-#             sleep 5
-#           done
-#
-#           # Wait for both Unleash instances to be deployed
-#           echo "3. Waiting for Unleash instances to be deployed..."
-#           for instance in unleash-v7-direct unleash-v7-channel; do
-#             echo "Waiting for $instance to be created..."
-#             for i in $(seq 1 30); do
-#               if kubectl get unleash $instance -o jsonpath='{.metadata.name}' 2>/dev/null; then
-#                 echo "✓ $instance found"
-#                 break
-#               fi
-#               echo "Attempt $i/30: Waiting for $instance..."
-#               sleep 5
-#             done
-#           done
-#
-#           # Wait for pods to be running
-#           echo "4. Waiting for pods to be running..."
-#           for instance in unleash-v7-direct unleash-v7-channel; do
-#             echo "Waiting for $instance pod to be running..."
-#             for i in $(seq 1 60); do
-#               POD_STATUS=$(kubectl get pods -l app.kubernetes.io/name=$instance --no-headers 2>/dev/null | awk '{print $3}' || echo "NotFound")
-#               if [ "$POD_STATUS" = "Running" ]; then
-#                 echo "✓ $instance pod is running"
-#                 break
-#               fi
-#               echo "Attempt $i/60: Pod status: $POD_STATUS"
-#               sleep 5
-#             done
-#           done
-#
-#           # Detailed status check after initial deployment
-#           echo "5. Performing detailed status checks..."
-#           sleep 10  # Give time for health checks to complete
-#
-#           check_instance_status "unleash-v7-direct" "direct"
-#           check_instance_status "unleash-v7-channel" "channel"
-#
-#           # Monitor connectivity status over time
-#           echo "6. Monitoring connectivity status over time..."
-#           for round in $(seq 1 12); do  # Monitor for 2 minutes
-#             echo "--- Round $round/12 (monitoring connectivity) ---"
-#
-#             for instance in unleash-v7-direct unleash-v7-channel; do
-#               RECONCILED=$(kubectl get unleash $instance -o jsonpath='{.status.reconciled}' 2>/dev/null || echo "false")
-#               CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-#               echo "$instance: reconciled=$RECONCILED, connected=$CONNECTED"
-#
-#               # If not connected, show detailed controller events
-#               if [ "$CONNECTED" = "false" ]; then
-#                 echo "Events for $instance:"
-#                 kubectl describe unleash $instance | grep -A 10 "Events:" | tail -n 5
-#               fi
-#             done
-#
-#             sleep 10
-#           done
-#
-#           # Final comprehensive check
-#           echo "7. Final comprehensive status check..."
-#           echo "=== Direct Unleash v7 Instance ==="
-#           check_instance_status "unleash-v7-direct" "direct"
-#
-#           echo "=== ReleaseChannel-managed Unleash v7 Instance ==="
-#           check_instance_status "unleash-v7-channel" "channel"
-#
-#           # Test API connectivity if instances are connected
-#           echo "8. Testing API connectivity..."
-#           for instance in unleash-v7-direct unleash-v7-channel; do
-#             CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-#             if [ "$CONNECTED" = "true" ]; then
-#               echo "Testing API for connected instance: $instance"
-#               API_TOKEN=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_TOKEN}' | base64 -d 2>/dev/null || echo "")
-#               API_URL=$(kubectl get secret ${instance}-token -o jsonpath='{.data.UNLEASH_SERVER_API_URL}' | base64 -d 2>/dev/null || echo "")
-#
-#               if [ -n "$API_TOKEN" ] && [ -n "$API_URL" ]; then
-#                 STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: $API_TOKEN" $API_URL/api/client/features 2>/dev/null || echo "000")
-#                 echo "API test for $instance: HTTP $STATUS"
-#               else
-#                 echo "API credentials not available for $instance"
-#               fi
-#             else
-#               echo "Skipping API test for disconnected instance: $instance"
-#             fi
-#           done
-#
-#           # Show controller logs related to these instances
-#           echo "9. Checking controller logs for Unleash v7 related entries..."
-#           CONTROLLER_POD=$(kubectl get pods -n default -l app.kubernetes.io/name=controller-manager --no-headers | awk '{print $1}' | head -n 1)
-#           if [ -n "$CONTROLLER_POD" ]; then
-#             echo "Controller pod: $CONTROLLER_POD"
-#             echo "Recent controller logs mentioning our test instances:"
-#             kubectl logs $CONTROLLER_POD --tail=100 | grep -E "(unleash-v7-direct|unleash-v7-channel|connectivity|health)" || echo "No relevant logs found"
-#           else
-#             echo "Controller pod not found"
-#           fi
-#
-#           echo "=== Unleash v7 Investigation Complete ==="
-#           echo "Summary:"
-#           DIRECT_CONNECTED=$(kubectl get unleash unleash-v7-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-#           CHANNEL_CONNECTED=$(kubectl get unleash unleash-v7-channel -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
-#           echo "Direct v7 instance connected: $DIRECT_CONNECTED"
-#           echo "Channel v7 instance connected: $CHANNEL_CONNECTED"
-#
-#           if [ "$DIRECT_CONNECTED" = "false" ] || [ "$CHANNEL_CONNECTED" = "false" ]; then
-#             echo "⚠️  Connectivity issues detected with Unleash v7 instances!"
-#             echo "This confirms the suspected bug with Unleash v7 connectivity."
-#             # Don't exit with error for investigation purposes
-#           else
-#             echo "✅ Both Unleash v7 instances are connected successfully"
-#           fi
-#
-#       restartPolicy: Never
+# Test job to verify Unleash v7 functionality
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: unleash-v7-test-probe
+  labels:
+    app.kubernetes.io/name: unleash-v7-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: unleash-v7-test
+        app.kubernetes.io/part-of: unleasherator
+    spec:
+      serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
+      containers:
+      - name: unleash-v7-test
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          set -e
+          echo "=== Unleash v7 E2E Test ==="
+
+          # Wait for PostgreSQL to be ready
+          echo "1. Waiting for PostgreSQL to be ready..."
+          for i in $(seq 1 30); do
+            PG_READY=$(kubectl get deployment postgres-v7-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            if [ "$PG_READY" = "1" ]; then
+              echo "✓ PostgreSQL is ready"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "✗ PostgreSQL did not become ready"
+              exit 1
+            fi
+            echo "  Attempt $i/30: PostgreSQL not ready yet..."
+            sleep 5
+          done
+
+          # Wait for ReleaseChannel to be created
+          echo ""
+          echo "2. Waiting for ReleaseChannel to be created..."
+          for i in $(seq 1 20); do
+            if kubectl get releasechannel release-channel-v7-test -o jsonpath='{.metadata.name}' 2>/dev/null; then
+              echo "✓ ReleaseChannel 'release-channel-v7-test' found"
+              break
+            fi
+            if [ $i -eq 20 ]; then
+              echo "✗ ReleaseChannel not found"
+              exit 1
+            fi
+            echo "  Attempt $i/20: Waiting for ReleaseChannel..."
+            sleep 3
+          done
+
+          # Wait for Unleash deployments to be available
+          echo ""
+          echo "3. Waiting for Unleash v7 deployments..."
+          for instance in unleash-v7-direct unleash-v7-channel; do
+            echo "  Checking $instance..."
+            for i in $(seq 1 60); do
+              DEPLOYMENT_EXISTS=$(kubectl get deployment $instance -o name 2>/dev/null || echo "")
+              if [ -n "$DEPLOYMENT_EXISTS" ]; then
+                READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
+                REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                if [ "$READY" = "True" ] && [ "$REPLICAS" != "0" ]; then
+                  echo "  ✓ $instance is Available"
+                  break
+                fi
+              fi
+              if [ $i -eq 60 ]; then
+                echo "  ✗ $instance did not become ready"
+                kubectl describe deployment $instance 2>/dev/null || true
+                exit 1
+              fi
+              if [ $((i % 10)) -eq 0 ]; then
+                echo "    Attempt $i/60: waiting..."
+              fi
+              sleep 5
+            done
+          done
+
+          # Verify direct v7 instance uses customImage
+          echo ""
+          echo "4. Verifying direct Unleash v7 instance..."
+          DIRECT_IMAGE=$(kubectl get deployment unleash-v7-direct -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+          if echo "$DIRECT_IMAGE" | grep -q "unleashorg/unleash-server:7"; then
+            echo "✓ Direct instance uses correct image: $DIRECT_IMAGE"
+          else
+            echo "✗ Direct instance has wrong image: $DIRECT_IMAGE"
+            exit 1
+          fi
+
+          # Verify channel-managed v7 instance uses ReleaseChannel image
+          echo ""
+          echo "5. Verifying ReleaseChannel-managed Unleash v7 instance..."
+          CHANNEL_IMAGE=$(kubectl get unleash unleash-v7-channel -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
+          RC_NAME=$(kubectl get unleash unleash-v7-channel -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
+
+          if [ "$RC_NAME" = "release-channel-v7-test" ]; then
+            echo "✓ Instance linked to ReleaseChannel: $RC_NAME"
+          else
+            echo "✗ Instance not linked to ReleaseChannel correctly: $RC_NAME"
+            exit 1
+          fi
+
+          if echo "$CHANNEL_IMAGE" | grep -q "unleashorg/unleash-server:7"; then
+            echo "✓ Channel instance resolved image: $CHANNEL_IMAGE"
+          else
+            echo "✗ Channel instance has wrong resolved image: $CHANNEL_IMAGE"
+            exit 1
+          fi
+
+          echo ""
+          echo "=== Unleash v7 E2E Test Completed Successfully ==="
+      restartPolicy: Never
