@@ -56,6 +56,25 @@ type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-v7-init-scripts
+  labels:
+    app.kubernetes.io/name: postgresql-v7-test
+    app.kubernetes.io/part-of: unleasherator
+data:
+  init-databases.sh: |
+    #!/bin/bash
+    set -e
+    # Create separate databases for each Unleash instance to avoid token conflicts
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        CREATE DATABASE unleash_direct;
+        CREATE DATABASE unleash_channel;
+        GRANT ALL PRIVILEGES ON DATABASE unleash_direct TO postgres;
+        GRANT ALL PRIVILEGES ON DATABASE unleash_channel TO postgres;
+    EOSQL
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -94,9 +113,14 @@ spec:
         volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
       volumes:
       - name: postgres-data
         emptyDir: {}
+      - name: init-scripts
+        configMap:
+          name: postgres-v7-init-scripts
 ---
 apiVersion: v1
 kind: Service
@@ -134,7 +158,7 @@ spec:
     secretName: postgres-v7-test
     secretPassKey: postgres-password
     host: postgres-v7-test
-    databaseName: postgres
+    databaseName: unleash_direct
     port: "5432"
     user: postgres
     ssl: "false"
@@ -198,7 +222,7 @@ spec:
     secretName: postgres-v7-test
     secretPassKey: postgres-password
     host: postgres-v7-test
-    databaseName: postgres
+    databaseName: unleash_channel
     port: "5432"
     user: postgres
     ssl: "false"
