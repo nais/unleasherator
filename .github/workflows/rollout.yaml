@@ -1,14 +1,10 @@
 name: Fasit Rollout
 on:
   workflow_run:
-    workflows: [
-      "Helm Chart",
-      "Container Image"
-    ]
-    branches: [ main ]
+    workflows: ["Helm Chart", "Container Image"]
+    branches: [main]
     types:
       - completed
-
 env:
   ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
   ARTIFACT_REPO: nais-io/nais/feature
@@ -16,60 +12,63 @@ env:
 jobs:
   meta:
     name: Metadata
+
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       name: ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
-
       - id: version
         run: echo "version=$(date +'%Y%m%d')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
-
       - id: name
-        run: echo "name=${{ github.event.repository.name }}" >> ${GITHUB_OUTPUT}
 
+        run: echo "name=${{ github.event.repository.name }}" >> ${GITHUB_OUTPUT}
   wait:
+
     name: Wait for workflows
     runs-on: ubuntu-latest
+
     needs: meta
     steps:
       - uses: ahmadnassri/action-workflow-run-wait@2aa3d9e1a12ecaaa9908e368eaf2123bb084323e
-
   rollout-crds:
     name: Rollout CRDs to Fasit
     runs-on: fasit-deploy
+
     permissions:
       id-token: write
     needs: [meta, wait]
     steps:
       - name: Deploy CRDs
-        uses: nais/fasit-deploy@v2
+        uses: nais/fasit-deploy@8727ed1c7a5a465e837873e6016a9a692a6b874a # ratchet:nais/fasit-deploy@v2
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}-crds
           version: ${{ needs.meta.outputs.version }}
-
   rollout-controller:
     name: Rollout Controller to Fasit
     runs-on: fasit-deploy
+
     permissions:
       id-token: write
     needs: [meta, rollout-crds]
     steps:
       - name: Deploy Operator
-        uses: nais/fasit-deploy@v2
+        uses: nais/fasit-deploy@8727ed1c7a5a465e837873e6016a9a692a6b874a # ratchet:nais/fasit-deploy@v2
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
           version: ${{ needs.meta.outputs.version }}
-
   git-tag:
     runs-on: ubuntu-latest
     needs: [meta, rollout-controller]
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
       - name: git tag and push
-        run: |
+        run: |-
           git tag ${{ needs.meta.outputs.version }}
           git push origin ${{ needs.meta.outputs.version }}
+
+
