@@ -1,4 +1,3 @@
-{{- if .Values.controllerManagerGcp.serviceAccountCredentialsJson }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -7,7 +6,6 @@ metadata:
     app: unleasherator
   {{- include "unleasherator.labels" . | nindent 4 }}
 data:
-  service-account-credentials.json: {{ .Values.controllerManagerGcp.serviceAccountCredentialsJson | b64enc
+  service-account-credentials.json: {{ required "controllerManagerGcp.serviceAccountCredentialsJson is required" .Values.controllerManagerGcp.serviceAccountCredentialsJson | b64enc
     | quote }}
 type: opaque
-{{- end }}

@@ -118,12 +118,10 @@ spec:
           }}
         securityContext: {{- toYaml .Values.controllerManager.manager.containerSecurityContext
           | nindent 10 }}
-        {{- if .Values.controllerManagerGcp.serviceAccountCredentialsJson }}
         volumeMounts:
         - mountPath: /var/secrets/google
           name: controller-manager-gcp
           readOnly: true
-        {{- end }}
       - args: {{- toYaml .Values.controllerManager.kubeRbacProxy.args | nindent 8 }}
         env:
         - name: KUBERNETES_CLUSTER_DOMAIN
@@ -143,7 +141,6 @@ spec:
         8 }}
       serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
-      {{- if .Values.controllerManagerGcp.serviceAccountCredentialsJson }}
       volumes:
       - name: controller-manager-gcp
         secret:
@@ -151,4 +148,3 @@ spec:
           - key: service-account-credentials.json
             path: service-account-credentials.json
           secretName: {{ include "unleasherator.fullname" . }}-controller-manager-gcp
-      {{- end }}
