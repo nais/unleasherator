@@ -36,7 +36,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: ubuntu-latest-16-cores
+    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
@@ -54,6 +54,11 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: "1.24"
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
