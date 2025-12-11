@@ -91,9 +91,12 @@ test-e2e: install-all ## Run end-to-end tests using raw Kubernetes manifests fro
 	kubectl wait --for=condition=available deployment/unleash-connection-test --timeout=600s || true
 	kubectl wait --for=condition=available deployment/unleash-rc-prod --timeout=600s || true
 	kubectl wait --for=condition=available deployment/unleash-rc-staging --timeout=600s || true
+	kubectl wait --for=condition=available deployment/unleash-v7-direct --timeout=600s || true
+	kubectl wait --for=condition=available deployment/unleash-v7-channel --timeout=600s || true
 	@echo "Now waiting for test jobs to complete..."
 	kubectl wait --for=condition=complete job/unleash-connection-test-probe --timeout=900s || true
 	kubectl wait --for=condition=complete job/release-channel-test-probe --timeout=900s || true
+	kubectl wait --for=condition=complete job/unleash-v7-test-probe --timeout=900s || true
 	@echo ""
 	@echo "=== Test Results ==="
 	@echo "=== Unleash Connection Test ==="
@@ -101,6 +104,9 @@ test-e2e: install-all ## Run end-to-end tests using raw Kubernetes manifests fro
 	@echo ""
 	@echo "=== Release Channel Test ==="
 	kubectl logs job/release-channel-test-probe --tail=50 || echo "❌ Test not found or failed"
+	@echo ""
+	@echo "=== Unleash v7 Test ==="
+	kubectl logs job/unleash-v7-test-probe --tail=50 || echo "❌ Test not found or failed"
 	@echo ""
 	@echo "=== Test Job Status ==="
 	kubectl get jobs -l app.kubernetes.io/part-of=unleasherator

@@ -1,4 +1,49 @@
 ---
+# ServiceAccount for the test job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: release-channel-test-sa
+  labels:
+    app.kubernetes.io/name: release-channel-test
+    app.kubernetes.io/part-of: unleasherator
+---
+# ClusterRole for reading Unleash and ReleaseChannel resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: release-channel-test-role
+  labels:
+    app.kubernetes.io/name: release-channel-test
+    app.kubernetes.io/part-of: unleasherator
+rules:
+- apiGroups: ["unleash.nais.io"]
+  resources: ["unleashes", "releasechannels", "apitokens"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding to grant permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: release-channel-test-binding
+  labels:
+    app.kubernetes.io/name: release-channel-test
+    app.kubernetes.io/part-of: unleasherator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: release-channel-test-role
+subjects:
+- kind: ServiceAccount
+  name: release-channel-test-sa
+  namespace: unleasherator-system
+---
 # PostgreSQL database for the release channel test
 apiVersion: v1
 kind: Secret
@@ -281,7 +326,7 @@ spec:
         app.kubernetes.io/name: release-channel-test
         app.kubernetes.io/part-of: unleasherator
     spec:
-      serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
+      serviceAccountName: release-channel-test-sa
       containers:
       - name: release-channel-test
         image: bitnami/kubectl:latest
