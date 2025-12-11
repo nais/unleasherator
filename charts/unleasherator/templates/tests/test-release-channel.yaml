@@ -281,7 +281,7 @@ spec:
         app.kubernetes.io/name: release-channel-test
         app.kubernetes.io/part-of: unleasherator
     spec:
-      serviceAccountName: controller-manager
+      serviceAccountName: {{ include "unleasherator.fullname" . }}-controller-manager
       containers:
       - name: release-channel-test
         image: bitnami/kubectl:1.30
