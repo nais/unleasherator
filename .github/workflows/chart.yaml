@@ -53,14 +53,20 @@ jobs:
           sed -i "s/^      tag: main$/      tag: ${{ steps.version.outputs.version }}/g" ./charts/${{ steps.name.outputs.name }}/values.yaml
           cat ./charts/${{ steps.name.outputs.name }}/values.yaml
 
-      - name: Save Chart Artifacts
+      - name: Save Chart Metadata
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
         with:
-          name: chart-artifacts
+          name: chart-metadata
           path: |
             ./charts/${{ steps.name.outputs.name }}/Chart.yaml
-            ./charts/${{ steps.name.outputs.name }}/values.yaml
             ./charts/${{ steps.name.outputs.name }}-crds/Chart.yaml
+
+      - name: Save Chart Values
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
+        with:
+          name: chart-values
+          path: |
+            ./charts/${{ steps.name.outputs.name }}/values.yaml
 
   lint-test:
     name: Lint and test Charts
@@ -71,10 +77,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore Chart Artifacts
+      - name: Restore Chart Metadata
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # ratchet:actions/download-artifact@v6.0.0
         with:
-          name: chart-artifacts
+          name: chart-metadata
           path: ./charts
 
       - name: Set up Helm
@@ -153,10 +159,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Restore Chart Artifacts
+      - name: Restore Chart Metadata
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # ratchet:actions/download-artifact@v6.0.0
         with:
-          name: chart-artifacts
+          name: chart-metadata
+          path: ./charts
+
+      - name: Restore Chart Values
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # ratchet:actions/download-artifact@v6.0.0
+        with:
+          name: chart-values
           path: ./charts
 
       - id: auth
