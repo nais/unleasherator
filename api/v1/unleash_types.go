@@ -30,8 +30,10 @@ type UnleashList struct {
 // +kubebuilder:printcolumn:name="API Ingress",type=string,JSONPath=`.spec.apiIngress.host`
 // +kubebuilder:printcolumn:name="Web Ingress",type=string,JSONPath=`.spec.webIngress.host`
 // +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
+// +kubebuilder:printcolumn:name="Channel",type=string,JSONPath=`.status.releaseChannelName`
 // +kubebuilder:printcolumn:name="Reconciled",type=boolean,JSONPath=`.status.reconciled`
 // +kubebuilder:printcolumn:name="Connected",type=boolean,JSONPath=`.status.connected`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type Unleash struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -194,11 +194,12 @@ type ReleaseChannelCondition struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
+// +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Instances",type=integer,JSONPath=`.status.instances`
-// +kubebuilder:printcolumn:name="InstancesUpToDate",type=integer,JSONPath=`.status.instancesUpToDate`
+// +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=`.status.instancesUpToDate`
 // +kubebuilder:printcolumn:name="Canaries",type=integer,JSONPath=`.status.canaryInstances`
-// +kubebuilder:printcolumn:name="CanariesUpToDate",type=integer,JSONPath=`.status.canaryInstancesUpToDate`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ReleaseChannel is the Schema for the releasechannels API
 type ReleaseChannel struct {
