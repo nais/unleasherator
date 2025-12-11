@@ -233,8 +233,18 @@ status:
 
 - **instances**: Total Unleash instances managed by this ReleaseChannel
 - **instancesUpToDate**: Number of instances running the target image
+- **canaryInstances**: Number of canary instances (if canary enabled)
+- **canaryInstancesUpToDate**: Number of canary instances running the target image
 - **completed**: Whether all instances are up-to-date
+- **phase**: Current rollout phase (Idle, Validating, Canary, Rolling, Completed, Failed, RollingBack)
+- **progress**: Rollout progress as percentage (0-100)
+- **startTime**: When the current rollout started
+- **estimatedCompletion**: Estimated completion time
 - **lastReconcileTime**: When the ReleaseChannel was last processed
+- **instanceImages**: Map of instance names to their desired images (source of truth for pull-based coordination)
+- **instanceImagesGeneration**: Incremented when instanceImages changes (allows Unleash controller to detect stale reads)
+- **previousImage**: Previous image stored for rollback purposes
+- **failureReason**: Reason for rollout failure (if failed)
 
 ### Monitoring Commands
 
@@ -521,6 +531,27 @@ graph TD
     style M fill:#ffe1e1
 ```
 
+### Phase State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Validating: Image changed
+    Validating --> Canary: Canary enabled
+    Validating --> Rolling: No canary
+    Validating --> Failed: Validation error
+    Canary --> Rolling: Canaries healthy
+    Canary --> Failed: Canary failed
+    Canary --> RollingBack: Rollback triggered
+    Rolling --> Completed: All instances ready
+    Rolling --> Failed: Deployment failed
+    Rolling --> RollingBack: Rollback triggered
+    RollingBack --> Failed: Rollback failed
+    RollingBack --> Idle: Rollback complete
+    Completed --> Idle: New image
+    Failed --> Idle: Retry/New image
+```
+
 ### Key Components
 
 **ReleaseChannel Controller:**
@@ -565,9 +596,13 @@ graph TD
 
 ### 4. **Phase-Based Management**
 
-- Idle: Checking for instances to update
-- Completed: All instances updated successfully
-- Failed: Rollout encountered errors
+- **Idle**: No active rollout, waiting for changes
+- **Validating**: Validating configuration and discovering instances
+- **Canary**: Deploying to canary instances first (if enabled)
+- **Rolling**: Rolling out to remaining instances
+- **Completed**: All instances updated successfully
+- **Failed**: Rollout encountered errors
+- **RollingBack**: Automatic rollback in progress (if enabled)
 
 ### 5. **Rich Status Reporting**
 

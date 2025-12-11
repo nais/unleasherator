@@ -1,5 +1,5 @@
 ---
-# ServiceAccount for the test job
+# ServiceAccount for the release-channel test job
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -7,6 +7,10 @@ metadata:
   labels:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
 ---
 # ClusterRole for reading Unleash and ReleaseChannel resources
 apiVersion: rbac.authorization.k8s.io/v1
@@ -16,6 +20,10 @@ metadata:
   labels:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
 rules:
 - apiGroups: ["unleash.nais.io"]
   resources: ["unleashes", "releasechannels", "apitokens"]
@@ -24,7 +32,7 @@ rules:
   resources: ["deployments"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
-  resources: ["pods"]
+  resources: ["pods", "secrets"]
   verbs: ["get", "list", "watch"]
 ---
 # ClusterRoleBinding to grant permissions
@@ -35,6 +43,10 @@ metadata:
   labels:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -42,13 +54,20 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: release-channel-test-sa
-  namespace: unleasherator-system
+  namespace: {{ .Release.Namespace }}
 ---
 # PostgreSQL database for the release channel test
 apiVersion: v1
 kind: Secret
 metadata:
   name: postgres-rc-test
+  labels:
+    app.kubernetes.io/name: postgresql-rc-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
@@ -56,10 +75,14 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: postgres-init-scripts
+  name: postgres-rc-init-scripts
   labels:
     app.kubernetes.io/name: postgresql-rc-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 data:
   init-databases.sh: |
     #!/bin/bash
@@ -81,6 +104,10 @@ metadata:
   labels:
     app.kubernetes.io/name: postgresql-rc-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   replicas: 1
   selector:
@@ -116,7 +143,7 @@ spec:
         emptyDir: {}
       - name: init-scripts
         configMap:
-          name: postgres-init-scripts
+          name: postgres-rc-init-scripts
 ---
 apiVersion: v1
 kind: Service
@@ -125,6 +152,10 @@ metadata:
   labels:
     app.kubernetes.io/name: postgresql-rc-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   ports:
   - port: 5432
@@ -140,6 +171,10 @@ metadata:
   labels:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   image: "unleashorg/unleash-server:6.10.0"
   strategy:
@@ -168,6 +203,10 @@ metadata:
     app.kubernetes.io/name: unleash-rc-prod
     app.kubernetes.io/part-of: unleasherator
     deployment: "production"
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   size: 1
   database:
@@ -204,6 +243,10 @@ metadata:
     app.kubernetes.io/name: unleash-rc-staging
     app.kubernetes.io/part-of: unleasherator
     deployment: "staging"
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   size: 1
   database:
@@ -240,6 +283,10 @@ metadata:
     app.kubernetes.io/name: unleash-rc-custom
     app.kubernetes.io/part-of: unleasherator
     deployment: "custom"
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   size: 1
   customImage: "unleashorg/unleash-server:5.12.0"
@@ -276,6 +323,10 @@ metadata:
   labels:
     app.kubernetes.io/name: unleash-rc-prod
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
@@ -295,6 +346,10 @@ metadata:
   labels:
     app.kubernetes.io/name: unleash-rc-staging
     app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
@@ -310,16 +365,17 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: release-channel-test-probe
+  name: unleasherator-rc-test-probe
   labels:
     app.kubernetes.io/name: release-channel-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: 1
-  activeDeadlineSeconds: 600  # 10 minute timeout for the entire test
+  backoffLimit: 3
+  activeDeadlineSeconds: {{ .Values.test.jobDeadlineSeconds | default 420 }}
   template:
     metadata:
       labels:
@@ -327,6 +383,56 @@ spec:
         app.kubernetes.io/part-of: unleasherator
     spec:
       serviceAccountName: release-channel-test-sa
+      initContainers:
+      - name: wait-for-postgres
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL to be ready..."
+          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
+          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            PG_READY=$(kubectl get deployment postgres-rc-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            if [ "$PG_READY" = "1" ]; then
+              echo "✓ PostgreSQL is ready"
+              exit 0
+            fi
+            echo "  Attempt $i/$MAX_ATTEMPTS: PostgreSQL not ready yet..."
+            sleep $INTERVAL
+          done
+          echo "✗ PostgreSQL did not become ready"
+          exit 1
+      - name: wait-for-unleash-instances
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Unleash instances to be ready..."
+          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
+          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          for instance in unleash-rc-prod unleash-rc-staging unleash-rc-custom; do
+            echo "Checking $instance..."
+            for i in $(seq 1 $MAX_ATTEMPTS); do
+              CONNECTED=$(kubectl get unleash $instance -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+              if [ "$CONNECTED" = "true" ]; then
+                echo "✓ $instance is connected!"
+                break
+              fi
+              if [ $i -eq $MAX_ATTEMPTS ]; then
+                echo "✗ $instance did not become ready within timeout"
+                kubectl get unleash $instance -o yaml || true
+                exit 1
+              fi
+              if [ $((i % 10)) -eq 0 ]; then
+                echo "  Attempt $i/$MAX_ATTEMPTS: $instance connected=$CONNECTED, waiting..."
+              fi
+              sleep $INTERVAL
+            done
+          done
+          echo "✓ All Unleash instances are ready"
       containers:
       - name: release-channel-test
         image: bitnami/kubectl:latest
@@ -339,20 +445,8 @@ spec:
           echo "Testing comprehensive ReleaseChannel features including canary deployment"
           echo ""
 
-          # Wait for ReleaseChannel to be created
-          echo "1. Waiting for ReleaseChannel to be created..."
-          for i in $(seq 1 20); do
-            if kubectl get releasechannel release-channel-test -o jsonpath='{.metadata.name}' 2>/dev/null; then
-              echo "✓ ReleaseChannel 'release-channel-test' found"
-              break
-            fi
-            echo "  Attempt $i/20: Waiting for ReleaseChannel..."
-            sleep 3
-          done
-
-          # Verify ReleaseChannel spec configuration
-          echo ""
-          echo "2. Verifying ReleaseChannel configuration..."
+          # Verify ReleaseChannel exists and is configured
+          echo "1. Verifying ReleaseChannel configuration..."
           RC_IMAGE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.image}')
           CANARY_ENABLED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.strategy.canary.enabled}')
           MAX_PARALLEL=$(kubectl get releasechannel release-channel-test -o jsonpath='{.spec.strategy.maxParallel}')
@@ -371,61 +465,9 @@ spec:
           fi
           echo "✓ ReleaseChannel spec correctly configured"
 
-          # Wait for Unleash deployments to be available
-          echo ""
-          echo "3. Waiting for Unleash deployments to be available..."
-          echo "   Note: This test validates ReleaseChannel functionality, not Unleash connectivity."
-          echo "   Connection status may show failures during admin token initialization in Kind clusters."
-          for instance in unleash-rc-prod unleash-rc-staging unleash-rc-custom; do
-            echo "  Checking deployment for instance: $instance"
-            for i in $(seq 1 60); do
-              # Check if deployment exists and is available
-              DEPLOYMENT_EXISTS=$(kubectl get deployment $instance -o name 2>/dev/null || echo "")
-              if [ -n "$DEPLOYMENT_EXISTS" ]; then
-                DEPLOYMENT_READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
-                REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
-                READY_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-
-                if [ "$DEPLOYMENT_READY" = "True" ] && [ "$REPLICAS" = "$READY_REPLICAS" ] && [ "$REPLICAS" != "0" ]; then
-                  echo "  ✓ Deployment $instance is Available ($READY_REPLICAS/$REPLICAS ready)"
-                  break
-                fi
-              fi
-
-              if [ $((i % 10)) -eq 0 ]; then
-                if [ -n "$DEPLOYMENT_EXISTS" ]; then
-                  echo "    Attempt $i/60: $instance - ready: $DEPLOYMENT_READY, replicas: $READY_REPLICAS/$REPLICAS"
-                else
-                  echo "    Attempt $i/60: $instance - deployment not yet created"
-                fi
-              fi
-              sleep 5
-            done
-
-            # Final verification
-            FINAL_DEPLOYMENT=$(kubectl get deployment $instance -o name 2>/dev/null || echo "")
-            if [ -z "$FINAL_DEPLOYMENT" ]; then
-              echo "  ✗ Deployment $instance was not created"
-              kubectl describe unleash $instance || true
-              exit 1
-            fi
-
-            FINAL_READY=$(kubectl get deployment $instance -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
-            FINAL_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.replicas}' 2>/dev/null || echo "0")
-            FINAL_READY_REPLICAS=$(kubectl get deployment $instance -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-
-            if [ "$FINAL_READY" != "True" ] || [ "$FINAL_REPLICAS" != "$FINAL_READY_REPLICAS" ]; then
-              echo "  ✗ Deployment $instance did not become Available within timeout"
-              echo "    Final status: ready=$FINAL_READY, replicas=$FINAL_READY_REPLICAS/$FINAL_REPLICAS"
-              kubectl describe deployment $instance || true
-              kubectl get pods -l app.kubernetes.io/name=$instance || true
-              exit 1
-            fi
-          done
-
           # Verify CustomImage exclusion
           echo ""
-          echo "4. Verifying CustomImage exclusion..."
+          echo "2. Verifying CustomImage exclusion..."
           CUSTOM_RESOLVED=$(kubectl get unleash unleash-rc-custom -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
           CUSTOM_IMAGE=$(kubectl get deployment unleash-rc-custom -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
 
@@ -439,20 +481,16 @@ spec:
             exit 1
           fi
 
-          # Verify ReleaseChannel manages only 2 instances (not the custom one)
+          # Verify ReleaseChannel status
           echo ""
-          echo "5. Verifying ReleaseChannel status and canary configuration..."
+          echo "3. Verifying ReleaseChannel status..."
           RC_PHASE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
           RC_INSTANCES=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instances}' 2>/dev/null || echo "0")
-          RC_UPDATED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instancesUpToDate}' 2>/dev/null || echo "0")
           RC_CANARY=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.canaryInstances}' 2>/dev/null || echo "0")
-          RC_CANARY_UPDATED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.canaryInstancesUpToDate}' 2>/dev/null || echo "0")
 
           echo "  Phase: $RC_PHASE"
           echo "  Total Instances: $RC_INSTANCES (expected: 2, not 3 due to customImage)"
-          echo "  Instances Up-to-Date: $RC_UPDATED"
           echo "  Canary Instances: $RC_CANARY (expected: 1 - staging)"
-          echo "  Canary Instances Up-to-Date: $RC_CANARY_UPDATED"
 
           if [ "$RC_INSTANCES" != "2" ]; then
             echo "✗ Expected 2 instances (excluding customImage instance), got: $RC_INSTANCES"
@@ -464,61 +502,40 @@ spec:
             echo "✗ Expected 1 canary instance (staging), got: $RC_CANARY"
             exit 1
           fi
-
           echo "✓ ReleaseChannel correctly manages 2 instances with 1 canary"
 
           # Verify managed instances use ReleaseChannel image
           echo ""
-          echo "6. Verifying managed instances use ReleaseChannel image..."
+          echo "4. Verifying managed instances use ReleaseChannel image..."
           for instance in unleash-rc-prod unleash-rc-staging; do
             RESOLVED_IMAGE=$(kubectl get unleash $instance -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
             RC_NAME=$(kubectl get unleash $instance -o jsonpath='{.status.releaseChannelName}' 2>/dev/null || echo "")
 
             if [ "$RESOLVED_IMAGE" = "unleashorg/unleash-server:6.10.0" ] && [ "$RC_NAME" = "release-channel-test" ]; then
-              echo "  ✓ Instance $instance: image=$RESOLVED_IMAGE, channel=$RC_NAME"
+              echo "  ✓ $instance: image=$RESOLVED_IMAGE, channel=$RC_NAME"
             else
-              echo "  ✗ Instance $instance image mismatch"
+              echo "  ✗ $instance image mismatch"
               echo "    Expected image: unleashorg/unleash-server:6.10.0, Got: $RESOLVED_IMAGE"
               echo "    Expected channel: release-channel-test, Got: $RC_NAME"
               exit 1
             fi
           done
 
-          # Test canary deployment: Update to version 7
+          # Test canary deployment: Update to newer version
           echo ""
-          echo "7. Testing canary deployment scenario..."
-          echo "  Updating ReleaseChannel from v6 to v7..."
+          echo "5. Testing canary deployment scenario..."
+          echo "  Updating ReleaseChannel from 6.10.0 to 6.10.1..."
           kubectl patch releasechannel release-channel-test --type='merge' -p='{"spec":{"image":"unleashorg/unleash-server:6.10.1"}}'
-
-          # Verify PreviousImage is tracked
-          sleep 5
-          PREVIOUS_IMAGE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.previousImage}' 2>/dev/null || echo "")
-          echo "  Previous image stored: $PREVIOUS_IMAGE (expected: unleashorg/unleash-server:6.10.0)"
-          if [ "$PREVIOUS_IMAGE" != "unleashorg/unleash-server:6.10.0" ]; then
-            echo "  ⚠ PreviousImage not tracked correctly (may not be implemented yet)"
-          fi
 
           # Track canary phase progression
           echo ""
-          echo "8. Monitoring canary phase progression..."
-          CANARY_PHASE_SEEN=false
-          ROLLING_PHASE_SEEN=false
-
-          for i in $(seq 1 60); do
+          echo "6. Monitoring canary phase progression..."
+          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
+          INTERVAL={{ .Values.test.connectionIntervalSeconds | default 3 }}
+          for i in $(seq 1 $MAX_ATTEMPTS); do
             PHASE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
             STAGING_IMAGE=$(kubectl get unleash unleash-rc-staging -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
             PROD_IMAGE=$(kubectl get unleash unleash-rc-prod -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")
-
-            # Track phase transitions
-            if [ "$PHASE" = "Canary" ]; then
-              CANARY_PHASE_SEEN=true
-              echo "  ✓ Entered Canary phase"
-            fi
-
-            if [ "$PHASE" = "Rolling" ]; then
-              ROLLING_PHASE_SEEN=true
-              echo "  ✓ Progressed to Rolling phase"
-            fi
 
             # Check if canary (staging) updates before production
             if [ "$STAGING_IMAGE" = "unleashorg/unleash-server:6.10.1" ] && [ "$PROD_IMAGE" = "unleashorg/unleash-server:6.10.0" ]; then
@@ -532,26 +549,22 @@ spec:
             fi
 
             if [ $((i % 10)) -eq 0 ]; then
-              echo "    Progress check $i/60: phase=$PHASE, staging=$STAGING_IMAGE, prod=$PROD_IMAGE"
+              echo "    Progress check $i/$MAX_ATTEMPTS: phase=$PHASE, staging=$STAGING_IMAGE, prod=$PROD_IMAGE"
             fi
 
-            sleep 3
+            sleep $INTERVAL
           done
 
           # Final status verification
           echo ""
-          echo "9. Final status verification..."
+          echo "7. Final status verification..."
           FINAL_STAGING=$(kubectl get unleash unleash-rc-staging -o jsonpath='{.status.resolvedReleaseChannelImage}')
           FINAL_PROD=$(kubectl get unleash unleash-rc-prod -o jsonpath='{.status.resolvedReleaseChannelImage}')
           FINAL_PHASE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.phase}')
-          FINAL_INSTANCES=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instances}')
-          FINAL_UPDATED=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.instancesUpToDate}')
 
           echo "  Final Phase: $FINAL_PHASE"
           echo "  Staging instance: $FINAL_STAGING"
           echo "  Production instance: $FINAL_PROD"
-          echo "  Instances: $FINAL_INSTANCES"
-          echo "  Instances Up-to-Date: $FINAL_UPDATED"
 
           # We accept partial completion in CI environment
           SUCCESS_COUNT=0

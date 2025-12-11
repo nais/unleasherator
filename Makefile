@@ -80,80 +80,92 @@ helm: manifests kustomize helmify ## Generate Helm chart.
 	$(KUSTOMIZE) build config/crd | $(HELMIFY) charts/unleasherator-crds
 	rm charts/unleasherator/templates/*-crd.yaml # delete superflous crds from the file tree
 
+##@ End-to-End Testing
+
+# Image tag for e2e tests
+E2E_IMG ?= ghcr.io/nais/unleasherator:main
+# Namespace for e2e tests
+E2E_NAMESPACE ?= unleasherator-e2e-test
+
 .PHONY: test-e2e
-test-e2e: install-all ## Run end-to-end tests using raw Kubernetes manifests from Helm charts.
-	@echo "Running e2e tests..."
-	kubectl apply -f charts/unleasherator/templates/tests/
-	@echo "Waiting for PostgreSQL databases to be ready..."
-	kubectl wait --for=condition=available deployment/postgres-postgresql --timeout=300s || true
-	kubectl wait --for=condition=available deployment/postgres-rc-test --timeout=300s || true
-	@echo "Waiting for Unleash instances to be ready..."
-	kubectl wait --for=condition=available deployment/unleash-connection-test --timeout=600s || true
-	kubectl wait --for=condition=available deployment/unleash-rc-prod --timeout=600s || true
-	kubectl wait --for=condition=available deployment/unleash-rc-staging --timeout=600s || true
-	kubectl wait --for=condition=available deployment/unleash-v7-direct --timeout=600s || true
-	kubectl wait --for=condition=available deployment/unleash-v7-channel --timeout=600s || true
-	@echo "Now waiting for test jobs to complete..."
-	kubectl wait --for=condition=complete job/unleash-connection-test-probe --timeout=900s || true
-	kubectl wait --for=condition=complete job/release-channel-test-probe --timeout=900s || true
-	kubectl wait --for=condition=complete job/unleash-v7-test-probe --timeout=900s || true
+test-e2e: test-e2e-setup ## Run end-to-end tests using ct install (same as CI).
+	ct install \
+		--charts ./charts/unleasherator \
+		--namespace $(E2E_NAMESPACE) \
+		--helm-extra-args '--timeout 400s'
+
+.PHONY: test-e2e-debug
+test-e2e-debug: test-e2e-setup ## Run e2e tests but keep resources for debugging (--skip-clean-up).
+	ct install \
+		--charts ./charts/unleasherator \
+		--namespace $(E2E_NAMESPACE) \
+		--helm-extra-args '--timeout 400s' \
+		--skip-clean-up \
+		--debug
+
+.PHONY: test-e2e-setup
+test-e2e-setup: docker-build ## Set up e2e test environment (build image, install CRDs).
+	@echo "=== Verifying cluster connectivity ==="
+	@kubectl cluster-info || (echo "❌ No cluster available. Start colima or another k8s cluster." && exit 1)
 	@echo ""
-	@echo "=== Test Results ==="
-	@echo "=== Unleash Connection Test ==="
-	kubectl logs job/unleash-connection-test-probe --tail=50 || echo "❌ Test not found or failed"
+	@echo "=== Installing CRDs ==="
+	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+	helm repo update
+	helm upgrade --install prometheus-operator-crds prometheus-community/prometheus-operator-crds --wait
+	helm upgrade --install unleasherator-crds ./charts/unleasherator-crds --wait
 	@echo ""
-	@echo "=== Release Channel Test ==="
-	kubectl logs job/release-channel-test-probe --tail=50 || echo "❌ Test not found or failed"
+	@echo "=== Creating test namespace ==="
+	kubectl create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@echo ""
-	@echo "=== Unleash v7 Test ==="
-	kubectl logs job/unleash-v7-test-probe --tail=50 || echo "❌ Test not found or failed"
-	@echo ""
-	@echo "=== Test Job Status ==="
-	kubectl get jobs -l app.kubernetes.io/part-of=unleasherator
+	@echo "✅ E2E setup complete"
 
 .PHONY: test-e2e-clean
-test-e2e-clean: ## Clean up e2e test resources.
-	@echo "Cleaning up test resources..."
-	@echo "Removing finalizers from Unleash instances..."
-	@for unleash in $$(kubectl get unleash -o name 2>/dev/null || true); do \
-		echo "Patching $$unleash"; \
-		kubectl patch $$unleash --type merge -p '{"metadata":{"finalizers":[]}}' || true; \
-	done
-	@echo "Removing finalizers from ApiToken instances..."
-	@for apitoken in $$(kubectl get apitoken -o name 2>/dev/null || true); do \
-		echo "Patching $$apitoken"; \
-		kubectl patch $$apitoken --type merge -p '{"metadata":{"finalizers":[]}}' || true; \
-	done
-	@echo "Deleting test resources..."
-	kubectl delete -f charts/unleasherator/templates/tests/ --ignore-not-found=true
-
-.PHONY: test-e2e-watch
-test-e2e-watch: ## Watch the progress of e2e tests in real-time.
-	@echo "Monitoring e2e test progress..."
-	@echo "Press Ctrl+C to stop watching"
+test-e2e-clean: ## Clean up e2e test resources (use after test-e2e-debug).
+	@echo "=== Cleaning up e2e test resources in $(E2E_NAMESPACE) ==="
 	@echo ""
-	@echo "=== Pods Status ==="
-	kubectl get pods -l app.kubernetes.io/part-of=unleasherator -w
+	@echo "Removing finalizers from custom resources..."
+	@for crd in unleash apitoken releasechannel; do \
+		for res in $$(kubectl get $$crd -n $(E2E_NAMESPACE) -o name 2>/dev/null); do \
+			echo "  Removing finalizers from $$res"; \
+			kubectl patch $$res -n $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
+		done; \
+	done
+	@echo ""
+	@echo "Uninstalling Helm release..."
+	helm uninstall unleasherator -n $(E2E_NAMESPACE) --ignore-not-found 2>/dev/null || true
+	@echo ""
+	@echo "Deleting namespace..."
+	kubectl delete ns $(E2E_NAMESPACE) --timeout=30s --ignore-not-found=true 2>/dev/null || true
+	@echo ""
+	@echo "Cleaning cluster-scoped test resources..."
+	kubectl delete clusterrole -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
+	kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
+	@echo ""
+	@echo "Resetting imagePullPolicy in values.yaml..."
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		sed -i '' 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
+	else \
+		sed -i 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
+	fi
+	@echo ""
+	@echo "✅ Cleanup complete"
 
 .PHONY: test-e2e-status
 test-e2e-status: ## Check current status of e2e test resources.
-	@echo "=== Test Pods ==="
-	kubectl get pods -l app.kubernetes.io/part-of=unleasherator
+	@echo "=== Namespace: $(E2E_NAMESPACE) ==="
+	@kubectl get ns $(E2E_NAMESPACE) 2>/dev/null || echo "Namespace not found"
 	@echo ""
-	@echo "=== Test Jobs ==="
-	kubectl get jobs -l app.kubernetes.io/part-of=unleasherator
+	@echo "=== Pods ==="
+	@kubectl get pods -n $(E2E_NAMESPACE) 2>/dev/null || true
 	@echo ""
-	@echo "=== Test Services ==="
-	kubectl get services -l app.kubernetes.io/part-of=unleasherator
+	@echo "=== Unleash ==="
+	@kubectl get unleash -n $(E2E_NAMESPACE) 2>/dev/null || true
 	@echo ""
-	@echo "=== Unleash Instances ==="
-	kubectl get unleash
+	@echo "=== ReleaseChannel ==="
+	@kubectl get releasechannel -n $(E2E_NAMESPACE) 2>/dev/null || true
 	@echo ""
-	@echo "=== Release Channels ==="
-	kubectl get releasechannel
-	@echo ""
-	@echo "=== API Tokens ==="
-	kubectl get apitoken
+	@echo "=== ApiToken ==="
+	@kubectl get apitoken -n $(E2E_NAMESPACE) 2>/dev/null || true
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
@@ -213,20 +225,6 @@ IGNORE_NOT_FOUND ?= false
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl apply -f -
-
-.PHONY: install-prometheus-crds
-install-prometheus-crds: ## Install Prometheus Operator CRDs (required for ServiceMonitor resources).
-	@echo "Installing Prometheus Operator CRDs..."
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_alertmanagers.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-	kubectl apply --server-side -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-	@echo "✅ Prometheus Operator CRDs installed"
-
-.PHONY: install-all
-install-all: install-prometheus-crds install ## Install both Prometheus CRDs and Unleasherator CRDs.
-	@echo "✅ All CRDs installed"
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

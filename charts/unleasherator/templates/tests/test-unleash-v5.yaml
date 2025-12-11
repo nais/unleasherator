@@ -1,11 +1,73 @@
 ---
+# ServiceAccount for the v5 test job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: unleash-v5-test-sa
+  labels:
+    app.kubernetes.io/name: unleash-v5-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+---
+# ClusterRole for reading Unleash resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: unleash-v5-test-role
+  labels:
+    app.kubernetes.io/name: unleash-v5-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+- apiGroups: ["unleash.nais.io"]
+  resources: ["unleashes", "apitokens"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods", "secrets"]
+  verbs: ["get", "list", "watch"]
+---
+# ClusterRoleBinding to grant permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: unleash-v5-test-binding
+  labels:
+    app.kubernetes.io/name: unleash-v5-test
+    app.kubernetes.io/part-of: unleasherator
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-20"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: unleash-v5-test-role
+subjects:
+- kind: ServiceAccount
+  name: unleash-v5-test-sa
+  namespace: {{ .Release.Namespace }}
+---
+# PostgreSQL database for the v5 test
 apiVersion: v1
 kind: Secret
 metadata:
-  name: postgres-postgresql
+  name: postgres-v5-test
+  labels:
+    app.kubernetes.io/name: postgresql-v5-test
+    app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 type: Opaque
 data:
   postgres-password: cG9zdGdyZXNwYXNzd29yZA== # postgrespassword
@@ -13,22 +75,23 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres-postgresql
+  name: postgres-v5-test
   labels:
-    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/name: postgresql-v5-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/name: postgresql-v5-test
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/name: postgresql-v5-test
     spec:
       containers:
       - name: postgresql
@@ -43,7 +106,7 @@ spec:
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: postgres-postgresql
+              name: postgres-v5-test
               key: postgres-password
         volumeMounts:
         - name: postgres-data
@@ -55,37 +118,41 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-postgresql
+  name: postgres-v5-test
   labels:
-    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/name: postgresql-v5-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   ports:
   - port: 5432
     targetPort: 5432
   selector:
-    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/name: postgresql-v5-test
 ---
+# Unleash v5 instance for direct connection test
 apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
-  name: unleash-connection-test
+  name: unleash-v5-direct
   labels:
-    app.kubernetes.io/name: unleash-connection-test
+    app.kubernetes.io/name: unleash-v5-direct
     app.kubernetes.io/part-of: unleasherator
+    test-type: "direct-v5"
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   size: 1
   customImage: unleashorg/unleash-server:5
   database:
-    secretName: postgres-postgresql
+    secretName: postgres-v5-test
     secretPassKey: postgres-password
-    host: postgres-postgresql
+    host: postgres-v5-test
     databaseName: postgres
     port: "5432"
     user: postgres
@@ -100,51 +167,100 @@ spec:
       - to:
           - podSelector:
               matchLabels:
-                app.kubernetes.io/name: postgresql
+                app.kubernetes.io/name: postgresql-v5-test
         ports:
           - protocol: TCP
             port: 5432
 ---
+# API Token for the v5 instance
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:
-  name: unleash-connection-test
+  name: unleash-v5-direct-token
   labels:
-    app.kubernetes.io/name: unleash-connection-test
+    app.kubernetes.io/name: unleash-v5-direct
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
     kind: Unleash
-    name: unleash-connection-test
-  secretName: unleash-connection-test
+    name: unleash-v5-direct
+  secretName: unleash-v5-direct-token
   type: CLIENT
   environment: development
   projects:
     - default
 ---
+# Test job to verify Unleash v5 connection
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: unleash-connection-test-probe
+  name: unleash-v5-test-probe
   labels:
-    app.kubernetes.io/name: unleash-connection-test
+    app.kubernetes.io/name: unleash-v5-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: 1
-  activeDeadlineSeconds: 300
+  backoffLimit: 3
+  activeDeadlineSeconds: {{ .Values.test.jobDeadlineSeconds | default 420 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: unleash-connection-test
+        app.kubernetes.io/name: unleash-v5-test
         app.kubernetes.io/part-of: unleasherator
     spec:
+      serviceAccountName: unleash-v5-test-sa
+      initContainers:
+      - name: wait-for-unleash
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Unleash v5 instance to be ready..."
+          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
+          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            # Check if Unleash exists and is connected
+            CONNECTED=$(kubectl get unleash unleash-v5-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+            if [ "$CONNECTED" = "true" ]; then
+              echo "✓ Unleash v5 instance is connected!"
+              exit 0
+            fi
+            echo "  Attempt $i/$MAX_ATTEMPTS: Unleash connected=$CONNECTED, waiting..."
+            sleep $INTERVAL
+          done
+          echo "✗ Unleash v5 instance did not become ready within timeout"
+          kubectl get unleash unleash-v5-direct -o yaml || true
+          exit 1
+      - name: wait-for-secret
+        image: bitnami/kubectl:latest
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for ApiToken secret to be created..."
+          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
+          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            SECRET_EXISTS=$(kubectl get secret unleash-v5-direct-token -o name 2>/dev/null || echo "")
+            if [ -n "$SECRET_EXISTS" ]; then
+              echo "✓ Secret unleash-v5-direct-token exists!"
+              exit 0
+            fi
+            echo "  Attempt $i/$MAX_ATTEMPTS: Secret not yet created, waiting..."
+            sleep $INTERVAL
+          done
+          echo "✗ Secret was not created within timeout"
+          kubectl get apitoken unleash-v5-direct-token -o yaml || true
+          exit 1
       containers:
       - name: connection-test
         image: curlimages/curl:latest
@@ -152,28 +268,32 @@ spec:
         - sh
         - -c
         - |
-          echo "Testing connection to Unleash server..."
-          for i in $(seq 1 20); do
-            echo "Attempt $i of 20..."
+          echo "=== Unleash v5 Connection Test ==="
+          echo "Testing connection to Unleash server at ${UNLEASH_SERVER_API_URL}..."
+          MAX_ATTEMPTS={{ .Values.test.connectionRetries | default 20 }}
+          INTERVAL={{ .Values.test.connectionIntervalSeconds | default 3 }}
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            echo "Attempt $i of $MAX_ATTEMPTS..."
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_SERVER_API_TOKEN}" ${UNLEASH_SERVER_API_URL}/api/client/features)
             echo "HTTP Status: $STATUS"
             if [ "$STATUS" = "200" ]; then
-              echo "Connection successful!"
+              echo "✓ Connection successful!"
+              echo "=== Unleash v5 Test Completed Successfully ==="
               exit 0
             fi
-            sleep 5
+            sleep $INTERVAL
           done
-          echo "Connection failed after 20 attempts!"
+          echo "✗ Connection failed after $MAX_ATTEMPTS attempts!"
           exit 1
         env:
         - name: UNLEASH_SERVER_API_TOKEN
           valueFrom:
             secretKeyRef:
-              name: unleash-connection-test
+              name: unleash-v5-direct-token
               key: UNLEASH_SERVER_API_TOKEN
         - name: UNLEASH_SERVER_API_URL
           valueFrom:
             secretKeyRef:
-              name: unleash-connection-test
+              name: unleash-v5-direct-token
               key: UNLEASH_SERVER_API_URL
       restartPolicy: Never
