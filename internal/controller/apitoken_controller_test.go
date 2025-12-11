@@ -529,4 +529,69 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			Expect(existingTokens.Tokens[0].Secret).Should(Equal(ApiTokenSecret + "-3"))
 		})
 	})
+
+	Context("When creating API tokens with tokenName field", func() {
+		It("Should include tokenName in API request and match username", func() {
+			By("By setting up httpmock to capture request body")
+			var capturedRequest *unleashclient.ApiTokenRequest
+
+			httpmock.RegisterResponder("POST", unleashclient.ApiTokensEndpoint,
+				func(req *http.Request) (*http.Response, error) {
+					defer GinkgoRecover()
+
+					var tokenReq unleashclient.ApiTokenRequest
+					err := json.NewDecoder(req.Body).Decode(&tokenReq)
+					Expect(err).ToNot(HaveOccurred())
+					capturedRequest = &tokenReq
+
+					// Verify tokenName is present and matches username
+					Expect(tokenReq.TokenName).ToNot(BeEmpty(), "tokenName should be present in request")
+					Expect(tokenReq.TokenName).To(Equal(tokenReq.Username), "tokenName should match username")
+
+					tokenResp := unleashclient.ApiToken{
+						Secret:      ApiTokenSecret,
+						TokenName:   tokenReq.TokenName,
+						Type:        strings.ToLower(tokenReq.Type),
+						Environment: tokenReq.Environment,
+						Projects:    tokenReq.Projects,
+						CreatedAt:   time.Now().Format(time.RFC3339),
+					}
+
+					existingTokens.Tokens = append(existingTokens.Tokens, tokenResp)
+					return httpmock.NewJsonResponse(201, tokenResp)
+				})
+
+			By("By creating a RemoteUnleash instance")
+			apiTokenName := "test-tokenname-field"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			By("By creating an ApiToken")
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+
+			By("By resetting call counts to track token creation")
+			httpmock.ZeroCallCounters()
+
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+
+			By("By verifying ApiToken was created successfully")
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+
+			By("By verifying the request captured tokenName field")
+			Expect(capturedRequest).ToNot(BeNil())
+			Expect(capturedRequest.TokenName).To(Equal(capturedRequest.Username))
+
+			By("By verifying the API was called with POST to create token")
+			Eventually(func(g Gomega) {
+				info := httpmock.GetCallCountInfo()
+				g.Expect(info[fmt.Sprintf("POST %s", unleashclient.ApiTokensEndpoint)]).To(Equal(1))
+			}, timeout, interval).Should(Succeed())
+		})
+	})
 })

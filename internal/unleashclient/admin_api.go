@@ -94,6 +94,7 @@ type ApiTokenResult struct {
 type ApiTokenRequest struct {
 	Secret      string   `json:"secret,omitempty"`
 	Username    string   `json:"username"`
+	TokenName   string   `json:"tokenName"`
 	Type        string   `json:"type"` // One of client, admin, frontend
 	Environment string   `json:"environment,omitempty"`
 	Project     string   `json:"project,omitempty"`

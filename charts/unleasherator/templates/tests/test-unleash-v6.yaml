@@ -271,6 +271,7 @@ spec:
             port: 5432
 ---
 # API Token for the direct v6 instance
+# Tests backward compatibility: v6 should ignore the tokenName field
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:
@@ -294,6 +295,7 @@ spec:
     - default
 ---
 # API Token for the channel-managed v6 instance
+# Tests backward compatibility: v6 should ignore the tokenName field
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:

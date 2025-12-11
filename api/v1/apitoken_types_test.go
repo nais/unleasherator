@@ -19,8 +19,10 @@ func TestApiToken_ApiTokenRequest(t *testing.T) {
 	}
 
 	suffix := "suffix"
+	tokenName := apiToken.ApiTokenName(suffix)
 	expectedRequest := unleashclient.ApiTokenRequest{
-		Username:    apiToken.ApiTokenName(suffix),
+		Username:    tokenName,
+		TokenName:   tokenName,
 		Type:        apiToken.Spec.Type,
 		Environment: apiToken.Spec.Environment,
 		Projects:    apiToken.Spec.Projects,

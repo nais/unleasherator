@@ -117,8 +117,10 @@ func (t *ApiToken) NamespacedName() types.NamespacedName {
 }
 
 func (t *ApiToken) ApiTokenRequest(suffix string) unleashclient.ApiTokenRequest {
+	name := t.ApiTokenName(suffix)
 	return unleashclient.ApiTokenRequest{
-		Username:    t.ApiTokenName(suffix),
+		Username:    name,
+		TokenName:   name,
 		Type:        t.Spec.Type,
 		Environment: t.Spec.Environment,
 		Projects:    t.Spec.Projects,

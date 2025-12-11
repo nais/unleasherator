@@ -173,6 +173,7 @@ spec:
             port: 5432
 ---
 # API Token for the v5 instance
+# Tests backward compatibility: v5 should ignore the tokenName field
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:
