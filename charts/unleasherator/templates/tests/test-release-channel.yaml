@@ -375,7 +375,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: {{ .Values.test.jobDeadlineSeconds | default 420 }}
+  activeDeadlineSeconds: {{ ((.Values.test).jobDeadlineSeconds) | default 420 }}
   template:
     metadata:
       labels:
@@ -391,8 +391,8 @@ spec:
         - -c
         - |
           echo "Waiting for PostgreSQL to be ready..."
-          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
-          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
+          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
             PG_READY=$(kubectl get deployment postgres-rc-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
             if [ "$PG_READY" = "1" ]; then
@@ -411,8 +411,8 @@ spec:
         - -c
         - |
           echo "Waiting for Unleash instances to be ready..."
-          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
-          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
+          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
           for instance in unleash-rc-prod unleash-rc-staging unleash-rc-custom; do
             echo "Checking $instance..."
             for i in $(seq 1 $MAX_ATTEMPTS); do
@@ -530,8 +530,8 @@ spec:
           # Track canary phase progression
           echo ""
           echo "6. Monitoring canary phase progression..."
-          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
-          INTERVAL={{ .Values.test.connectionIntervalSeconds | default 3 }}
+          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
+          INTERVAL={{ ((.Values.test).connectionIntervalSeconds) | default 3 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
             PHASE=$(kubectl get releasechannel release-channel-test -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
             STAGING_IMAGE=$(kubectl get unleash unleash-rc-staging -o jsonpath='{.status.resolvedReleaseChannelImage}' 2>/dev/null || echo "")

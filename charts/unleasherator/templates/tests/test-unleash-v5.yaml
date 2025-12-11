@@ -209,7 +209,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: {{ .Values.test.jobDeadlineSeconds | default 420 }}
+  activeDeadlineSeconds: {{ ((.Values.test).jobDeadlineSeconds) | default 420 }}
   template:
     metadata:
       labels:
@@ -225,8 +225,8 @@ spec:
         - -c
         - |
           echo "Waiting for Unleash v5 instance to be ready..."
-          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
-          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
+          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
             # Check if Unleash exists and is connected
             CONNECTED=$(kubectl get unleash unleash-v5-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
@@ -247,8 +247,8 @@ spec:
         - -c
         - |
           echo "Waiting for ApiToken secret to be created..."
-          MAX_ATTEMPTS={{ .Values.test.waitIterations | default 60 }}
-          INTERVAL={{ .Values.test.intervalSeconds | default 5 }}
+          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
+          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
             SECRET_EXISTS=$(kubectl get secret unleash-v5-direct-token -o name 2>/dev/null || echo "")
             if [ -n "$SECRET_EXISTS" ]; then
@@ -270,8 +270,8 @@ spec:
         - |
           echo "=== Unleash v5 Connection Test ==="
           echo "Testing connection to Unleash server at ${UNLEASH_SERVER_API_URL}..."
-          MAX_ATTEMPTS={{ .Values.test.connectionRetries | default 20 }}
-          INTERVAL={{ .Values.test.connectionIntervalSeconds | default 3 }}
+          MAX_ATTEMPTS={{ ((.Values.test).connectionRetries) | default 20 }}
+          INTERVAL={{ ((.Values.test).connectionIntervalSeconds) | default 3 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
             echo "Attempt $i of $MAX_ATTEMPTS..."
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_SERVER_API_TOKEN}" ${UNLEASH_SERVER_API_URL}/api/client/features)
