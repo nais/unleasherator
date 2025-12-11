@@ -28,3 +28,4 @@ Dockerfile.cross
 
 # env files
 .env*
+job-logs.txt

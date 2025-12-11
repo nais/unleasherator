@@ -242,7 +242,7 @@ spec:
 #       serviceAccountName: controller-manager
 #       containers:
 #       - name: unleash-v7-test
-#         image: bitnami/kubectl:1.30
+#         image: bitnami/kubectl:latest
 #         command:
 #         - sh
 #         - -c
