@@ -16,21 +16,24 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.version
-      name: Version
+    - jsonPath: .spec.image
+      name: Image
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
       type: string
     - jsonPath: .status.instances
       name: Instances
       type: integer
     - jsonPath: .status.instancesUpToDate
-      name: InstancesUpToDate
+      name: Ready
       type: integer
     - jsonPath: .status.canaryInstances
       name: Canaries
       type: integer
-    - jsonPath: .status.canaryInstancesUpToDate
-      name: CanariesUpToDate
-      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1
     schema:
       openAPIV3Schema:

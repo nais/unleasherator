@@ -25,12 +25,18 @@ spec:
     - jsonPath: .status.version
       name: Version
       type: string
+    - jsonPath: .status.releaseChannelName
+      name: Channel
+      type: string
     - jsonPath: .status.reconciled
       name: Reconciled
       type: boolean
     - jsonPath: .status.connected
       name: Connected
       type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1
     schema:
       openAPIV3Schema:
