@@ -66,6 +66,21 @@ vet: ## Run go vet against code.
 test: envtest ## Run tests. Use FOCUS="test name" to run specific tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(if $(FOCUS),./internal/controller -run TestAPIs --ginkgo.focus="$(FOCUS)",./...) -coverprofile cover.out
 
+.PHONY: test-schemas
+test-schemas: ## Run schema validation tests to verify types match official Unleash API.
+	@echo "=== Running schema validation tests ==="
+	go test ./internal/unleashclient -run TestApiToken -v
+	@echo ""
+	@echo "✅ Schema validation complete"
+
+.PHONY: fetch-schemas
+fetch-schemas: ## Fetch OpenAPI schemas from Unleash v5, v6, and v7 using Docker.
+	@echo "=== Fetching Unleash OpenAPI schemas ==="
+	@./hack/fetch-unleash-schemas.sh
+	@echo ""
+	@echo "✅ Schemas saved to hack/schemas/"
+	@echo "   Run 'make test-schemas' to validate types against these schemas"
+
 .PHONY: build
 build: manifests generate proto ## Build manager binary.
 	go build -o bin/manager cmd/main.go
