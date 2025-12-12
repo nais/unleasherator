@@ -531,7 +531,11 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 	})
 
 	Context("When creating API tokens with tokenName field", func() {
-		It("Should include tokenName in API request and match username", func() {
+		It("Should include tokenName in API request and match username for v7+", func() {
+			By("By overriding health endpoint to return v7 version")
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, `{"versionOSS": "v7.0.0"}`))
+
 			By("By setting up httpmock to capture request body")
 			var capturedRequest *unleashclient.ApiTokenRequest
 

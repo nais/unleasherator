@@ -20,17 +20,54 @@ func TestApiToken_ApiTokenRequest(t *testing.T) {
 
 	suffix := "suffix"
 	tokenName := apiToken.ApiTokenName(suffix)
-	expectedRequest := unleashclient.ApiTokenRequest{
-		Username:    tokenName,
-		TokenName:   tokenName,
-		Type:        apiToken.Spec.Type,
-		Environment: apiToken.Spec.Environment,
-		Projects:    apiToken.Spec.Projects,
-	}
 
-	actualRequest := apiToken.ApiTokenRequest(suffix)
+	t.Run("v7+ includes TokenName", func(t *testing.T) {
+		expectedRequest := unleashclient.ApiTokenRequest{
+			Username:    tokenName,
+			TokenName:   tokenName, // Should be set for v7+
+			Type:        apiToken.Spec.Type,
+			Environment: apiToken.Spec.Environment,
+			Projects:    apiToken.Spec.Projects,
+		}
 
-	assert.Equal(t, expectedRequest, actualRequest)
+		actualRequest := apiToken.ApiTokenRequest(suffix, "7.0.0")
+		assert.Equal(t, expectedRequest, actualRequest)
+
+		actualRequest = apiToken.ApiTokenRequest(suffix, "v7.1.0")
+		assert.Equal(t, expectedRequest, actualRequest)
+	})
+
+	t.Run("v5/v6 omits TokenName", func(t *testing.T) {
+		expectedRequest := unleashclient.ApiTokenRequest{
+			Username:    tokenName,
+			TokenName:   "", // Should be empty for v5/v6
+			Type:        apiToken.Spec.Type,
+			Environment: apiToken.Spec.Environment,
+			Projects:    apiToken.Spec.Projects,
+		}
+
+		actualRequest := apiToken.ApiTokenRequest(suffix, "5.6.0")
+		assert.Equal(t, expectedRequest, actualRequest)
+
+		actualRequest = apiToken.ApiTokenRequest(suffix, "6.0.0")
+		assert.Equal(t, expectedRequest, actualRequest)
+	})
+
+	t.Run("empty version omits TokenName", func(t *testing.T) {
+		expectedRequest := unleashclient.ApiTokenRequest{
+			Username:    tokenName,
+			TokenName:   "", // Should be empty for unknown version
+			Type:        apiToken.Spec.Type,
+			Environment: apiToken.Spec.Environment,
+			Projects:    apiToken.Spec.Projects,
+		}
+
+		actualRequest := apiToken.ApiTokenRequest(suffix, "")
+		assert.Equal(t, expectedRequest, actualRequest)
+
+		actualRequest = apiToken.ApiTokenRequest(suffix, "unknown")
+		assert.Equal(t, expectedRequest, actualRequest)
+	})
 }
 
 func TestApiToken_ApiTokenName(t *testing.T) {

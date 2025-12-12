@@ -310,7 +310,17 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		span.AddEvent("Creating token in Unleash")
 		log.Info("Creating token in Unleash for ApiToken")
 		apiTokenCreatedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
-		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
+
+		// Get version from Unleash instance for v7 compatibility
+		var version string
+		switch instance := unleash.(type) {
+		case *unleashv1.Unleash:
+			version = instance.Status.Version
+		case *unleashv1.RemoteUnleash:
+			version = instance.Status.Version
+		}
+
+		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix, version))
 		if err != nil {
 			reason := "TokenCreationFailed"
 			message := "Failed to create token in Unleash"
