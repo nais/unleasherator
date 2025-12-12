@@ -123,6 +123,17 @@ test-e2e-setup: docker-build ## Set up e2e test environment (build image, instal
 	@echo "=== Verifying cluster connectivity ==="
 	@kubectl cluster-info || (echo "❌ No cluster available. Start colima or another k8s cluster." && exit 1)
 	@echo ""
+	@echo "=== Loading Docker image into cluster ==="
+	@if command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then \
+		echo "Colima detected, tagging image for local use..."; \
+		docker tag ${IMG} ${IMG}-local || true; \
+	elif command -v kind >/dev/null 2>&1; then \
+		echo "Kind detected, loading image..."; \
+		kind load docker-image ${IMG} || true; \
+	else \
+		echo "Using Docker directly"; \
+	fi
+	@echo ""
 	@echo "=== Installing CRDs ==="
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 	helm repo update
@@ -165,13 +176,6 @@ test-e2e-clean: ## Clean up e2e test resources (use after test-e2e-debug).
 	@echo "Cleaning cluster-scoped test resources..."
 	kubectl delete clusterrole -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
 	kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
-	@echo ""
-	@echo "Resetting imagePullPolicy in values.yaml..."
-	@if [ "$$(uname)" = "Darwin" ]; then \
-		sed -i '' 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
-	else \
-		sed -i 's/imagePullPolicy: Never/imagePullPolicy: Always/g' ./charts/unleasherator/values.yaml; \
-	fi
 	@echo ""
 	@echo "✅ Cleanup complete"
 

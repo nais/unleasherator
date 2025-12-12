@@ -52,7 +52,7 @@ controllerManager:
     image:
       repository: ghcr.io/nais/unleasherator
       tag: main
-    imagePullPolicy: Always
+    imagePullPolicy: Never
     resources:
       limits:
         memory: 512Mi

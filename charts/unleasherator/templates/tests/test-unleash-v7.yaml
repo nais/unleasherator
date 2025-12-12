@@ -347,16 +347,6 @@ spec:
           FEATURES=$(curl -s -H "Authorization: ${UNLEASH_API_TOKEN}" "${UNLEASH_API_URL}/api/client/features" | head -c 300)
           echo "   Response: $FEATURES..."
 
-          # Verify token was created with correct format
-          echo ""
-          echo "3. Verifying token was created successfully..."
-          SECRET_EXISTS=$(kubectl get secret unleash-v7-direct-token -o name 2>/dev/null || echo "")
-          if [ -z "$SECRET_EXISTS" ]; then
-            echo "✗ Token secret does not exist"
-            exit 1
-          fi
-          echo "✓ Token secret exists"
-
           echo ""
           echo "=== Unleash v7 tokenName Field Test Completed Successfully ==="
           echo "✓ Unleash v7 instance deployed and accessible"

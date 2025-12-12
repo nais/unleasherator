@@ -2,6 +2,11 @@
 controllerManagerGcp:
   serviceAccountCredentialsJson: "{}"
 
+# Use locally built image for e2e tests
+controller:
+  manager:
+    imagePullPolicy: Never
+
 # Test configuration - faster timeouts for local/CI testing
 # For slower CI systems, override these with higher values
 test:
