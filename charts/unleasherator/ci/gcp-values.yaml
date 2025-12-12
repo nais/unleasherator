@@ -3,7 +3,7 @@ controllerManagerGcp:
   serviceAccountCredentialsJson: "{}"
 
 # Use locally built image for e2e tests
-controller:
+controllerManager:
   manager:
     imagePullPolicy: Never
 

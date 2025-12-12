@@ -124,9 +124,11 @@ func (t *ApiToken) ApiTokenRequest(suffix string, version string) unleashclient.
 		Projects:    t.Spec.Projects,
 	}
 
-	// Use TokenName for v7+, Username for v6 and below
+	// For v7+, set both TokenName and Username to the same value
+	// For v6 and below, only set Username (TokenName will be omitted due to omitempty tag)
 	if isV7OrHigher(version) {
 		req.TokenName = name
+		req.Username = name
 	} else {
 		req.Username = name
 	}

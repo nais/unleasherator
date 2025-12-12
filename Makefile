@@ -110,7 +110,7 @@ test-e2e: test-e2e-setup ## Run end-to-end tests using ct install (same as CI).
 		--helm-extra-args '--timeout 400s'
 
 .PHONY: test-e2e-debug
-test-e2e-debug: test-e2e-setup ## Run e2e tests but keep resources for debugging (--skip-clean-up).
+test-e2e-debug: test-e2e-setup ## Run e2e tests but keep resources for debugging.
 	ct install \
 		--charts ./charts/unleasherator \
 		--namespace $(E2E_NAMESPACE) \
@@ -119,82 +119,85 @@ test-e2e-debug: test-e2e-setup ## Run e2e tests but keep resources for debugging
 		--debug
 
 .PHONY: test-e2e-setup
-test-e2e-setup: docker-build ## Set up e2e test environment (build image, install CRDs).
-	@echo "=== Verifying cluster connectivity ==="
-	@kubectl cluster-info || (echo "❌ No cluster available. Start colima or another k8s cluster." && exit 1)
-	@echo ""
-	@echo "=== Loading Docker image into cluster ==="
-	@if command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then \
-		echo "Colima detected, tagging image for local use..."; \
-		docker tag ${IMG} ${IMG}-local || true; \
-	elif command -v kind >/dev/null 2>&1; then \
-		echo "Kind detected, loading image..."; \
-		kind load docker-image ${IMG} || true; \
-	else \
-		echo "Using Docker directly"; \
-	fi
-	@echo ""
-	@echo "=== Installing CRDs ==="
-	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
-	helm repo update
-	helm upgrade --install prometheus-operator-crds prometheus-community/prometheus-operator-crds --wait
-	helm upgrade --install unleasherator-crds ./charts/unleasherator-crds --wait
-	@echo ""
+test-e2e-setup: test-e2e-build test-e2e-install-crds ## Set up e2e test environment (build image, install CRDs, create namespace).
 	@echo "=== Creating test namespace ==="
-	kubectl create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	@kubectl create namespace $(E2E_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@echo ""
 	@echo "✅ E2E setup complete"
 
-.PHONY: test-e2e-clean
-test-e2e-clean: ## Clean up e2e test resources (use after test-e2e-debug).
-	@echo "=== Cleaning up e2e test resources in $(E2E_NAMESPACE) ==="
+.PHONY: test-e2e-build
+test-e2e-build: ## Build and load Docker image for e2e tests.
+	@echo "=== Verifying cluster connectivity ==="
+	@kubectl cluster-info || (echo "❌ No cluster available. Start colima or another k8s cluster." && exit 1)
 	@echo ""
-	@echo "Removing finalizers from custom resources..."
-	@for crd in unleash apitoken releasechannel remoteunleash; do \
-		for res in $$(kubectl get $$crd -n $(E2E_NAMESPACE) -o name 2>/dev/null); do \
-			echo "  Removing finalizers from $$res"; \
-			kubectl patch $$res -n $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
-		done; \
-	done
+	@echo "=== Building Docker image (no cache) ==="
+	@docker build --no-cache --pull \
+		--build-arg TARGETOS=linux \
+		--build-arg TARGETARCH=$$(uname -m | sed 's/x86_64/amd64/') \
+		-t ${IMG} .
 	@echo ""
-	@echo "Deleting custom resources..."
-	@kubectl delete unleash,apitoken,releasechannel,remoteunleash -n $(E2E_NAMESPACE) --all --timeout=10s --ignore-not-found=true 2>/dev/null || true
-	@echo ""
-	@echo "Uninstalling Helm release..."
-	helm uninstall unleasherator -n $(E2E_NAMESPACE) --ignore-not-found 2>/dev/null || true
-	@echo ""
-	@echo "Deleting namespace..."
-	kubectl delete ns $(E2E_NAMESPACE) --timeout=60s --ignore-not-found=true 2>/dev/null || true
-	@echo ""
-	@echo "Force-removing namespace if stuck..."
-	@if kubectl get ns $(E2E_NAMESPACE) 2>/dev/null; then \
-		echo "  Namespace still exists, removing finalizers..."; \
-		kubectl patch ns $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
-		kubectl delete ns $(E2E_NAMESPACE) --ignore-not-found=true 2>/dev/null || true; \
+	@echo "=== Loading Docker image into cluster ==="
+	@if command -v colima >/dev/null 2>&1 && colima status >/dev/null 2>&1; then \
+		echo "Colima: removing existing images and reloading..."; \
+		colima ssh sudo crictl rmi ${IMG} 2>/dev/null || true; \
+	elif command -v kind >/dev/null 2>&1; then \
+		echo "Kind: loading image..."; \
+		kind load docker-image ${IMG} || true; \
+	else \
+		echo "Using local Docker daemon"; \
 	fi
-	@echo ""
-	@echo "Cleaning cluster-scoped test resources..."
-	kubectl delete clusterrole -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
-	kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true
-	@echo ""
+
+.PHONY: test-e2e-install-crds
+test-e2e-install-crds: ## Install required CRDs (prometheus-operator, unleasherator).
+	@echo "=== Installing CRDs ==="
+	@helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update >/dev/null 2>&1
+	@helm repo update >/dev/null 2>&1
+	@if ! kubectl get crd alertmanagerconfigs.monitoring.coreos.com >/dev/null 2>&1; then \
+		echo "Installing prometheus-operator-crds..."; \
+		helm upgrade --install prometheus-operator-crds prometheus-community/prometheus-operator-crds --wait; \
+	else \
+		echo "✓ Prometheus operator CRDs already installed"; \
+	fi
+	@if ! kubectl get crd apitokens.unleash.nais.io >/dev/null 2>&1; then \
+		echo "Installing unleasherator-crds..."; \
+		helm upgrade --install unleasherator-crds ./charts/unleasherator-crds --wait; \
+	else \
+		echo "✓ Unleasherator CRDs already installed"; \
+	fi
+
+.PHONY: test-e2e-clean
+test-e2e-clean: ## Clean up e2e test resources.
+	@echo "=== Cleaning up $(E2E_NAMESPACE) ==="
+	@echo "Removing finalizers..."
+	@for crd in unleash apitoken releasechannel remoteunleash; do \
+		kubectl get $$crd -n $(E2E_NAMESPACE) -o name 2>/dev/null | xargs -r -I {} kubectl patch {} -n $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
+	done
+	@echo "Deleting resources..."
+	@kubectl delete unleash,apitoken,releasechannel,remoteunleash -n $(E2E_NAMESPACE) --all --timeout=10s --ignore-not-found >/dev/null 2>&1 || true
+	@helm uninstall unleasherator -n $(E2E_NAMESPACE) --ignore-not-found >/dev/null 2>&1 || true
+	@kubectl delete ns $(E2E_NAMESPACE) --timeout=30s --ignore-not-found >/dev/null 2>&1 || true
+	@kubectl patch ns $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' >/dev/null 2>&1 || true
+	@kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/part-of=unleasherator --ignore-not-found >/dev/null 2>&1 || true
 	@echo "✅ Cleanup complete"
 
 .PHONY: test-e2e-status
-test-e2e-status: ## Check current status of e2e test resources.
-	@echo "=== Namespace: $(E2E_NAMESPACE) ==="
-	@kubectl get ns $(E2E_NAMESPACE) 2>/dev/null || echo "Namespace not found"
+test-e2e-status: ## Show status of e2e test resources.
+	@echo "=== E2E Test Status ==="
 	@echo ""
-	@echo "=== Pods ==="
-	@kubectl get pods -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo "Namespace:"
+	@kubectl get ns $(E2E_NAMESPACE) 2>/dev/null || echo "  Not found"
 	@echo ""
-	@echo "=== Unleash ==="
-	@kubectl get unleash -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo "Pods:"
+	@kubectl get pods -n $(E2E_NAMESPACE) 2>/dev/null || echo "  None"
 	@echo ""
-	@echo "=== ReleaseChannel ==="
-	@kubectl get releasechannel -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo "Unleash:"
+	@kubectl get unleash -n $(E2E_NAMESPACE) 2>/dev/null || echo "  None"
 	@echo ""
-	@echo "=== ApiToken ==="
-	@kubectl get apitoken -n $(E2E_NAMESPACE) 2>/dev/null || true
+	@echo "ReleaseChannel:"
+	@kubectl get releasechannel -n $(E2E_NAMESPACE) 2>/dev/null || echo "  None"
+	@echo ""
+	@echo "ApiToken:"
+	@kubectl get apitoken -n $(E2E_NAMESPACE) 2>/dev/null || echo "  None"
 
 # If you wish built the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64 ). However, you must enable docker buildKit for it.
