@@ -53,6 +53,7 @@ You'll find the documentation for various Unleash resources in the [docs](./docs
 * [RemoteUnleash](./docs/remoteunleash.md)
 * [ReleaseChannel](./docs/releasechannel.md)
 * [Federation](./docs/federation.md)
+* [Schema Validation](./docs/schema-validation.md)
 
 ### Creating an Unleash instance
 

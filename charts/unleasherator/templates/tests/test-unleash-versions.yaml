@@ -1,11 +1,41 @@
+{{/*
+Define Unleash version configurations for e2e testing
+This template generates test resources for multiple Unleash versions
+*/}}
+{{- $unleashVersions := dict
+  "v5" (dict
+    "image" "unleashorg/unleash-server:5"
+    "description" "Basic v5 API compatibility and legacy token creation without tokenName"
+  )
+  "v6" (dict
+    "image" "unleashorg/unleash-server:6"
+    "description" "v6 API with backward compatibility, ignoring tokenName field"
+  )
+  "v7" (dict
+    "image" "unleashorg/unleash-server:7"
+    "description" "v7 API with named token support and full tokenName functionality"
+  )
+}}
+
+{{/* Test configuration defaults */}}
+{{- $testConfig := dict
+  "jobDeadlineSeconds" ((.Values.test).jobDeadlineSeconds | default 420)
+  "waitIterations" ((.Values.test).waitIterations | default 60)
+  "intervalSeconds" ((.Values.test).intervalSeconds | default 5)
+  "connectionRetries" ((.Values.test).connectionRetries | default 20)
+  "connectionIntervalSeconds" ((.Values.test).connectionIntervalSeconds | default 3)
+}}
+
+{{/* Generate test resources for each Unleash version */}}
+{{- range $version, $config := $unleashVersions }}
 ---
-# ServiceAccount for the v6 test job
+# ServiceAccount for the {{ $version }} test job
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: unleash-v6-test-sa
+  name: unleash-{{ $version }}-test-sa
   labels:
-    app.kubernetes.io/name: unleash-v6-test
+    app.kubernetes.io/name: unleash-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -16,9 +46,9 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: unleash-v6-test-role
+  name: unleash-{{ $version }}-test-role
   labels:
-    app.kubernetes.io/name: unleash-v6-test
+    app.kubernetes.io/name: unleash-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -39,9 +69,9 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: unleash-v6-test-binding
+  name: unleash-{{ $version }}-test-binding
   labels:
-    app.kubernetes.io/name: unleash-v6-test
+    app.kubernetes.io/name: unleash-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -50,19 +80,19 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: unleash-v6-test-role
+  name: unleash-{{ $version }}-test-role
 subjects:
 - kind: ServiceAccount
-  name: unleash-v6-test-sa
-  namespace: {{ .Release.Namespace }}
+  name: unleash-{{ $version }}-test-sa
+  namespace: {{ $.Release.Namespace }}
 ---
-# PostgreSQL database for the v6 test
+# PostgreSQL database for the {{ $version }} test
 apiVersion: v1
 kind: Secret
 metadata:
-  name: postgres-v6-test
+  name: postgres-{{ $version }}-test
   labels:
-    app.kubernetes.io/name: postgresql-v6-test
+    app.kubernetes.io/name: postgresql-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -75,9 +105,9 @@ data:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: postgres-v6-init-scripts
+  name: postgres-{{ $version }}-init-scripts
   labels:
-    app.kubernetes.io/name: postgresql-v6-test
+    app.kubernetes.io/name: postgresql-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -98,9 +128,9 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: postgres-v6-test
+  name: postgres-{{ $version }}-test
   labels:
-    app.kubernetes.io/name: postgresql-v6-test
+    app.kubernetes.io/name: postgresql-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -110,11 +140,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: postgresql-v6-test
+      app.kubernetes.io/name: postgresql-{{ $version }}-test
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: postgresql-v6-test
+        app.kubernetes.io/name: postgresql-{{ $version }}-test
     spec:
       containers:
       - name: postgresql
@@ -129,7 +159,7 @@ spec:
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: postgres-v6-test
+              name: postgres-{{ $version }}-test
               key: postgres-password
         volumeMounts:
         - name: postgres-data
@@ -141,14 +171,14 @@ spec:
         emptyDir: {}
       - name: init-scripts
         configMap:
-          name: postgres-v6-init-scripts
+          name: postgres-{{ $version }}-init-scripts
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-v6-test
+  name: postgres-{{ $version }}-test
   labels:
-    app.kubernetes.io/name: postgresql-v6-test
+    app.kubernetes.io/name: postgresql-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -159,28 +189,28 @@ spec:
   - port: 5432
     targetPort: 5432
   selector:
-    app.kubernetes.io/name: postgresql-v6-test
+    app.kubernetes.io/name: postgresql-{{ $version }}-test
 ---
-# Direct Unleash v6 instance (not using ReleaseChannel)
+# Direct Unleash {{ $version }} instance (not using ReleaseChannel)
 apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
-  name: unleash-v6-direct
+  name: unleash-{{ $version }}-direct
   labels:
-    app.kubernetes.io/name: unleash-v6-direct
+    app.kubernetes.io/name: unleash-{{ $version }}-direct
     app.kubernetes.io/part-of: unleasherator
-    test-type: "direct-v6"
+    test-type: "direct-{{ $version }}"
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   size: 1
-  customImage: "unleashorg/unleash-server:6"
+  customImage: "{{ $config.image }}"
   database:
-    secretName: postgres-v6-test
+    secretName: postgres-{{ $version }}-test
     secretPassKey: postgres-password
-    host: postgres-v6-test
+    host: postgres-{{ $version }}-test
     databaseName: unleash_direct
     port: "5432"
     user: postgres
@@ -197,25 +227,25 @@ spec:
       - to:
           - podSelector:
               matchLabels:
-                app.kubernetes.io/name: postgresql-v6-test
+                app.kubernetes.io/name: postgresql-{{ $version }}-test
         ports:
           - protocol: TCP
             port: 5432
 ---
-# ReleaseChannel with Unleash v6 for comparison
+# ReleaseChannel with Unleash {{ $version }} for comparison
 apiVersion: unleash.nais.io/v1
 kind: ReleaseChannel
 metadata:
-  name: release-channel-v6-test
+  name: release-channel-{{ $version }}-test
   labels:
-    app.kubernetes.io/name: release-channel-v6-test
+    app.kubernetes.io/name: release-channel-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  image: "unleashorg/unleash-server:6"
+  image: "{{ $config.image }}"
   strategy:
     maxParallel: 1
     batchInterval: "30s"
@@ -228,15 +258,15 @@ spec:
     enabled: false
     onFailure: true
 ---
-# Unleash instance managed by ReleaseChannel v6
+# Unleash instance managed by ReleaseChannel {{ $version }}
 apiVersion: unleash.nais.io/v1
 kind: Unleash
 metadata:
-  name: unleash-v6-channel
+  name: unleash-{{ $version }}-channel
   labels:
-    app.kubernetes.io/name: unleash-v6-channel
+    app.kubernetes.io/name: unleash-{{ $version }}-channel
     app.kubernetes.io/part-of: unleasherator
-    test-type: "channel-v6"
+    test-type: "channel-{{ $version }}"
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-weight": "-5"
@@ -244,15 +274,15 @@ metadata:
 spec:
   size: 1
   database:
-    secretName: postgres-v6-test
+    secretName: postgres-{{ $version }}-test
     secretPassKey: postgres-password
-    host: postgres-v6-test
+    host: postgres-{{ $version }}-test
     databaseName: unleash_channel
     port: "5432"
     user: postgres
     ssl: "false"
   releaseChannel:
-    name: release-channel-v6-test
+    name: release-channel-{{ $version }}-test
   extraEnvVars:
     - name: ENABLE_OAS
       value: "true"
@@ -265,18 +295,18 @@ spec:
       - to:
           - podSelector:
               matchLabels:
-                app.kubernetes.io/name: postgresql-v6-test
+                app.kubernetes.io/name: postgresql-{{ $version }}-test
         ports:
           - protocol: TCP
             port: 5432
 ---
-# API Token for the direct v6 instance
+# API Token for the direct {{ $version }} instance
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:
-  name: unleash-v6-direct-token
+  name: unleash-{{ $version }}-direct-token
   labels:
-    app.kubernetes.io/name: unleash-v6-direct
+    app.kubernetes.io/name: unleash-{{ $version }}-direct
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -286,20 +316,21 @@ spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
     kind: Unleash
-    name: unleash-v6-direct
-  secretName: unleash-v6-direct-token
+    name: unleash-{{ $version }}-direct
+  secretName: unleash-{{ $version }}-direct-token
   type: CLIENT
   environment: development
   projects:
     - default
+
 ---
-# API Token for the channel-managed v6 instance
+# API Token for the channel-managed {{ $version }} instance
 apiVersion: unleash.nais.io/v1
 kind: ApiToken
 metadata:
-  name: unleash-v6-channel-token
+  name: unleash-{{ $version }}-channel-token
   labels:
-    app.kubernetes.io/name: unleash-v6-channel
+    app.kubernetes.io/name: unleash-{{ $version }}-channel
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -309,20 +340,21 @@ spec:
   unleashInstance:
     apiVersion: unleash.nais.io/v1
     kind: Unleash
-    name: unleash-v6-channel
-  secretName: unleash-v6-channel-token
+    name: unleash-{{ $version }}-channel
+  secretName: unleash-{{ $version }}-channel-token
   type: CLIENT
   environment: development
   projects:
     - default
+
 ---
-# Test job to verify Unleash v6 functionality
+# Test job to verify Unleash {{ $version }} functionality
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: unleash-v6-test-probe
+  name: unleash-{{ $version }}-test-probe
   labels:
-    app.kubernetes.io/name: unleash-v6-test
+    app.kubernetes.io/name: unleash-{{ $version }}-test
     app.kubernetes.io/part-of: unleasherator
   annotations:
     "helm.sh/hook": test
@@ -330,14 +362,14 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: 3
-  activeDeadlineSeconds: {{ ((.Values.test).jobDeadlineSeconds) | default 420 }}
+  activeDeadlineSeconds: {{ $testConfig.jobDeadlineSeconds }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: unleash-v6-test
+        app.kubernetes.io/name: unleash-{{ $version }}-test
         app.kubernetes.io/part-of: unleasherator
     spec:
-      serviceAccountName: unleash-v6-test-sa
+      serviceAccountName: unleash-{{ $version }}-test-sa
       initContainers:
       - name: wait-for-postgres
         image: bitnami/kubectl:latest
@@ -346,10 +378,10 @@ spec:
         - -c
         - |
           echo "Waiting for PostgreSQL to be ready..."
-          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
-          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
+          MAX_ATTEMPTS={{ $testConfig.waitIterations }}
+          INTERVAL={{ $testConfig.intervalSeconds }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            PG_READY=$(kubectl get deployment postgres-v6-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+            PG_READY=$(kubectl get deployment postgres-{{ $version }}-test -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
             if [ "$PG_READY" = "1" ]; then
               echo "✓ PostgreSQL is ready"
               exit 0
@@ -365,20 +397,20 @@ spec:
         - sh
         - -c
         - |
-          echo "Waiting for direct Unleash v6 instance to be ready..."
-          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
-          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
+          echo "Waiting for direct Unleash {{ $version }} instance to be ready..."
+          MAX_ATTEMPTS={{ $testConfig.waitIterations }}
+          INTERVAL={{ $testConfig.intervalSeconds }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            CONNECTED=$(kubectl get unleash unleash-v6-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+            CONNECTED=$(kubectl get unleash unleash-{{ $version }}-direct -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
             if [ "$CONNECTED" = "true" ]; then
-              echo "✓ Direct Unleash v6 instance is connected!"
+              echo "✓ Direct Unleash {{ $version }} instance is connected!"
               exit 0
             fi
             echo "  Attempt $i/$MAX_ATTEMPTS: Unleash connected=$CONNECTED, waiting..."
             sleep $INTERVAL
           done
-          echo "✗ Direct Unleash v6 instance did not become ready within timeout"
-          kubectl get unleash unleash-v6-direct -o yaml || true
+          echo "✗ Direct Unleash {{ $version }} instance did not become ready within timeout"
+          kubectl get unleash unleash-{{ $version }}-direct -o yaml || true
           exit 1
       - name: wait-for-unleash-channel
         image: bitnami/kubectl:latest
@@ -386,20 +418,20 @@ spec:
         - sh
         - -c
         - |
-          echo "Waiting for channel-managed Unleash v6 instance to be ready..."
-          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
-          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
+          echo "Waiting for channel-managed Unleash {{ $version }} instance to be ready..."
+          MAX_ATTEMPTS={{ $testConfig.waitIterations }}
+          INTERVAL={{ $testConfig.intervalSeconds }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            CONNECTED=$(kubectl get unleash unleash-v6-channel -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
+            CONNECTED=$(kubectl get unleash unleash-{{ $version }}-channel -o jsonpath='{.status.connected}' 2>/dev/null || echo "false")
             if [ "$CONNECTED" = "true" ]; then
-              echo "✓ Channel-managed Unleash v6 instance is connected!"
+              echo "✓ Channel-managed Unleash {{ $version }} instance is connected!"
               exit 0
             fi
             echo "  Attempt $i/$MAX_ATTEMPTS: Unleash connected=$CONNECTED, waiting..."
             sleep $INTERVAL
           done
-          echo "✗ Channel-managed Unleash v6 instance did not become ready within timeout"
-          kubectl get unleash unleash-v6-channel -o yaml || true
+          echo "✗ Channel-managed Unleash {{ $version }} instance did not become ready within timeout"
+          kubectl get unleash unleash-{{ $version }}-channel -o yaml || true
           exit 1
       - name: wait-for-apitoken-secrets
         image: bitnami/kubectl:latest
@@ -408,9 +440,9 @@ spec:
         - -c
         - |
           echo "Waiting for ApiToken secrets to be created..."
-          MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
-          INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
-          for secret in unleash-v6-direct-token unleash-v6-channel-token; do
+          MAX_ATTEMPTS={{ $testConfig.waitIterations }}
+          INTERVAL={{ $testConfig.intervalSeconds }}
+          for secret in unleash-{{ $version }}-direct-token unleash-{{ $version }}-channel-token; do
             echo "Checking $secret..."
             for i in $(seq 1 $MAX_ATTEMPTS); do
               SECRET_EXISTS=$(kubectl get secret $secret -o name 2>/dev/null || echo "")
@@ -429,20 +461,21 @@ spec:
           done
           echo "✓ All ApiToken secrets are ready"
       containers:
-      - name: unleash-v6-connection-test
+      - name: unleash-{{ $version }}-connection-test
         image: curlimages/curl:latest
         command:
         - sh
         - -c
         - |
           set -e
-          echo "=== Unleash v6 E2E Connection Test ==="
-          MAX_ATTEMPTS={{ ((.Values.test).connectionRetries) | default 20 }}
-          INTERVAL={{ ((.Values.test).connectionIntervalSeconds) | default 3 }}
+          echo "=== Unleash {{ $version }} E2E Connection Test ==="
+          echo "=== {{ $config.description }} ==="
+          MAX_ATTEMPTS={{ $testConfig.connectionRetries }}
+          INTERVAL={{ $testConfig.connectionIntervalSeconds }}
 
-          # Test direct v6 instance API connectivity
+          # Test direct {{ $version }} instance API connectivity
           echo ""
-          echo "1. Testing direct Unleash v6 instance API connectivity..."
+          echo "1. Testing direct Unleash {{ $version }} instance API connectivity..."
           echo "   URL: ${UNLEASH_DIRECT_API_URL}"
           for i in $(seq 1 $MAX_ATTEMPTS); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_DIRECT_API_TOKEN}" "${UNLEASH_DIRECT_API_URL}/api/client/features" 2>/dev/null || echo "000")
@@ -458,9 +491,9 @@ spec:
             sleep $INTERVAL
           done
 
-          # Test channel-managed v6 instance API connectivity
+          # Test channel-managed {{ $version }} instance API connectivity
           echo ""
-          echo "2. Testing ReleaseChannel-managed Unleash v6 instance API connectivity..."
+          echo "2. Testing ReleaseChannel-managed Unleash {{ $version }} instance API connectivity..."
           echo "   URL: ${UNLEASH_CHANNEL_API_URL}"
           for i in $(seq 1 $MAX_ATTEMPTS); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: ${UNLEASH_CHANNEL_API_TOKEN}" "${UNLEASH_CHANNEL_API_URL}/api/client/features" 2>/dev/null || echo "000")
@@ -485,29 +518,31 @@ spec:
           echo "   Channel instance response: $CHANNEL_FEATURES..."
 
           echo ""
-          echo "=== Unleash v6 E2E Test Completed Successfully ==="
-          echo "✓ Direct v6 instance API accessible with token"
-          echo "✓ ReleaseChannel-managed v6 instance API accessible with token"
+          echo "=== Unleash {{ $version }} E2E Test Completed Successfully ==="
+          echo "✓ Direct {{ $version }} instance API accessible with token"
+          echo "✓ ReleaseChannel-managed {{ $version }} instance API accessible with token"
           echo "✓ Both instances healthy and responding"
+          echo "✓ {{ $version }} token verified"
         env:
         - name: UNLEASH_DIRECT_API_TOKEN
           valueFrom:
             secretKeyRef:
-              name: unleash-v6-direct-token
+              name: unleash-{{ $version }}-direct-token
               key: UNLEASH_SERVER_API_TOKEN
         - name: UNLEASH_DIRECT_API_URL
           valueFrom:
             secretKeyRef:
-              name: unleash-v6-direct-token
+              name: unleash-{{ $version }}-direct-token
               key: UNLEASH_SERVER_API_URL
         - name: UNLEASH_CHANNEL_API_TOKEN
           valueFrom:
             secretKeyRef:
-              name: unleash-v6-channel-token
+              name: unleash-{{ $version }}-channel-token
               key: UNLEASH_SERVER_API_TOKEN
         - name: UNLEASH_CHANNEL_API_URL
           valueFrom:
             secretKeyRef:
-              name: unleash-v6-channel-token
+              name: unleash-{{ $version }}-channel-token
               key: UNLEASH_SERVER_API_URL
       restartPolicy: Never
+{{ end }}

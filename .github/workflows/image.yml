@@ -104,6 +104,8 @@ jobs:
         run: make vet
       - name: Test code
         run: make test
+      - name: Validate API types against Unleash schemas
+        run: make test-schemas
       - name: Build binary
         run: make build
       - name: Cache installed binaries

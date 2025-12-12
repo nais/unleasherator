@@ -116,13 +116,47 @@ func (t *ApiToken) NamespacedName() types.NamespacedName {
 	}
 }
 
-func (t *ApiToken) ApiTokenRequest(suffix string) unleashclient.ApiTokenRequest {
-	return unleashclient.ApiTokenRequest{
-		Username:    t.ApiTokenName(suffix),
+func (t *ApiToken) ApiTokenRequest(suffix string, version string) unleashclient.ApiTokenRequest {
+	name := t.ApiTokenName(suffix)
+	req := unleashclient.ApiTokenRequest{
 		Type:        t.Spec.Type,
 		Environment: t.Spec.Environment,
 		Projects:    t.Spec.Projects,
 	}
+
+	// For v7+, set both TokenName and Username to the same value
+	// For v6 and below, only set Username (TokenName will be omitted due to omitempty tag)
+	if isV7OrHigher(version) {
+		req.TokenName = name
+		req.Username = name
+	} else {
+		req.Username = name
+	}
+
+	return req
+}
+
+// isV7OrHigher checks if the Unleash version is v7 or higher
+func isV7OrHigher(version string) bool {
+	// If version is empty or unknown, assume older version for safety
+	if version == "" || version == "unknown" {
+		return false
+	}
+
+	// Extract major version (e.g., "7.0.1" -> "7", "v7" -> "7")
+	version = strings.TrimPrefix(version, "v")
+	parts := strings.Split(version, ".")
+	if len(parts) == 0 {
+		return false
+	}
+
+	major := parts[0]
+	// Check if major version is 7 or higher
+	if len(major) > 0 && major[0] >= '7' {
+		return true
+	}
+
+	return false
 }
 
 // IsEqual checks if the token equals another token by comparing the type,

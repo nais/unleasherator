@@ -310,9 +310,45 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		span.AddEvent("Creating token in Unleash")
 		log.Info("Creating token in Unleash for ApiToken")
 		apiTokenCreatedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
-		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix))
+
+		// Get version from Unleash instance for v7 compatibility
+		var version string
+		switch instance := unleash.(type) {
+		case *unleashv1.Unleash:
+			version = instance.Status.Version
+		case *unleashv1.RemoteUnleash:
+			version = instance.Status.Version
+		}
+
+		apiToken, err = apiClient.CreateAPIToken(ctx, token.ApiTokenRequest(r.ApiTokenNameSuffix, version))
 		if err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenCreationFailed", "Failed to create token in Unleash"); err != nil {
+			reason := "TokenCreationFailed"
+			message := "Failed to create token in Unleash"
+
+			// Check if it's a v7 compatibility issue and enhance error message
+			if apiErr, ok := err.(*unleashclient.UnleashAPIError); ok {
+				if apiErr.IsV7CompatibilityIssue() {
+					// Get version from Unleash instance status for context
+					var version string
+					switch instance := unleash.(type) {
+					case *unleashv1.Unleash:
+						version = instance.Status.Version
+					case *unleashv1.RemoteUnleash:
+						version = instance.Status.Version
+					}
+
+					reason = "TokenCreationV7Incompatible"
+					if version != "" {
+						message = fmt.Sprintf("Failed to create token: Unleash %s API compatibility issue. %s", version, apiErr.Message)
+					} else {
+						message = fmt.Sprintf("Failed to create token: Unleash v7+ API compatibility issue. %s", apiErr.Message)
+					}
+				} else {
+					message = fmt.Sprintf("Failed to create token in Unleash (HTTP %d): %s", apiErr.StatusCode, apiErr.Message)
+				}
+			}
+
+			if err := r.updateStatusFailed(ctx, token, err, reason, message); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, err
