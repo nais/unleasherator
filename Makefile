@@ -139,18 +139,28 @@ test-e2e-clean: ## Clean up e2e test resources (use after test-e2e-debug).
 	@echo "=== Cleaning up e2e test resources in $(E2E_NAMESPACE) ==="
 	@echo ""
 	@echo "Removing finalizers from custom resources..."
-	@for crd in unleash apitoken releasechannel; do \
+	@for crd in unleash apitoken releasechannel remoteunleash; do \
 		for res in $$(kubectl get $$crd -n $(E2E_NAMESPACE) -o name 2>/dev/null); do \
 			echo "  Removing finalizers from $$res"; \
 			kubectl patch $$res -n $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
 		done; \
 	done
 	@echo ""
+	@echo "Deleting custom resources..."
+	@kubectl delete unleash,apitoken,releasechannel,remoteunleash -n $(E2E_NAMESPACE) --all --timeout=10s --ignore-not-found=true 2>/dev/null || true
+	@echo ""
 	@echo "Uninstalling Helm release..."
 	helm uninstall unleasherator -n $(E2E_NAMESPACE) --ignore-not-found 2>/dev/null || true
 	@echo ""
 	@echo "Deleting namespace..."
-	kubectl delete ns $(E2E_NAMESPACE) --timeout=30s --ignore-not-found=true 2>/dev/null || true
+	kubectl delete ns $(E2E_NAMESPACE) --timeout=60s --ignore-not-found=true 2>/dev/null || true
+	@echo ""
+	@echo "Force-removing namespace if stuck..."
+	@if kubectl get ns $(E2E_NAMESPACE) 2>/dev/null; then \
+		echo "  Namespace still exists, removing finalizers..."; \
+		kubectl patch ns $(E2E_NAMESPACE) --type merge -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true; \
+		kubectl delete ns $(E2E_NAMESPACE) --ignore-not-found=true 2>/dev/null || true; \
+	fi
 	@echo ""
 	@echo "Cleaning cluster-scoped test resources..."
 	kubectl delete clusterrole -l app.kubernetes.io/part-of=unleasherator --ignore-not-found=true 2>/dev/null || true

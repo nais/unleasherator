@@ -93,8 +93,8 @@ type ApiTokenResult struct {
 
 type ApiTokenRequest struct {
 	Secret      string   `json:"secret,omitempty"`
-	Username    string   `json:"username"`
-	TokenName   string   `json:"tokenName,omitempty"` // v7+ only: omit for v5/v6 compatibility
+	Username    string   `json:"username,omitempty"`  // v5/v6: required. v7+: deprecated, use TokenName
+	TokenName   string   `json:"tokenName,omitempty"` // v7+: required. v5/v6: not supported
 	Type        string   `json:"type"`                // One of client, admin, frontend
 	Environment string   `json:"environment,omitempty"`
 	Project     string   `json:"project,omitempty"`

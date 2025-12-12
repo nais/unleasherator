@@ -119,15 +119,16 @@ func (t *ApiToken) NamespacedName() types.NamespacedName {
 func (t *ApiToken) ApiTokenRequest(suffix string, version string) unleashclient.ApiTokenRequest {
 	name := t.ApiTokenName(suffix)
 	req := unleashclient.ApiTokenRequest{
-		Username:    name,
 		Type:        t.Spec.Type,
 		Environment: t.Spec.Environment,
 		Projects:    t.Spec.Projects,
 	}
 
-	// Only include TokenName for Unleash v7+
+	// Use TokenName for v7+, Username for v6 and below
 	if isV7OrHigher(version) {
 		req.TokenName = name
+	} else {
+		req.Username = name
 	}
 
 	return req

@@ -294,36 +294,23 @@ spec:
         - sh
         - -c
         - |
-          echo "Waiting for ApiToken to be created (tests tokenName field)..."
+          echo "Waiting for ApiToken secret to be created (tests tokenName field)..."
           MAX_ATTEMPTS={{ ((.Values.test).waitIterations) | default 60 }}
           INTERVAL={{ ((.Values.test).intervalSeconds) | default 5 }}
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            TOKEN_CREATED=$(kubectl get apitoken unleash-v7-direct-token -o jsonpath='{.status.created}' 2>/dev/null || echo "false")
-            TOKEN_FAILED=$(kubectl get apitoken unleash-v7-direct-token -o jsonpath='{.status.failed}' 2>/dev/null || echo "false")
-
-            if [ "$TOKEN_CREATED" = "true" ]; then
-              echo "✓ ApiToken created successfully!"
+            SECRET_EXISTS=$(kubectl get secret unleash-v7-direct-token -o name 2>/dev/null || echo "")
+            if [ -n "$SECRET_EXISTS" ]; then
+              echo "✓ Secret unleash-v7-direct-token exists!"
               exit 0
             fi
-
-            if [ "$TOKEN_FAILED" = "true" ]; then
-              echo "✗ ApiToken creation failed!"
-              echo "Reason:"
-              kubectl get apitoken unleash-v7-direct-token -o jsonpath='{.status.conditions[?(@.type=="Failed")].reason}' || true
-              echo ""
-              echo "Message:"
-              kubectl get apitoken unleash-v7-direct-token -o jsonpath='{.status.conditions[?(@.type=="Failed")].message}' || true
-              echo ""
-              kubectl get apitoken unleash-v7-direct-token -o yaml || true
+            if [ $i -eq $MAX_ATTEMPTS ]; then
+              echo "✗ Secret unleash-v7-direct-token was not created within timeout"
+              kubectl get apitoken -o wide || true
               exit 1
             fi
-
-            echo "  Attempt $i/$MAX_ATTEMPTS: Token created=$TOKEN_CREATED, failed=$TOKEN_FAILED, waiting..."
+            echo "  Attempt $i/$MAX_ATTEMPTS: Secret not yet created, waiting..."
             sleep $INTERVAL
           done
-          echo "✗ ApiToken did not become ready within timeout"
-          kubectl get apitoken unleash-v7-direct-token -o yaml || true
-          exit 1
       containers:
       - name: unleash-v7-api-test
         image: curlimages/curl:latest

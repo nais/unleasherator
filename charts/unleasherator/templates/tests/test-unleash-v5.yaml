@@ -26,7 +26,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
 - apiGroups: ["unleash.nais.io"]
-  resources: ["unleashes", "apitokens"]
+  resources: ["unleashes", "releasechannels", "apitokens"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments"]
