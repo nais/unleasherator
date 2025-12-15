@@ -20,10 +20,10 @@ jobs:
         contains(github.event.pull_request.title, 'google.golang.org/protobuf') ||
         contains(github.event.pull_request.body, 'google.golang.org/protobuf')
       )
-    
+
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
         with:
           # Checkout the PR branch with full access to push changes back
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,7 +31,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # ratchet:actions/setup-go@v6
         with:
           go-version: "1.24"
 
@@ -55,14 +55,14 @@ jobs:
 
       - name: Commit and push changes
         if: steps.changes.outputs.changes == 'true'
-        run: |
+        run: |-
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           # Add only generated protobuf files and related generated code
           git add "*.pb.go" "zz_generated.deepcopy.go" || git add .
           git commit -m "Generate protobuf files after google.golang.org/protobuf update
-          
+
           This commit regenerates protobuf files using the updated google.golang.org/protobuf package.
-          
+
           Co-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>"
           git push
