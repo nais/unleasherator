@@ -67,8 +67,7 @@ jobs:
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # ratchet:actions/upload-artifact@v5
         with:
           name: chart-values
-          path: |
-            ./charts/${{ steps.name.outputs.name }}/values.yaml
+          path: ./charts/${{ steps.name.outputs.name }}/values.yaml
 
   lint-test:
     name: Lint and test Charts
@@ -173,7 +172,18 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # ratchet:actions/download-artifact@v6.0.0
         with:
           name: chart-values
-          path: ./charts
+          path: ./charts/${{ needs.meta.outputs.name }}
+
+      - name: Debug restored artifacts
+        run: |
+          echo "=== Chart.yaml ==="
+          cat ./charts/${{ needs.meta.outputs.name }}/Chart.yaml
+          echo ""
+          echo "=== values.yaml ==="
+          cat ./charts/${{ needs.meta.outputs.name }}/values.yaml
+          echo ""
+          echo "=== Checking image tag ==="
+          grep -A1 "repository:" ./charts/${{ needs.meta.outputs.name }}/values.yaml | grep tag
 
       - id: auth
         if: github.actor != 'dependabot[bot]'
