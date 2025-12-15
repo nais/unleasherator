@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -819,6 +820,172 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				// Still transitioning
 				return false
 			}, timeout*2, interval).Should(BeTrue(), "StartTime should be cleared after rollout completes")
+		})
+	})
+
+	Context("Orphan protection on deletion", func() {
+		It("Should block deletion when Unleash instances reference the ReleaseChannel", func() {
+			By("Creating a ReleaseChannel and an Unleash instance that references it")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("orphan-test-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "orphan-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("orphan-test-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for Unleash instance to exist in API server")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "Unleash should exist")
+
+			By("Waiting for finalizer to be added to ReleaseChannel")
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return false
+				}
+				for _, f := range releaseChannel.ObjectMeta.Finalizers {
+					if f == "releasechannel.unleash.nais.io/finalizer" {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "ReleaseChannel should have finalizer")
+
+			By("Attempting to delete the ReleaseChannel")
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying ReleaseChannel still exists due to finalizer blocking deletion")
+			Consistently(func() error {
+				return k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+			}, time.Second*3, interval).Should(Succeed(), "ReleaseChannel should still exist")
+
+			By("Verifying DeletionBlocked condition is set")
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return false
+				}
+				for _, cond := range releaseChannel.Status.Conditions {
+					if cond.Type == "DeletionBlocked" && cond.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "DeletionBlocked condition should be set")
+
+			By("Removing the reference from Unleash by clearing ReleaseChannel name")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
+					return err
+				}
+				unleash.Spec.ReleaseChannel.Name = ""
+				return k8sClient.Update(ctx, unleash)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying ReleaseChannel is now deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+				return apierrors.IsNotFound(err)
+			}, timeout*3, interval).Should(BeTrue(), "ReleaseChannel should be deleted after reference is removed")
+
+			By("Cleaning up the Unleash instance")
+			_ = k8sClient.Delete(ctx, unleash)
+		})
+
+		It("Should allow deletion when no instances reference the ReleaseChannel", func() {
+			By("Creating a ReleaseChannel with no referencing instances")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("orphan-free-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "orphan-free:v1",
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("Waiting for finalizer to be added")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				for _, f := range releaseChannel.ObjectMeta.Finalizers {
+					if f == "releasechannel.unleash.nais.io/finalizer" {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			By("Deleting the ReleaseChannel")
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying ReleaseChannel is deleted promptly")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+				return apierrors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue(), "ReleaseChannel should be deleted when no instances reference it")
+		})
+
+		It("Should block deletion even when instance has CustomImage set", func() {
+			By("Creating a ReleaseChannel and an Unleash with CustomImage that still references it")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("orphan-custom-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "orphan-custom:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("orphan-custom-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash.Spec.CustomImage = "custom-override:v1" // Still references ReleaseChannel but uses custom image
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for Unleash instance to exist in API server")
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{})
+			}, timeout, interval).Should(Succeed(), "Unleash should exist")
+
+			By("Waiting for finalizer to be added")
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return false
+				}
+				for _, f := range releaseChannel.ObjectMeta.Finalizers {
+					if f == "releasechannel.unleash.nais.io/finalizer" {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			By("Attempting to delete the ReleaseChannel")
+			Expect(k8sClient.Delete(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying ReleaseChannel still exists (reference still in spec even with CustomImage)")
+			Consistently(func() error {
+				return k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+			}, time.Second*3, interval).Should(Succeed(), "ReleaseChannel should still exist")
+
+			By("Cleaning up by deleting the Unleash instance")
+			Expect(k8sClient.Delete(ctx, unleash)).Should(Succeed())
+
+			By("Verifying ReleaseChannel is now deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+				return apierrors.IsNotFound(err)
+			}, timeout*3, interval).Should(BeTrue(), "ReleaseChannel should be deleted after Unleash is deleted")
 		})
 	})
 })
