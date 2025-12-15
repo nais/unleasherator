@@ -73,7 +73,7 @@ var (
 	releaseChannelStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_releasechannel_status",
-			Help: "Status of ReleaseChannel resources (1=active, 0=inactive)",
+			Help: "Status of ReleaseChannel resources (1=healthy, 0.5=in-progress, 0=failed)",
 		},
 		[]string{"namespace", "name"},
 	)
@@ -570,15 +570,15 @@ func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChann
 
 // recordMetrics updates the metrics for a ReleaseChannel
 func (r *ReleaseChannelReconciler) recordMetrics(releaseChannel *unleashv1.ReleaseChannel, labels []string) {
-	// Update status metrics (1=success, 0.5=in-progress, 0=failed)
+	// Update status metrics (1=healthy, 0.5=in-progress, 0=failed)
 	var status float64
 	switch releaseChannel.Status.Phase {
-	case unleashv1.ReleaseChannelPhaseCompleted:
-		status = 1 // Success
+	case unleashv1.ReleaseChannelPhaseCompleted, unleashv1.ReleaseChannelPhaseIdle:
+		status = 1 // Healthy (completed rollout or idle waiting for changes)
 	case unleashv1.ReleaseChannelPhaseFailed:
 		status = 0 // Failed
 	default:
-		status = 0.5 // In progress
+		status = 0.5 // In progress (validating, canary, rolling, etc.)
 	}
 	releaseChannelStatus.WithLabelValues(labels[0], labels[1]).Set(status)
 
