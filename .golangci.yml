@@ -1,27 +1,36 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
-
-linters-settings:
-  staticcheck:
-    checks: ["all", "-SA1019"]
-
-issues:
-  exclude-rules:
-    # Exclude SA1019 (deprecation warnings) for cloud.google.com/go/pubsub v1
-    # until we migrate to v2
-    - linters:
-        - staticcheck
-      text: '"cloud.google.com/go/pubsub" is deprecated'
-      source: '"cloud\.google\.com/go/pubsub"'
 
 linters:
   enable:
     - staticcheck
     - govet
     - errcheck
-    - gosimple
     - ineffassign
     - unused
-    - typecheck
-  disable: []
+
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -SA1019  # Ignore deprecation warnings (pubsub v1)
+        - -QF1008  # Ignore embedded field selector suggestions
+        - -ST1000  # Package comments
+        - -ST1003  # Naming conventions (Api vs API) - changing would break CRDs
+        - -ST1020  # Comment format on exported functions
+        - -ST1021  # Comment format on exported types
+
+  exclusions:
+    rules:
+      # Ignore unchecked Close in defer statements
+      - linters:
+          - errcheck
+        source: "defer .+\\.Close\\(\\)"
+      # Ignore os.Setenv in tests
+      - linters:
+          - errcheck
+        path: _test\.go
+        source: "os\\.Setenv"
