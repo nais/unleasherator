@@ -641,4 +641,184 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			))
 		})
 	})
+
+	Context("Rollback and timeout functionality", func() {
+		It("Should track StartTime when rollout begins", func() {
+			By("Creating a ReleaseChannel and Unleash instance")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("starttime-test-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "starttime-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("starttime-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Mocking deployment to be ready")
+			simulateDeploymentReady(unleash)
+
+			By("Waiting for initial setup")
+			waitForImageResolution(unleash, "starttime-test:v1")
+
+			By("Updating the ReleaseChannel image to trigger rollout")
+			Eventually(func() error {
+				err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)
+				if err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "starttime-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying StartTime is set when rollout begins")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.StartTime != nil
+			}, timeout, interval).Should(BeTrue(), "StartTime should be set when rollout begins")
+
+			By("Verifying StartTime is recent")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			Expect(time.Since(releaseChannel.Status.StartTime.Time)).Should(BeNumerically("<", 5*time.Minute))
+		})
+
+		It("Should configure auto-rollback via spec", func() {
+			By("Creating a ReleaseChannel with rollback enabled")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rollback-config-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "rollback-config-test:v1",
+					Rollback: unleashv1.RollbackConfig{
+						Enabled:   true,
+						OnFailure: true,
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying rollback configuration is persisted")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Spec.Rollback.Enabled && releaseChannel.Spec.Rollback.OnFailure
+			}, timeout, interval).Should(BeTrue())
+		})
+
+		It("Should configure custom maxUpgradeTime", func() {
+			By("Creating a ReleaseChannel with custom maxUpgradeTime")
+			customTimeout := metav1.Duration{Duration: 30 * time.Minute}
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("timeout-config-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "timeout-config-test:v1",
+					Strategy: unleashv1.ReleaseChannelStrategy{
+						MaxUpgradeTime: &customTimeout,
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying maxUpgradeTime is persisted")
+			Eventually(func() time.Duration {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				if releaseChannel.Spec.Strategy.MaxUpgradeTime != nil {
+					return releaseChannel.Spec.Strategy.MaxUpgradeTime.Duration
+				}
+				return 0
+			}, timeout, interval).Should(Equal(30 * time.Minute))
+		})
+
+		It("Should configure custom health check endpoint", func() {
+			By("Creating a ReleaseChannel with custom health check endpoint")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("health-endpoint-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "health-endpoint-test:v1",
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:  true,
+						Endpoint: "/api/health/ready",
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying health check endpoint is persisted")
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Spec.HealthChecks.Endpoint
+			}, timeout, interval).Should(Equal("/api/health/ready"))
+		})
+
+		It("Should clear StartTime and FailureReason when rollout completes", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and Unleash instance")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("clear-state-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "clear-state-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("clear-state-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for initial setup")
+			waitForConnection(unleash)
+			waitForImageResolution(unleash, "clear-state-test:v1")
+
+			By("Triggering a new rollout")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "clear-state-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
+
+			By("Waiting for rollout to complete")
+			Eventually(func() unleashv1.ReleaseChannelPhase {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.Phase
+			}, timeout*3, interval).Should(Or(
+				Equal(unleashv1.ReleaseChannelPhaseCompleted),
+				Equal(unleashv1.ReleaseChannelPhaseIdle),
+			))
+
+			By("Verifying state is cleared after completion")
+			// Wait for transition from Completed to Idle (where state is cleared)
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				// If phase is Idle, StartTime should be nil
+				if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseIdle {
+					return releaseChannel.Status.StartTime == nil
+				}
+				// Still transitioning
+				return false
+			}, timeout*2, interval).Should(BeTrue(), "StartTime should be cleared after rollout completes")
+		})
+	})
 })
