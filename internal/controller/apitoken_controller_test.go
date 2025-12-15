@@ -181,6 +181,41 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			By("Cleaning up the ApiToken")
 			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
 		})
+
+		It("Should allow ApiToken deletion when Unleash instance no longer exists", func() {
+			ctx := context.Background()
+
+			apiTokenName := "test-apitoken-delete-no-unleash"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+
+			By("By creating a RemoteUnleash and ApiToken")
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, ApiTokenServerURL, secretCreated)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+
+			By("By deleting the RemoteUnleash instance")
+			Expect(k8sClient.Delete(ctx, unleashCreated)).Should(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, unleashKey, unleashCreated)
+				return err != nil
+			}, timeout, interval).Should(BeTrue())
+
+			By("By deleting the ApiToken - should succeed even without Unleash instance")
+			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
+
+			By("By verifying the ApiToken is deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, apiTokenLookup, &unleashv1.ApiToken{})
+				return err != nil
+			}, timeout, interval).Should(BeTrue(), "ApiToken should be deleted even when Unleash instance doesn't exist")
+		})
 	})
 
 	Context("Invalid ApiToken", func() {
