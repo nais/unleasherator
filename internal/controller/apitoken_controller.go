@@ -160,6 +160,48 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	// Handle deletion early - if the Unleash instance doesn't exist, we can't clean up
+	// the token in Unleash, but we should still allow the ApiToken to be deleted
+	if token.GetDeletionTimestamp() != nil {
+		log.Info("ApiToken marked for deletion")
+		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
+			// Try to clean up the token in Unleash if the instance exists
+			if err := r.cleanupTokenInUnleash(ctx, token, log); err != nil {
+				// Log but don't block deletion - the Unleash instance may not exist
+				log.Info("Could not clean up token in Unleash, proceeding with deletion", "error", err.Error())
+			}
+
+			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+				log.Error(err, "Failed to get ApiToken")
+				return ctrl.Result{}, err
+			}
+
+			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "Finalizing",
+				Message: "Performing finalizer operations",
+			})
+
+			if err = r.Status().Update(ctx, token); err != nil {
+				log.Error(err, "Failed to update ApiToken status")
+				return ctrl.Result{}, err
+			}
+
+			log.Info("Removing finalizer from ApiToken")
+			if ok := controllerutil.RemoveFinalizer(token, tokenFinalizer); !ok {
+				log.Error(err, "Failed to remove finalizer from ApiToken")
+				return ctrl.Result{}, err
+			}
+
+			if err = r.Update(ctx, token); err != nil {
+				log.Error(err, "Failed to update ApiToken to remove finalizer")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Get Unleash instance for ApiToken
 	unleash, err := r.getUnleashInstance(ctx, token)
 	if err != nil {
@@ -201,45 +243,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 
 		return ctrl.Result{}, err
-	}
-
-	// Check if marked for deletion
-	// @TODO won't work if Unleash is unavailable
-	if token.GetDeletionTimestamp() != nil {
-		log.Info("ApiToken marked for deletion")
-		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
-			log.Info("Performing Finalizer Operations for ApiToken before deletion")
-			r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
-
-			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-				log.Error(err, "Failed to get ApiToken")
-				return ctrl.Result{}, err
-			}
-
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "Finalizing",
-				Message: "Performing finalizer operations",
-			})
-
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{}, err
-			}
-
-			log.Info("Removing finalizer from ApiToken")
-			if ok := controllerutil.RemoveFinalizer(token, tokenFinalizer); !ok {
-				log.Error(err, "Failed to remove finalizer from ApiToken")
-				return ctrl.Result{}, err
-			}
-
-			if err = r.Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken to remove finalizer")
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
 	}
 
 	// Get token(s) from Unleash
@@ -501,6 +504,28 @@ func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, 
 		}
 		log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", t.TokenName))
 	}
+}
+
+// cleanupTokenInUnleash attempts to delete the token from Unleash during finalization.
+// Returns an error if cleanup fails, but callers may choose to ignore this to allow deletion to proceed.
+func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *unleashv1.ApiToken, log logr.Logger) error {
+	unleash, err := r.getUnleashInstance(ctx, token)
+	if err != nil {
+		return fmt.Errorf("failed to get Unleash instance: %w", err)
+	}
+
+	if !unleash.IsReady() {
+		return fmt.Errorf("unleash instance not ready")
+	}
+
+	apiClient, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to create Unleash client: %w", err)
+	}
+
+	log.Info("Performing Finalizer Operations for ApiToken before deletion")
+	r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -120,12 +120,20 @@ jobs:
           path: ${{ github.workspace }}/bin
           key: ${{ runner.os }}-bin-${{ hashFiles('Makefile', 'go.mod') }}
   docker:
-    name: Build and Push Docker image
+    name: Build Docker image (${{ matrix.arch }})
     permissions:
       contents: read
       packages: write
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     needs: [meta, lint, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
       - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # ratchet:docker/login-action@v3
@@ -140,20 +148,56 @@ jobs:
           images: |
             ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern=v{{version}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern=v{{major}}
-            type=sha
-            type=raw,value=${{ needs.meta.outputs.version }}
+            type=schedule,suffix=-${{ matrix.arch }}
+            type=ref,event=branch,suffix=-${{ matrix.arch }}
+            type=ref,event=pr,suffix=-${{ matrix.arch }}
+            type=semver,pattern=v{{version}},suffix=-${{ matrix.arch }}
+            type=semver,pattern=v{{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=semver,pattern=v{{major}},suffix=-${{ matrix.arch }}
+            type=sha,suffix=-${{ matrix.arch }}
+            type=raw,value=${{ needs.meta.outputs.version }}-${{ matrix.arch }}
       - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # ratchet:docker/build-push-action@v6
         with:
           context: .
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          platforms: linux/${{ matrix.arch }}
+
+  manifest:
+    name: Create and Push Multi-arch Manifest
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    needs: [meta, docker]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # ratchet:docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # ratchet:docker/setup-buildx-action@v3
+      - name: Create and push manifest
+        run: |
+          IMAGE="${{ env.GHCR_REGISTRY }}/${{ github.repository }}"
+          VERSION="${{ needs.meta.outputs.version }}"
+
+          # Create manifest for version tag
+          docker buildx imagetools create -t ${IMAGE}:${VERSION} \
+            ${IMAGE}:${VERSION}-amd64 \
+            ${IMAGE}:${VERSION}-arm64
+
+          # Create manifest for main branch tag
+          docker buildx imagetools create -t ${IMAGE}:main \
+            ${IMAGE}:main-amd64 \
+            ${IMAGE}:main-arm64
+
+          # Create manifest for sha tag
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker buildx imagetools create -t ${IMAGE}:sha-${SHA} \
+            ${IMAGE}:sha-${SHA}-amd64 \
+            ${IMAGE}:sha-${SHA}-arm64
