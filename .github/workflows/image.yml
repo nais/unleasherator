@@ -30,7 +30,7 @@ jobs:
       "version": ${{ steps.version.outputs.version }}
       "name": ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # ratchet:actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
       - name: Set up Go environment
         uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # ratchet:actions/setup-go@v6
         with:
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # ratchet:actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
       - name: Restore cached binaries
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # ratchet:actions/cache/restore@v4
         with:
@@ -135,7 +135,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # ratchet:actions/checkout@v4
       - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # ratchet:docker/login-action@v3
         with:
           registry: ${{ env.GHCR_REGISTRY }}
@@ -180,26 +180,24 @@ jobs:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # ratchet:docker/setup-buildx-action@v3
       - name: Create and push manifest
         run: |
           IMAGE="${{ env.GHCR_REGISTRY }}/${{ github.repository }}"
           VERSION="${{ needs.meta.outputs.version }}"
 
           # Create manifest for version tag
-          docker manifest create ${IMAGE}:${VERSION} \
+          docker buildx imagetools create -t ${IMAGE}:${VERSION} \
             ${IMAGE}:${VERSION}-amd64 \
             ${IMAGE}:${VERSION}-arm64
-          docker manifest push ${IMAGE}:${VERSION}
 
           # Create manifest for main branch tag
-          docker manifest create ${IMAGE}:main \
+          docker buildx imagetools create -t ${IMAGE}:main \
             ${IMAGE}:main-amd64 \
             ${IMAGE}:main-arm64
-          docker manifest push ${IMAGE}:main
 
           # Create manifest for sha tag
           SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          docker manifest create ${IMAGE}:sha-${SHA} \
+          docker buildx imagetools create -t ${IMAGE}:sha-${SHA} \
             ${IMAGE}:sha-${SHA}-amd64 \
             ${IMAGE}:sha-${SHA}-arm64
-          docker manifest push ${IMAGE}:sha-${SHA}
