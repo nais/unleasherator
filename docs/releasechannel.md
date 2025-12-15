@@ -239,7 +239,7 @@ status:
 - **phase**: Current rollout phase (Idle, Validating, Canary, Rolling, Completed, Failed, RollingBack)
 - **progress**: Rollout progress as percentage (0-100)
 - **startTime**: When the current rollout started
-- **estimatedCompletion**: Estimated completion time
+- **estimatedCompletion**: Estimated completion time (reserved for future use)
 - **lastReconcileTime**: When the ReleaseChannel was last processed
 - **instanceImages**: Map of instance names to their desired images (source of truth for pull-based coordination)
 - **instanceImagesGeneration**: Incremented when instanceImages changes (allows Unleash controller to detect stale reads)
@@ -634,9 +634,12 @@ The following features are production-ready and fully tested:
 
 **Health & Safety:**
 - ✅ Health checks after deployment with configurable delays/timeouts
+- ✅ Custom health check endpoint support (`spec.healthChecks.endpoint`)
 - ✅ Deployment readiness monitoring
 - ✅ Graceful handling of missing ReleaseChannels
 - ✅ Status reporting and progress tracking
+- ✅ `maxUpgradeTime` enforcement - fails rollout if exceeded
+- ✅ Automatic rollback on failure (`spec.rollback.enabled` + `spec.rollback.onFailure`)
 
 **Observability:**
 - ✅ Comprehensive Prometheus metrics (status, rollouts, duration, health checks, phase transitions)
@@ -653,7 +656,6 @@ The following features are production-ready and fully tested:
 
 Features defined in the CRD but not yet implemented:
 
-- ⏳ Automatic rollback on failure (`spec.rollback.enabled`)
 - ⏳ Progressive delivery percentages
 - ⏳ Integration with external monitoring systems
 - ⏳ Cross-namespace ReleaseChannel support
@@ -885,7 +887,7 @@ The following metrics are **currently implemented** and exposed:
 
 - **`unleasherator_releasechannel_phase_transitions_total`** (Counter)
   Phase transitions for tracking rollout progression
-  Labels: `namespace`, `name`, `from_phase`, `to_phase`
+  Labels: `namespace`, `name`, `phase`
 
 ### Quick Monitoring Queries
 
@@ -1005,12 +1007,10 @@ For comprehensive observability guidance, monitoring setup, and advanced trouble
 
 Potential improvements could include:
 
-- **Health checks**: Verify Unleash instances are healthy before proceeding
-- **Rollback capabilities**: Automatic rollback on deployment failures
 - **Advanced strategies**: Blue/green deployments, percentage-based rollouts
 - **Cross-namespace support**: Manage instances across multiple namespaces
 - **Integration hooks**: Webhooks for external notifications
-- **Metrics integration**: Prometheus metrics for rollout monitoring
+- **External monitoring integration**: Integration with PagerDuty, Slack, etc.
 
 ## Security Considerations
 
