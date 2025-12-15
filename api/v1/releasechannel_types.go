@@ -241,13 +241,15 @@ func (rc *ReleaseChannel) ValidateUpdate(old runtime.Object) error {
 }
 
 // ValidateDelete validates ReleaseChannel on deletion
+// Note: The actual orphan protection (blocking deletion when instances reference this channel)
+// is handled by the controller's finalizer. This webhook only provides warnings.
 func (rc *ReleaseChannel) ValidateDelete() error {
-	// Allow deletion but warn about in-progress rollouts
+	// Warn about in-progress rollouts - the finalizer will handle actual blocking
 	if rc.Status.Phase != ReleaseChannelPhaseIdle &&
 		rc.Status.Phase != ReleaseChannelPhaseCompleted &&
-		rc.Status.Phase != ReleaseChannelPhaseFailed {
-		// This is just a warning - deletion is still allowed
-		return fmt.Errorf("warning: deleting ReleaseChannel with active rollout (phase: %s)", rc.Status.Phase)
+		rc.Status.Phase != ReleaseChannelPhaseFailed &&
+		rc.Status.Phase != "" {
+		return fmt.Errorf("warning: deleting ReleaseChannel with active rollout (phase: %s); deletion may be blocked by finalizer if instances still reference this channel", rc.Status.Phase)
 	}
 	return nil
 }

@@ -81,6 +81,7 @@ var _ = BeforeSuite(func() {
 	releaseChannelBackoffLong = time.Millisecond * 30
 	releaseChannelBatchInterval = time.Millisecond * 10
 	releaseChannelHealthCheckInitialDelay = time.Millisecond * 10
+	releaseChannelDeletionCheckInterval = time.Millisecond * 100
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.JSONEncoder()))
 

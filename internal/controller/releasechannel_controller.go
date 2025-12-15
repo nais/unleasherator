@@ -53,6 +53,7 @@ var (
 	releaseChannelBackoffMedium           = 20 * time.Second
 	releaseChannelBackoffLong             = 30 * time.Second
 	releaseChannelBatchInterval           = 30 * time.Second
+	releaseChannelDeletionCheckInterval   = 30 * time.Second
 	releaseChannelHealthCheckInitialDelay = 30 * time.Second
 	releaseChannelDefaultMaxUpgradeTime   = 10 * time.Minute
 	releaseChannelHealthCheckTimeout      = 5 * time.Second
@@ -252,17 +253,80 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return result, nil
 }
 
-// handleDeletion handles ReleaseChannel deletion
+// handleDeletion handles ReleaseChannel deletion with orphan protection
 func (r *ReleaseChannelReconciler) handleDeletion(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("ReleaseChannel marked for deletion")
 
-	// Remove finalizer
+	// Check for referencing Unleash instances (orphan protection)
+	referencingInstances, err := r.getReferencingInstances(ctx, releaseChannel)
+	if err != nil {
+		log.Error(err, "Failed to check for referencing instances")
+		return ctrl.Result{}, fmt.Errorf("failed to check for referencing instances: %w", err)
+	}
+
+	if len(referencingInstances) > 0 {
+		instanceNames := make([]string, len(referencingInstances))
+		for i, inst := range referencingInstances {
+			instanceNames[i] = inst.Name
+		}
+		log.Info("Cannot delete ReleaseChannel: still referenced by Unleash instances",
+			"referencingInstances", instanceNames,
+			"count", len(referencingInstances))
+
+		// Update status to indicate deletion is blocked
+		meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
+			Type:    "DeletionBlocked",
+			Status:  metav1.ConditionTrue,
+			Reason:  "ReferencingInstancesExist",
+			Message: fmt.Sprintf("Cannot delete: %d Unleash instance(s) still reference this ReleaseChannel: %v", len(referencingInstances), instanceNames),
+		})
+		if err := r.Status().Update(ctx, releaseChannel); err != nil {
+			log.Error(err, "Failed to update status with deletion blocked condition")
+		}
+
+		// Requeue to check again later - instances may be deleted or updated
+		return ctrl.Result{RequeueAfter: releaseChannelDeletionCheckInterval}, nil
+	}
+
+	log.Info("No referencing instances found, proceeding with deletion")
+
+	// Remove finalizer to allow deletion
 	controllerutil.RemoveFinalizer(releaseChannel, ReleaseChannelFinalizer)
 	if err := r.Update(ctx, releaseChannel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// getReferencingInstances finds all Unleash instances that reference this ReleaseChannel
+// This includes instances with CustomImage set (they still have the reference in spec)
+func (r *ReleaseChannelReconciler) getReferencingInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) ([]unleashv1.Unleash, error) {
+	log := log.FromContext(ctx)
+	unleashList := &unleashv1.UnleashList{}
+	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.ObjectMeta.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to list Unleash instances: %w", err)
+	}
+
+	log.V(1).Info("Checking for referencing Unleash instances",
+		"releaseChannel", releaseChannel.ObjectMeta.Name,
+		"namespace", releaseChannel.ObjectMeta.Namespace,
+		"totalInstances", len(unleashList.Items))
+
+	var referencingInstances []unleashv1.Unleash
+	for _, unleash := range unleashList.Items {
+		log.V(1).Info("Checking Unleash instance reference",
+			"unleash", unleash.ObjectMeta.Name,
+			"referencedChannel", unleash.Spec.ReleaseChannel.Name,
+			"targetChannel", releaseChannel.ObjectMeta.Name,
+			"matches", unleash.Spec.ReleaseChannel.Name == releaseChannel.ObjectMeta.Name)
+		// Include ALL instances that reference this ReleaseChannel, regardless of CustomImage
+		if unleash.Spec.ReleaseChannel.Name == releaseChannel.ObjectMeta.Name {
+			referencingInstances = append(referencingInstances, unleash)
+		}
+	}
+
+	return referencingInstances, nil
 }
 
 // initializeStatus initializes the ReleaseChannel status if needed
