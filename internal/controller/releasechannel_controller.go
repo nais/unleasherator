@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,6 +54,8 @@ var (
 	releaseChannelBackoffLong             = 30 * time.Second
 	releaseChannelBatchInterval           = 30 * time.Second
 	releaseChannelHealthCheckInitialDelay = 30 * time.Second
+	releaseChannelDefaultMaxUpgradeTime   = 10 * time.Minute
+	releaseChannelHealthCheckTimeout      = 5 * time.Second
 )
 
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
@@ -429,6 +432,10 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
 	r.recordMetrics(releaseChannel, labels)
 
+	// Set StartTime for the rollout (used by maxUpgradeTime enforcement)
+	now := metav1.Now()
+	releaseChannel.Status.StartTime = &now
+
 	// Determine which strategy to use
 	strategy := releaseChannel.Spec.Strategy
 	if strategy.Canary.Enabled {
@@ -450,20 +457,37 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Rollout completed, transitioning to idle")
 
+	// Clear rollout state
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+	releaseChannel.Status.StartTime = nil
+	releaseChannel.Status.FailureReason = ""
+	// Note: PreviousImage is kept for potential future rollback reference
+
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
 }
 
 // executeFailedPhase handles failed rollouts
 func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
-	log.Info("Handling failed rollout")
+	log.Info("Handling failed rollout", "reason", releaseChannel.Status.FailureReason)
 
-	// Could implement automatic rollback here if configured
-	if releaseChannel.Spec.Rollback.Enabled {
-		log.Info("Automatic rollback is enabled, but not implemented yet")
+	// Automatic rollback when enabled and onFailure is set (or defaults to true)
+	if releaseChannel.Spec.Rollback.Enabled && releaseChannel.Spec.Rollback.OnFailure {
+		// Only rollback if we have a previous image to rollback to
+		if releaseChannel.Status.PreviousImage != "" {
+			log.Info("Automatic rollback triggered",
+				"previousImage", releaseChannel.Status.PreviousImage,
+				"failureReason", releaseChannel.Status.FailureReason)
+			r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseRollingBack)
+			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseRollingBack
+			// Record rollback event
+			r.Recorder.Event(releaseChannel, "Warning", "AutomaticRollback",
+				fmt.Sprintf("Automatic rollback triggered due to: %s", releaseChannel.Status.FailureReason))
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
+		log.Info("Automatic rollback enabled but no previous image available")
 	}
 
-	// For now, just stay in failed state and requeue
+	// Stay in failed state and requeue periodically
 	return ctrl.Result{RequeueAfter: releaseChannelFailedRetryDelay}, nil
 }
 
@@ -554,6 +578,17 @@ func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, r
 func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing canary phase")
 
+	// Check if we've exceeded maxUpgradeTime
+	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
+		log.Info("Canary phase exceeded maxUpgradeTime", "reason", reason)
+		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		r.recordPhaseTransition(releaseChannel, newPhase)
+		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.FailureReason = reason
+		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
 	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
 	if err != nil {
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
@@ -581,7 +616,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	// The getExpectedImageForInstance function determines correct image per instance
 	result, err := r.deployToInstances(ctx, releaseChannel, targetInstances, log)
 	if err != nil {
-		newPhase := releasePhaseFailedCanary(releaseChannel.Spec.Rollback.Enabled)
+		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Canary deployment failed: %v", err)
@@ -614,7 +649,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	if releaseChannel.Spec.HealthChecks.Enabled {
 		healthy, err := r.performHealthChecks(ctx, canaryInstances, releaseChannel, log)
 		if err != nil {
-			newPhase := releasePhaseFailedCanary(releaseChannel.Spec.Rollback.Enabled)
+			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 			r.recordPhaseTransition(releaseChannel, newPhase)
 			releaseChannel.Status.Phase = newPhase
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Canary health check failed: %v", err)
@@ -646,6 +681,17 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 // executeRollingPhase handles rolling deployment to remaining instances
 func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing rolling phase")
+
+	// Check if we've exceeded maxUpgradeTime
+	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
+		log.Info("Rolling phase exceeded maxUpgradeTime", "reason", reason)
+		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		r.recordPhaseTransition(releaseChannel, newPhase)
+		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.FailureReason = reason
+		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
 
 	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
 	if err != nil {
@@ -702,7 +748,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		// Deploy to current batch
 		result, err := r.deployToInstances(ctx, releaseChannel, batch, log)
 		if err != nil {
-			newPhase := releasePhaseFailedRolling(releaseChannel.Spec.Rollback.Enabled)
+			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 			r.recordPhaseTransition(releaseChannel, newPhase)
 			releaseChannel.Status.Phase = newPhase
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
@@ -739,7 +785,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	if releaseChannel.Spec.HealthChecks.Enabled {
 		healthy, err := r.performHealthChecks(ctx, batch, releaseChannel, log)
 		if err != nil {
-			newPhase := releasePhaseFailedRolling(releaseChannel.Spec.Rollback.Enabled)
+			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 			r.recordPhaseTransition(releaseChannel, newPhase)
 			releaseChannel.Status.Phase = newPhase
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment health check failed: %v", err)
@@ -1216,7 +1262,7 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 			}
 		}
 
-		// Check if instance is connected (healthy)
+		// Check if instance is connected (healthy) via Kubernetes conditions
 		connected := false
 		for _, condition := range currentInstance.Status.Conditions {
 			if condition.Type == unleashv1.UnleashStatusConditionTypeConnected {
@@ -1229,11 +1275,54 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 			log.V(1).Info("Instance not connected/healthy yet", "name", instance.ObjectMeta.Name)
 			return false, nil
 		}
+
+		// Perform custom HTTP health check if endpoint is configured
+		if releaseChannel.Spec.HealthChecks.Endpoint != "" {
+			healthy, err := r.performHTTPHealthCheck(ctx, currentInstance, releaseChannel.Spec.HealthChecks.Endpoint, log)
+			if err != nil {
+				releaseChannelHealthChecks.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name, "failed").Inc()
+				return false, fmt.Errorf("HTTP health check failed for instance %s: %w", instance.ObjectMeta.Name, err)
+			}
+			if !healthy {
+				log.V(1).Info("Instance HTTP health check not passing", "name", instance.ObjectMeta.Name, "endpoint", releaseChannel.Spec.HealthChecks.Endpoint)
+				return false, nil
+			}
+		}
 	}
 
 	log.Info("All instances passed health checks")
 	// Record successful health check
 	releaseChannelHealthChecks.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name, "success").Inc()
+	return true, nil
+}
+
+// performHTTPHealthCheck performs an HTTP health check against the specified endpoint
+func (r *ReleaseChannelReconciler) performHTTPHealthCheck(ctx context.Context, instance *unleashv1.Unleash, endpoint string, log logr.Logger) (bool, error) {
+	url := instance.URL() + endpoint
+	log.V(1).Info("Performing HTTP health check", "instance", instance.ObjectMeta.Name, "url", url)
+
+	client := &http.Client{
+		Timeout: releaseChannelHealthCheckTimeout,
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create health check request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.V(1).Info("HTTP health check request failed", "instance", instance.ObjectMeta.Name, "error", err)
+		return false, nil // Return false but no error to allow retry
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.V(1).Info("HTTP health check returned non-success status", "instance", instance.ObjectMeta.Name, "status", resp.StatusCode)
+		return false, nil // Return false but no error to allow retry
+	}
+
+	log.V(1).Info("HTTP health check passed", "instance", instance.ObjectMeta.Name, "status", resp.StatusCode)
 	return true, nil
 }
 
@@ -1293,18 +1382,33 @@ func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unlea
 
 // Utility functions
 
-func releasePhaseFailedCanary(rollbackEnabled bool) unleashv1.ReleaseChannelPhase {
-	if rollbackEnabled {
+// releasePhaseOnFailure determines the next phase when a rollout fails.
+// Returns RollingBack if rollback is enabled and onFailure is true, otherwise Failed.
+func releasePhaseOnFailure(rollbackEnabled, onFailure bool) unleashv1.ReleaseChannelPhase {
+	if rollbackEnabled && onFailure {
 		return unleashv1.ReleaseChannelPhaseRollingBack
 	}
 	return unleashv1.ReleaseChannelPhaseFailed
 }
 
-func releasePhaseFailedRolling(rollbackEnabled bool) unleashv1.ReleaseChannelPhase {
-	if rollbackEnabled {
-		return unleashv1.ReleaseChannelPhaseRollingBack
+// checkMaxUpgradeTimeExceeded checks if the rollout has exceeded the configured maxUpgradeTime.
+// Returns true and a reason string if exceeded, false otherwise.
+func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *unleashv1.ReleaseChannel) (bool, string) {
+	if releaseChannel.Status.StartTime == nil {
+		return false, ""
 	}
-	return unleashv1.ReleaseChannelPhaseFailed
+
+	maxUpgradeTime := releaseChannelDefaultMaxUpgradeTime
+	if releaseChannel.Spec.Strategy.MaxUpgradeTime != nil {
+		maxUpgradeTime = releaseChannel.Spec.Strategy.MaxUpgradeTime.Duration
+	}
+
+	elapsed := time.Since(releaseChannel.Status.StartTime.Time)
+	if elapsed > maxUpgradeTime {
+		return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s)", elapsed.Round(time.Second), maxUpgradeTime)
+	}
+
+	return false, ""
 }
 
 func min(a, b int) int {
