@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -37,7 +38,7 @@ const (
 )
 
 var (
-	// ReleaseChannel controller timeouts - prefixed to avoid conflicts with other controllers
+	// Prefixed to avoid conflicts with other controllers (vars are overridden in tests)
 	releaseChannelErrorRetryDelay         = 5 * time.Second
 	releaseChannelIdleRequeueInterval     = 10 * time.Minute
 	releaseChannelInitialDeploymentCheck  = 2 * time.Minute
@@ -69,7 +70,6 @@ type ReleaseChannelReconciler struct {
 }
 
 var (
-	// releaseChannelStatus tracks the current state of ReleaseChannels
 	releaseChannelStatus = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_releasechannel_status",
@@ -78,7 +78,6 @@ var (
 		[]string{"namespace", "name"},
 	)
 
-	// releaseChannelInstances tracks the number of instances managed by each ReleaseChannel
 	releaseChannelInstances = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_releasechannel_instances_total",
@@ -87,7 +86,6 @@ var (
 		[]string{"namespace", "name"},
 	)
 
-	// releaseChannelInstancesUpToDate tracks instances running the target image
 	releaseChannelInstancesUpToDate = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "unleasherator_releasechannel_instances_up_to_date",
@@ -96,7 +94,6 @@ var (
 		[]string{"namespace", "name"},
 	)
 
-	// releaseChannelRollouts tracks rollout events
 	releaseChannelRollouts = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_rollouts_total",
@@ -105,7 +102,6 @@ var (
 		[]string{"namespace", "name", "result"},
 	)
 
-	// releaseChannelInstanceUpdates tracks individual instance updates
 	releaseChannelInstanceUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_instance_updates_total",
@@ -114,7 +110,6 @@ var (
 		[]string{"namespace", "name", "result"},
 	)
 
-	// releaseChannelRolloutDuration tracks how long rollouts take
 	releaseChannelRolloutDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "unleasherator_releasechannel_rollout_duration_seconds",
@@ -124,7 +119,6 @@ var (
 		[]string{"namespace", "name"},
 	)
 
-	// releaseChannelConflicts tracks resource conflicts during updates
 	releaseChannelConflicts = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_conflicts_total",
@@ -133,7 +127,6 @@ var (
 		[]string{"namespace", "name"},
 	)
 
-	// releaseChannelPhaseTransitions tracks phase transitions
 	releaseChannelPhaseTransitions = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_phase_transitions_total",
@@ -142,7 +135,6 @@ var (
 		[]string{"namespace", "name", "phase"},
 	)
 
-	// releaseChannelHealthChecks tracks health check attempts
 	releaseChannelHealthChecks = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_health_checks_total",
@@ -253,7 +245,7 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return result, nil
 }
 
-// handleDeletion handles ReleaseChannel deletion with orphan protection
+// handleDeletion implements orphan protection - blocks deletion while Unleash instances reference this channel
 func (r *ReleaseChannelReconciler) handleDeletion(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("ReleaseChannel marked for deletion")
 
@@ -299,8 +291,6 @@ func (r *ReleaseChannelReconciler) handleDeletion(ctx context.Context, releaseCh
 	return ctrl.Result{}, nil
 }
 
-// getReferencingInstances finds all Unleash instances that reference this ReleaseChannel
-// This includes instances with CustomImage set (they still have the reference in spec)
 func (r *ReleaseChannelReconciler) getReferencingInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) ([]unleashv1.Unleash, error) {
 	log := log.FromContext(ctx)
 	unleashList := &unleashv1.UnleashList{}
@@ -329,7 +319,6 @@ func (r *ReleaseChannelReconciler) getReferencingInstances(ctx context.Context, 
 	return referencingInstances, nil
 }
 
-// initializeStatus initializes the ReleaseChannel status if needed
 func (r *ReleaseChannelReconciler) initializeStatus(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) error {
 	if len(releaseChannel.Status.Conditions) == 0 || releaseChannel.Status.Phase == "" {
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
@@ -343,7 +332,6 @@ func (r *ReleaseChannelReconciler) initializeStatus(ctx context.Context, release
 	return nil
 }
 
-// executePhase executes the appropriate logic based on current phase
 func (r *ReleaseChannelReconciler) executePhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	switch releaseChannel.Status.Phase {
 	case unleashv1.ReleaseChannelPhaseIdle, "": // Handle empty phase as idle
@@ -367,7 +355,6 @@ func (r *ReleaseChannelReconciler) executePhase(ctx context.Context, releaseChan
 	}
 }
 
-// executeIdlePhase checks if a new rollout should start
 func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing idle phase", "specImage", string(releaseChannel.Spec.Image), "previousImage", releaseChannel.Status.PreviousImage)
 
@@ -517,7 +504,6 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	}
 }
 
-// executeCompletedPhase handles completed rollouts
 func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Rollout completed, transitioning to idle")
 
@@ -530,7 +516,6 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
 }
 
-// executeFailedPhase handles failed rollouts
 func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Handling failed rollout", "reason", releaseChannel.Status.FailureReason)
 
@@ -555,7 +540,6 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	return ctrl.Result{RequeueAfter: releaseChannelFailedRetryDelay}, nil
 }
 
-// recordError records an error in the ReleaseChannel status
 func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, err error) {
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 	releaseChannel.Status.FailureReason = err.Error()
@@ -568,7 +552,6 @@ func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChann
 	})
 }
 
-// recordMetrics updates the metrics for a ReleaseChannel
 func (r *ReleaseChannelReconciler) recordMetrics(releaseChannel *unleashv1.ReleaseChannel, labels []string) {
 	// Update status metrics (1=healthy, 0.5=in-progress, 0=failed)
 	var status float64
@@ -587,7 +570,6 @@ func (r *ReleaseChannelReconciler) recordMetrics(releaseChannel *unleashv1.Relea
 	releaseChannelInstancesUpToDate.WithLabelValues(labels[0], labels[1]).Set(float64(releaseChannel.Status.InstancesUpToDate))
 }
 
-// executeValidatingPhase validates rollout readiness
 func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing validating phase")
 
@@ -638,7 +620,6 @@ func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, r
 	return ctrl.Result{RequeueAfter: releaseChannelValidatingTransition}, nil
 }
 
-// executeCanaryPhase handles canary deployment
 func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing canary phase")
 
@@ -742,7 +723,6 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
 }
 
-// executeRollingPhase handles rolling deployment to remaining instances
 func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing rolling phase")
 
@@ -879,7 +859,6 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	return ctrl.Result{RequeueAfter: batchInterval}, nil
 }
 
-// executeRollingBackPhase handles rollback operations
 func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing rollback phase")
 
@@ -966,11 +945,8 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
 }
 
-// Helper functions
-
-// ensurePreviousImageTracked checks if the target image has changed and updates PreviousImage.
-// This consolidates the duplicate logic that was in executeIdlePhase and executeCanaryPhase.
-// Returns true if status was updated and needs to be persisted.
+// ensurePreviousImageTracked captures the currently deployed image before starting a rollout.
+// Critical for rollback: without this, automatic rollback has no image to revert to.
 func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 	ctx context.Context,
 	releaseChannel *unleashv1.ReleaseChannel,
@@ -1020,8 +996,7 @@ func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 	return false, nil
 }
 
-// shouldTriggerDeployment determines if we should trigger deployment for a batch
-// Uses status-based coordination instead of annotations
+// shouldTriggerDeployment checks InstanceImages map to avoid duplicate deployments
 func (r *ReleaseChannelReconciler) shouldTriggerDeployment(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, batch []unleashv1.Unleash, log logr.Logger) bool {
 	// Check if any instance needs status update based on resolved image mismatch
 	for _, instance := range batch {
@@ -1034,7 +1009,6 @@ func (r *ReleaseChannelReconciler) shouldTriggerDeployment(ctx context.Context, 
 	return false
 }
 
-// needsStatusUpdate checks if an instance needs its status updated with the correct resolved image
 func (r *ReleaseChannelReconciler) needsStatusUpdate(ctx context.Context, instance unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) bool {
 	// Determine what image this instance should have
 	expectedImage := r.getExpectedImageForInstance(ctx, &instance, string(releaseChannel.Spec.Image))
@@ -1059,8 +1033,7 @@ func (r *ReleaseChannelReconciler) needsStatusUpdate(ctx context.Context, instan
 	return true
 }
 
-// getBackoffDuration calculates backoff duration based on phase transition attempts
-// This implements exponential backoff to reduce controller load during wait periods
+// getBackoffDuration reduces controller load during wait periods via exponential backoff
 func (r *ReleaseChannelReconciler) getBackoffDuration(releaseChannel *unleashv1.ReleaseChannel) time.Duration {
 	// Base duration for waiting
 	baseDuration := releaseChannelBackoffBase
@@ -1080,8 +1053,8 @@ func (r *ReleaseChannelReconciler) getBackoffDuration(releaseChannel *unleashv1.
 	return baseDuration // Default backoff
 }
 
-// getTargetInstances finds all Unleash instances that reference this ReleaseChannel
-// and do not have CustomImage set (since CustomImage and ReleaseChannel are mutually exclusive)
+// getTargetInstances returns instances referencing this ReleaseChannel.
+// Excludes instances with CustomImage since they explicitly opt out of ReleaseChannel management.
 func (r *ReleaseChannelReconciler) getTargetInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) ([]unleashv1.Unleash, error) {
 	unleashList := &unleashv1.UnleashList{}
 	if err := r.List(ctx, unleashList, client.InNamespace(releaseChannel.ObjectMeta.Namespace)); err != nil {
@@ -1112,7 +1085,6 @@ func (r *ReleaseChannelReconciler) getTargetInstances(ctx context.Context, relea
 	return targetInstances, nil
 }
 
-// getCanaryInstances filters instances based on canary label selector
 func (r *ReleaseChannelReconciler) getCanaryInstances(instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) []unleashv1.Unleash {
 	if !releaseChannel.Spec.Strategy.Canary.Enabled {
 		return nil
@@ -1130,7 +1102,6 @@ func (r *ReleaseChannelReconciler) getCanaryInstances(instances []unleashv1.Unle
 	return canaryInstances
 }
 
-// getInstancesToUpdate finds instances that need to be updated with the target image
 func (r *ReleaseChannelReconciler) getInstancesToUpdate(instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) []unleashv1.Unleash {
 	targetImage := string(releaseChannel.Spec.Image)
 	var instancesToUpdate []unleashv1.Unleash
@@ -1145,7 +1116,7 @@ func (r *ReleaseChannelReconciler) getInstancesToUpdate(instances []unleashv1.Un
 	return instancesToUpdate
 }
 
-// deployToInstances coordinates rollout by setting resolved image in Unleash status
+// deployToInstances updates InstanceImages map - Unleash controllers pull from this (unidirectional)
 func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Coordinating deployment by updating InstanceImages map", "instances", len(instances), "phase", releaseChannel.Status.Phase)
 
@@ -1199,7 +1170,6 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 	return ctrl.Result{}, nil
 }
 
-// areInstancesReady checks if all instances in the list are ready with the expected image
 func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instances []unleashv1.Unleash, targetImage string, log logr.Logger) bool {
 	for _, instance := range instances {
 		// Re-fetch instance to get current status
@@ -1229,8 +1199,8 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 	return true
 }
 
-// getExpectedImageForInstance determines what image we expect this instance to have
-// based on the current ReleaseChannel phase
+// getExpectedImageForInstance determines correct image based on rollout phase.
+// During canary: only canary instances get new image. During rollback: all get previous image.
 func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Context, instance *unleashv1.Unleash, targetImage string) string {
 	// During a rollout, we need to check which image this instance should have based on the phase
 	// This should match the logic in the Unleash controller's getImageForInstance function
@@ -1280,7 +1250,6 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 	}
 }
 
-// isInstanceReady checks if an individual instance is ready
 func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) bool {
 	// Check for Ready condition
 	for _, condition := range instance.Status.Conditions {
@@ -1291,7 +1260,6 @@ func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) 
 	return false
 }
 
-// performHealthChecks performs health checks on the given instances
 func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (bool, error) {
 	// Wait for initial delay if configured
 	initialDelay := releaseChannelHealthCheckInitialDelay
@@ -1360,7 +1328,6 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 	return true, nil
 }
 
-// performHTTPHealthCheck performs an HTTP health check against the specified endpoint
 func (r *ReleaseChannelReconciler) performHTTPHealthCheck(ctx context.Context, instance *unleashv1.Unleash, endpoint string, log logr.Logger) (bool, error) {
 	url := instance.URL() + endpoint
 	log.V(1).Info("Performing HTTP health check", "instance", instance.ObjectMeta.Name, "url", url)
@@ -1390,7 +1357,6 @@ func (r *ReleaseChannelReconciler) performHTTPHealthCheck(ctx context.Context, i
 	return true, nil
 }
 
-// updateInstanceCounts updates the status with current instance counts
 func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv1.ReleaseChannel, targetInstances []unleashv1.Unleash) {
 	releaseChannel.Status.Instances = len(targetInstances)
 
@@ -1427,7 +1393,6 @@ func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv
 	}
 }
 
-// matchesLabelSelector checks if an instance matches the given label selector
 func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unleash, selector metav1.LabelSelector) bool {
 	// Convert the selector to a labels.Selector
 	sel, err := metav1.LabelSelectorAsSelector(&selector)
@@ -1444,10 +1409,6 @@ func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unlea
 	return sel.Matches(instanceLabels)
 }
 
-// Utility functions
-
-// releasePhaseOnFailure determines the next phase when a rollout fails.
-// Returns RollingBack if rollback is enabled and onFailure is true, otherwise Failed.
 func releasePhaseOnFailure(rollbackEnabled, onFailure bool) unleashv1.ReleaseChannelPhase {
 	if rollbackEnabled && onFailure {
 		return unleashv1.ReleaseChannelPhaseRollingBack
@@ -1455,8 +1416,6 @@ func releasePhaseOnFailure(rollbackEnabled, onFailure bool) unleashv1.ReleaseCha
 	return unleashv1.ReleaseChannelPhaseFailed
 }
 
-// checkMaxUpgradeTimeExceeded checks if the rollout has exceeded the configured maxUpgradeTime.
-// Returns true and a reason string if exceeded, false otherwise.
 func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *unleashv1.ReleaseChannel) (bool, string) {
 	if releaseChannel.Status.StartTime == nil {
 		return false, ""
@@ -1482,7 +1441,6 @@ func min(a, b int) int {
 	return b
 }
 
-// recordPhaseTransition records metrics for phase transitions
 func (r *ReleaseChannelReconciler) recordPhaseTransition(releaseChannel *unleashv1.ReleaseChannel, newPhase unleashv1.ReleaseChannelPhase) {
 	labels := []string{
 		releaseChannel.ObjectMeta.Namespace,
@@ -1492,14 +1450,31 @@ func (r *ReleaseChannelReconciler) recordPhaseTransition(releaseChannel *unleash
 	releaseChannelPhaseTransitions.WithLabelValues(labels...).Inc()
 }
 
-// updateReleaseChannelStatus updates the ReleaseChannel status and returns the result
+// updateReleaseChannelStatus persists status with change detection to avoid update loops.
+// Status updates trigger watch events; without change detection we'd reconcile endlessly.
 func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	// Store the status values we want to persist
 	statusToApply := releaseChannel.Status.DeepCopy()
 
+	// Fetch fresh copy to compare status and avoid unnecessary updates
+	fresh := &unleashv1.ReleaseChannel{}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to fetch resource for status comparison: %w", err)
+	}
+
+	// Compare status (ignoring LastTransitionTime in conditions)
+	if releaseChannelStatusEqual(&fresh.Status, statusToApply) {
+		log.V(1).Info("Status unchanged, skipping update", "phase", statusToApply.Phase)
+		return ctrl.Result{}, nil
+	}
+
 	log.V(1).Info("Persisting ReleaseChannel status", "instances", statusToApply.Instances, "upToDate", statusToApply.InstancesUpToDate, "phase", statusToApply.Phase)
+
+	// Apply our status to the fresh copy
+	fresh.Status = *statusToApply
+	*releaseChannel = *fresh
 
 	// Retry logic for handling resource conflicts
 	maxRetries := 3
@@ -1534,7 +1509,6 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 	return ctrl.Result{RequeueAfter: releaseChannelStatusUpdateRetry}, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
 func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Tracer = otel.Tracer("github.com/nais/unleasherator/internal/controller")
 
@@ -1617,7 +1591,7 @@ func (r *ReleaseChannelReconciler) findReleaseChannelsForUnleash(ctx context.Con
 	}
 }
 
-// conditionsEqual checks if two condition slices are equal (ignoring LastTransitionTime)
+// conditionsEqual ignores LastTransitionTime which changes even when condition content is same
 func conditionsEqual(a, b []metav1.Condition) bool {
 	if len(a) != len(b) {
 		return false
@@ -1642,5 +1616,61 @@ func conditionsEqual(a, b []metav1.Condition) bool {
 		}
 	}
 
+	return true
+}
+
+// releaseChannelStatusEqual compares status objects for change detection.
+// Ignores time fields (LastReconcileTime, StartTime) which change frequently but don't represent meaningful state.
+func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
+	// Compare all non-time fields
+	if a.Phase != b.Phase {
+		return false
+	}
+	if a.Version != b.Version {
+		return false
+	}
+	if a.Rollout != b.Rollout {
+		return false
+	}
+	if a.Progress != b.Progress {
+		return false
+	}
+	if a.Instances != b.Instances {
+		return false
+	}
+	if a.CanaryInstances != b.CanaryInstances {
+		return false
+	}
+	if a.InstancesUpToDate != b.InstancesUpToDate {
+		return false
+	}
+	if a.CanaryInstancesUpToDate != b.CanaryInstancesUpToDate {
+		return false
+	}
+	if a.FailureReason != b.FailureReason {
+		return false
+	}
+	if a.PreviousImage != b.PreviousImage {
+		return false
+	}
+	if a.InstanceImagesGeneration != b.InstanceImagesGeneration {
+		return false
+	}
+	// Compare maps
+	if !reflect.DeepEqual(a.InstanceImages, b.InstanceImages) {
+		return false
+	}
+	if !reflect.DeepEqual(a.LastTargetImages, b.LastTargetImages) {
+		return false
+	}
+	if !reflect.DeepEqual(a.InstanceStatus, b.InstanceStatus) {
+		return false
+	}
+	// Compare conditions (ignoring LastTransitionTime)
+	if !conditionsEqual(a.Conditions, b.Conditions) {
+		return false
+	}
+	// Deliberately ignore time fields: LastReconcileTime, StartTime, EstimatedCompletion
+	// These change frequently and don't represent meaningful state changes
 	return true
 }

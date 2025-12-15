@@ -867,3 +867,170 @@ func TestUpdateInstanceCounts(t *testing.T) {
 		})
 	}
 }
+
+func TestReleaseChannelStatusEqual(t *testing.T) {
+	now := metav1.Now()
+
+	tests := []struct {
+		name     string
+		a        *unleashv1.ReleaseChannelStatus
+		b        *unleashv1.ReleaseChannelStatus
+		expected bool
+	}{
+		{
+			name:     "both empty",
+			a:        &unleashv1.ReleaseChannelStatus{},
+			b:        &unleashv1.ReleaseChannelStatus{},
+			expected: true,
+		},
+		{
+			name: "identical statuses",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:             unleashv1.ReleaseChannelPhaseIdle,
+				Instances:         5,
+				InstancesUpToDate: 5,
+				Progress:          100,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:             unleashv1.ReleaseChannelPhaseIdle,
+				Instances:         5,
+				InstancesUpToDate: 5,
+				Progress:          100,
+			},
+			expected: true,
+		},
+		{
+			name: "different phase",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase: unleashv1.ReleaseChannelPhaseIdle,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase: unleashv1.ReleaseChannelPhaseRolling,
+			},
+			expected: false,
+		},
+		{
+			name: "different instances count",
+			a: &unleashv1.ReleaseChannelStatus{
+				Instances: 5,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Instances: 6,
+			},
+			expected: false,
+		},
+		{
+			name: "different progress",
+			a: &unleashv1.ReleaseChannelStatus{
+				Progress: 50,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Progress: 75,
+			},
+			expected: false,
+		},
+		{
+			name: "different InstanceImages",
+			a: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: map[string]string{"a": "v1"},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: map[string]string{"a": "v2"},
+			},
+			expected: false,
+		},
+		{
+			name: "same InstanceImages",
+			a: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: map[string]string{"a": "v1", "b": "v2"},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: map[string]string{"a": "v1", "b": "v2"},
+			},
+			expected: true,
+		},
+		{
+			name: "nil vs empty InstanceImages",
+			a: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: nil,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				InstanceImages: map[string]string{},
+			},
+			expected: false, // reflect.DeepEqual treats nil and empty map as different
+		},
+		{
+			name: "different conditions",
+			a: &unleashv1.ReleaseChannelStatus{
+				Conditions: []metav1.Condition{
+					{Type: "Ready", Status: metav1.ConditionTrue, Reason: "OK"},
+				},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Conditions: []metav1.Condition{
+					{Type: "Ready", Status: metav1.ConditionFalse, Reason: "NotReady"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "same conditions different LastTransitionTime",
+			a: &unleashv1.ReleaseChannelStatus{
+				Conditions: []metav1.Condition{
+					{Type: "Ready", Status: metav1.ConditionTrue, Reason: "OK", LastTransitionTime: now},
+				},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Conditions: []metav1.Condition{
+					{Type: "Ready", Status: metav1.ConditionTrue, Reason: "OK", LastTransitionTime: metav1.Time{}},
+				},
+			},
+			expected: true, // LastTransitionTime is ignored
+		},
+		{
+			name: "same status different LastReconcileTime - should be equal",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:             unleashv1.ReleaseChannelPhaseIdle,
+				LastReconcileTime: &now,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:             unleashv1.ReleaseChannelPhaseIdle,
+				LastReconcileTime: nil,
+			},
+			expected: true, // Time fields are ignored
+		},
+		{
+			name: "different FailureReason",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:         unleashv1.ReleaseChannelPhaseFailed,
+				FailureReason: "error 1",
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:         unleashv1.ReleaseChannelPhaseFailed,
+				FailureReason: "error 2",
+			},
+			expected: false,
+		},
+		{
+			name: "different InstanceStatus",
+			a: &unleashv1.ReleaseChannelStatus{
+				InstanceStatus: []unleashv1.InstanceStatus{
+					{Name: "inst1", Ready: true},
+				},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				InstanceStatus: []unleashv1.InstanceStatus{
+					{Name: "inst1", Ready: false},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := releaseChannelStatusEqual(tt.a, tt.b)
+			assert.Equal(t, tt.expected, result, "releaseChannelStatusEqual(%+v, %+v)", tt.a, tt.b)
+		})
+	}
+}
