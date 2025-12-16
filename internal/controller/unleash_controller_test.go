@@ -495,6 +495,8 @@ var _ = Describe("Unleash Controller", func() {
 
 		It("Should publish Unleash instance when federation is enabled", func() {
 			ctx := context.Background()
+			// Use longer timeout for this test - federation involves multiple reconcile cycles
+			federationTimeout := time.Second * 10
 
 			By("By mocking Unleash Publisher")
 			matcher := func(unleash *unleashv1.Unleash) bool {
@@ -517,13 +519,13 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By faking Deployment status as available")
 			createdDeployment := &appsv1.Deployment{}
-			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			Eventually(getDeployment, federationTimeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
 			setDeploymentStatusAvailable(createdDeployment)
 			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
 
 			By("By checking that Unleash is connected")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
-			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
+			Eventually(getUnleash, federationTimeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
@@ -533,7 +535,7 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 			Eventually(func() int {
 				return len(mockPublisher.Calls)
-			}, timeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
+			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
 
 			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 
