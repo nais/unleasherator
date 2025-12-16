@@ -81,6 +81,9 @@ var _ = Describe("Unleash Controller", func() {
 		testCounter      int
 		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
 		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
+		// Longer timeout for tests involving multi-controller coordination
+		// In CI with parallel tests, controller workqueues can get backed up
+		coordinationTimeout = time.Second * 30
 	)
 
 	BeforeEach(func() {
@@ -345,12 +348,13 @@ var _ = Describe("Unleash Controller", func() {
 			By("By verifying ReleaseChannel controller does NOT interfere during initial creation")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			// Wait for initial reconciliation to complete
+			// Use coordinationTimeout because in CI, controller workqueues can get backed up
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return false
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
-			}, timeout, interval).Should(BeTrue())
+			}, coordinationTimeout, interval).Should(BeTrue())
 
 			// In the new status-based architecture, coordination happens through status fields
 			// rather than annotations, so we expect no coordination-related annotations
