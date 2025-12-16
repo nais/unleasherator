@@ -91,7 +91,8 @@ type ReleaseChannelStatus struct {
 	// Phase represents the current phase of the rollout
 	Phase ReleaseChannelPhase `json:"phase,omitempty"`
 
-	// Version is the version of the release channel.
+	// Version is the version reported by Unleash instances after successful health check.
+	// Populated from the first up-to-date instance's status.version field.
 	// +kubebuilder:default="unknown"
 	Version string `json:"version,omitempty"`
 
@@ -137,6 +138,9 @@ type ReleaseChannelStatus struct {
 
 	// PreviousImage stores the previous image for rollback purposes
 	PreviousImage string `json:"previousImage,omitempty"`
+
+	// LastImageChangeTime records when spec.image was last changed (detected via PreviousImage update)
+	LastImageChangeTime *metav1.Time `json:"lastImageChangeTime,omitempty"`
 
 	// InstanceImages maps instance names to their desired images
 	// This is the source of truth for what image each instance should run
