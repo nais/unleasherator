@@ -59,14 +59,13 @@ controllerManager:
       requests:
         cpu: 50m
         memory: 256Mi
-  nodeSelector: {}
   podSecurityContext:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
   replicas: 1
-  tolerations: []
-  topologySpreadConstraints: []
+  serviceAccount:
+    annotations: {}
 controllerManagerGcp:
   serviceAccountCredentialsJson: ""
 kubernetesClusterDomain: cluster.local
@@ -77,8 +76,3 @@ metricsService:
     protocol: TCP
     targetPort: https
   type: ClusterIP
-serviceAccount:
-  annotations: {}
-  automount: true
-  create: true
-  name: ""
