@@ -332,6 +332,65 @@ func (r *ReleaseChannelReconciler) initializeStatus(ctx context.Context, release
 	return nil
 }
 
+// updateConditionForPhase sets the appropriate condition based on the current phase and rollout state.
+// This ensures conditions accurately reflect the ReleaseChannel's operational status.
+func (r *ReleaseChannelReconciler) updateConditionForPhase(releaseChannel *unleashv1.ReleaseChannel) {
+	phase := releaseChannel.Status.Phase
+	instances := releaseChannel.Status.Instances
+	rolloutComplete := releaseChannel.Status.Rollout
+
+	var condition metav1.Condition
+
+	switch {
+	case instances == 0:
+		// No instances managed by this ReleaseChannel
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionTrue,
+			Reason:  "NoInstances",
+			Message: "No Unleash instances are managed by this ReleaseChannel",
+		}
+	case phase == unleashv1.ReleaseChannelPhaseFailed:
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionFalse,
+			Reason:  "Failed",
+			Message: fmt.Sprintf("Rollout failed: %s", releaseChannel.Status.FailureReason),
+		}
+	case phase == unleashv1.ReleaseChannelPhaseRollingBack:
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionFalse,
+			Reason:  "RollingBack",
+			Message: "Rolling back to previous image",
+		}
+	case phase == unleashv1.ReleaseChannelPhaseCanary || phase == unleashv1.ReleaseChannelPhaseRolling || phase == unleashv1.ReleaseChannelPhaseValidating:
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Progressing",
+			Message: fmt.Sprintf("Rollout in progress (%d/%d instances up to date)", releaseChannel.Status.InstancesUpToDate, instances),
+		}
+	case rolloutComplete || phase == unleashv1.ReleaseChannelPhaseCompleted || (phase == unleashv1.ReleaseChannelPhaseIdle && instances > 0):
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionTrue,
+			Reason:  "Ready",
+			Message: fmt.Sprintf("All %d instances are up to date", instances),
+		}
+	default:
+		// Fallback for unknown states
+		condition = metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Unknown",
+			Message: fmt.Sprintf("Unknown phase: %s", phase),
+		}
+	}
+
+	meta.SetStatusCondition(&releaseChannel.Status.Conditions, condition)
+}
+
 func (r *ReleaseChannelReconciler) executePhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	switch releaseChannel.Status.Phase {
 	case unleashv1.ReleaseChannelPhaseIdle, "": // Handle empty phase as idle
@@ -370,6 +429,9 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
 		releaseChannel.Status.Instances = 0
 		releaseChannel.Status.InstancesUpToDate = 0
+		releaseChannel.Status.Rollout = false
+		// Update condition to reflect no instances state
+		r.updateConditionForPhase(releaseChannel)
 		return r.updateReleaseChannelStatus(ctx, releaseChannel)
 	}
 
@@ -947,6 +1009,7 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 
 // ensurePreviousImageTracked captures the currently deployed image before starting a rollout.
 // Critical for rollback: without this, automatic rollback has no image to revert to.
+// Also sets LastImageChangeTime when a new image change is detected.
 func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 	ctx context.Context,
 	releaseChannel *unleashv1.ReleaseChannel,
@@ -981,10 +1044,13 @@ func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 		currentDeployedImage != string(targetImage) &&
 		releaseChannel.Status.PreviousImage != currentDeployedImage {
 
+		now := metav1.Now()
 		releaseChannel.Status.PreviousImage = currentDeployedImage
-		log.Info("Captured previous image for rollback",
+		releaseChannel.Status.LastImageChangeTime = &now
+		log.Info("Captured previous image for rollback and set LastImageChangeTime",
 			"previousImage", currentDeployedImage,
-			"newTarget", string(targetImage))
+			"newTarget", string(targetImage),
+			"lastImageChangeTime", now.Time)
 
 		if err := r.Status().Update(ctx, releaseChannel); err != nil {
 			log.Error(err, "Failed to update ReleaseChannel status with previous image")
@@ -1365,7 +1431,15 @@ func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv
 	canaryCount := 0
 	canaryUpToDateCount := 0
 
+	// Track version from up-to-date instances
+	var resolvedVersion string
+
+	// Build set of current target instance names for stale entry cleanup
+	currentInstanceNames := make(map[string]struct{}, len(targetInstances))
+
 	for _, instance := range targetInstances {
+		currentInstanceNames[instance.ObjectMeta.Name] = struct{}{}
+
 		isCanary := releaseChannel.Spec.Strategy.Canary.Enabled &&
 			r.matchesLabelSelector(instance, releaseChannel.Spec.Strategy.Canary.LabelSelector)
 
@@ -1378,6 +1452,10 @@ func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv
 
 		if instance.Status.ResolvedReleaseChannelImage == targetImage {
 			upToDateCount++
+			// Capture version from any up-to-date instance (all should report same version)
+			if resolvedVersion == "" && instance.Status.Version != "" {
+				resolvedVersion = instance.Status.Version
+			}
 		}
 	}
 
@@ -1385,12 +1463,42 @@ func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv
 	releaseChannel.Status.CanaryInstances = canaryCount
 	releaseChannel.Status.CanaryInstancesUpToDate = canaryUpToDateCount
 
+	// Update Version from Unleash instances (only if we have a valid version)
+	if resolvedVersion != "" {
+		releaseChannel.Status.Version = resolvedVersion
+	}
+
+	// Set Rollout (completed) flag: true when all instances are up-to-date
+	releaseChannel.Status.Rollout = upToDateCount == len(targetInstances) && len(targetInstances) > 0
+
 	// Calculate progress
 	if len(targetInstances) > 0 {
 		releaseChannel.Status.Progress = (upToDateCount * 100) / len(targetInstances)
 	} else {
 		releaseChannel.Status.Progress = 100
 	}
+
+	// Clean stale InstanceImages entries for instances that no longer exist
+	// Only remove entries for deleted instances, not instances that changed ReleaseChannel
+	if releaseChannel.Status.InstanceImages != nil {
+		for instanceName := range releaseChannel.Status.InstanceImages {
+			if _, exists := currentInstanceNames[instanceName]; !exists {
+				delete(releaseChannel.Status.InstanceImages, instanceName)
+			}
+		}
+	}
+
+	// Clean stale LastTargetImages entries for consistency
+	if releaseChannel.Status.LastTargetImages != nil {
+		for instanceName := range releaseChannel.Status.LastTargetImages {
+			if _, exists := currentInstanceNames[instanceName]; !exists {
+				delete(releaseChannel.Status.LastTargetImages, instanceName)
+			}
+		}
+	}
+
+	// Update condition based on current phase and rollout state
+	r.updateConditionForPhase(releaseChannel)
 }
 
 func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unleash, selector metav1.LabelSelector) bool {
@@ -1620,7 +1728,9 @@ func conditionsEqual(a, b []metav1.Condition) bool {
 }
 
 // releaseChannelStatusEqual compares status objects for change detection.
-// Ignores time fields (LastReconcileTime, StartTime) which change frequently but don't represent meaningful state.
+// Ignores volatile time fields (LastReconcileTime, StartTime, EstimatedCompletion) which change
+// frequently but don't represent meaningful state. LastImageChangeTime IS compared since it
+// represents a significant event (spec.image change).
 func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	// Compare all non-time fields
 	if a.Phase != b.Phase {
@@ -1669,6 +1779,16 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	// Compare conditions (ignoring LastTransitionTime)
 	if !conditionsEqual(a.Conditions, b.Conditions) {
 		return false
+	}
+	// Compare LastImageChangeTime: detect if one is nil and the other is not
+	if (a.LastImageChangeTime == nil) != (b.LastImageChangeTime == nil) {
+		return false
+	}
+	// Both are non-nil, compare actual values
+	if a.LastImageChangeTime != nil && b.LastImageChangeTime != nil {
+		if !a.LastImageChangeTime.Equal(b.LastImageChangeTime) {
+			return false
+		}
 	}
 	// Deliberately ignore time fields: LastReconcileTime, StartTime, EstimatedCompletion
 	// These change frequently and don't represent meaningful state changes

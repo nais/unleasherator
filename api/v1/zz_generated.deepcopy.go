@@ -329,6 +329,10 @@ func (in *ReleaseChannelStatus) DeepCopyInto(out *ReleaseChannelStatus) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.LastImageChangeTime != nil {
+		in, out := &in.LastImageChangeTime, &out.LastImageChangeTime
+		*out = (*in).DeepCopy()
+	}
 	if in.InstanceImages != nil {
 		in, out := &in.InstanceImages, &out.InstanceImages
 		*out = make(map[string]string, len(*in))

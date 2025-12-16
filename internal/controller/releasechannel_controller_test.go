@@ -988,4 +988,262 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}, timeout*3, interval).Should(BeTrue(), "ReleaseChannel should be deleted after Unleash is deleted")
 		})
 	})
+
+	Context("Status field population", func() {
+		It("Should set LastImageChangeTime when image changes", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and Unleash instance")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("image-change-time-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "image-change-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("image-change-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for initial setup")
+			waitForConnection(unleash)
+			waitForImageResolution(unleash, "image-change-test:v1")
+
+			By("Verifying LastImageChangeTime is initially nil")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.LastImageChangeTime == nil
+			}, timeout, interval).Should(BeTrue(), "LastImageChangeTime should be nil initially")
+
+			By("Updating the ReleaseChannel image to trigger rollout")
+			Eventually(func() error {
+				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel); err != nil {
+					return err
+				}
+				releaseChannel.Spec.Image = "image-change-test:v2"
+				return k8sClient.Update(ctx, releaseChannel)
+			}, timeout, interval).Should(Succeed())
+
+			By("Verifying LastImageChangeTime is set when image changes")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return releaseChannel.Status.LastImageChangeTime != nil
+			}, timeout, interval).Should(BeTrue(), "LastImageChangeTime should be set when image changes")
+
+			By("Verifying LastImageChangeTime is recent")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			Expect(time.Since(releaseChannel.Status.LastImageChangeTime.Time)).Should(BeNumerically("<", 1*time.Minute))
+
+			By("Verifying PreviousImage is also set")
+			Expect(releaseChannel.Status.PreviousImage).Should(Equal("image-change-test:v1"))
+		})
+
+		It("Should populate Version from Unleash instances", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and Unleash instance")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("version-test-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "version-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("version-test-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for initial setup and connection")
+			waitForConnection(unleash)
+			waitForImageResolution(unleash, "version-test:v1")
+
+			By("Verifying ReleaseChannel Version is populated from Unleash instance")
+			// The version should come from the Unleash instance status.version after health check
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				GinkgoWriter.Printf("ReleaseChannel version: %s, phase: %s\n", releaseChannel.Status.Version, releaseChannel.Status.Phase)
+				return releaseChannel.Status.Version
+			}, timeout*2, interval).Should(Equal(releaseChannelUnleashVersion), "Version should be populated from Unleash instance")
+		})
+
+		It("Should set Rollout completed flag when all instances are up to date", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and two Unleash instances")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("rollout-flag-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "rollout-flag-test:v1",
+				},
+			}
+
+			unleash1 := createUnleash(fmt.Sprintf("rollout-flag-unleash-1-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash2 := createUnleash(fmt.Sprintf("rollout-flag-unleash-2-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash1)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash2)).Should(Succeed())
+
+			By("Waiting for both instances to be connected and up to date")
+			waitForConnection(unleash1)
+			waitForConnection(unleash2)
+			waitForImageResolution(unleash1, "rollout-flag-test:v1")
+			waitForImageResolution(unleash2, "rollout-flag-test:v1")
+
+			By("Verifying Rollout (completed) flag is set to true")
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				GinkgoWriter.Printf("Rollout flag: %v, instances: %d, upToDate: %d\n",
+					releaseChannel.Status.Rollout, releaseChannel.Status.Instances, releaseChannel.Status.InstancesUpToDate)
+				return releaseChannel.Status.Rollout
+			}, timeout*2, interval).Should(BeTrue(), "Rollout flag should be true when all instances are up to date")
+
+			By("Verifying InstancesUpToDate equals Instances")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			Expect(releaseChannel.Status.InstancesUpToDate).Should(Equal(releaseChannel.Status.Instances))
+		})
+
+		It("Should update condition from Initializing to Ready when rollout completes", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and Unleash instance")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("condition-test-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "condition-test:v1",
+				},
+			}
+
+			unleash := createUnleash(fmt.Sprintf("condition-test-unleash-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("Waiting for instance to be ready")
+			waitForConnection(unleash)
+			waitForImageResolution(unleash, "condition-test:v1")
+
+			By("Verifying condition is updated to Ready")
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				for _, cond := range releaseChannel.Status.Conditions {
+					if cond.Type == unleashv1.ReleaseChannelStatusConditionTypeReconciled {
+						GinkgoWriter.Printf("Condition: type=%s, status=%s, reason=%s\n", cond.Type, cond.Status, cond.Reason)
+						return cond.Reason
+					}
+				}
+				return ""
+			}, timeout*2, interval).Should(Equal("Ready"), "Condition reason should be Ready when rollout completes")
+		})
+
+		It("Should show NoInstances condition when no instances reference the ReleaseChannel", func() {
+			By("Creating a ReleaseChannel with no referencing instances")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("no-instances-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "no-instances-test:v1",
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+
+			By("Verifying condition shows NoInstances")
+			Eventually(func() string {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				for _, cond := range releaseChannel.Status.Conditions {
+					if cond.Type == unleashv1.ReleaseChannelStatusConditionTypeReconciled {
+						GinkgoWriter.Printf("Condition: status=%s, reason=%s\n", cond.Status, cond.Reason)
+						return cond.Reason
+					}
+				}
+				return ""
+			}, timeout, interval).Should(Equal("NoInstances"), "Condition reason should be NoInstances when no instances exist")
+
+			By("Verifying Instances count is 0")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			Expect(releaseChannel.Status.Instances).Should(Equal(0))
+		})
+
+		It("Should clean stale InstanceImages entries when instances are deleted", func() {
+			// Start automatic deployment simulation for this test
+			startAutomaticDeploymentSimulation()
+			defer stopAutomaticDeploymentSimulation()
+
+			By("Creating a ReleaseChannel and two Unleash instances")
+			releaseChannel := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("cleanup-test-channel-%s", testID),
+					Namespace: namespace,
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "cleanup-test:v1",
+				},
+			}
+
+			unleash1 := createUnleash(fmt.Sprintf("cleanup-unleash-1-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+			unleash2 := createUnleash(fmt.Sprintf("cleanup-unleash-2-%s", testID), namespace, releaseChannel.ObjectMeta.Name, nil)
+
+			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash1)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, unleash2)).Should(Succeed())
+
+			By("Waiting for both instances to be ready")
+			waitForConnection(unleash1)
+			waitForConnection(unleash2)
+			waitForImageResolution(unleash1, "cleanup-test:v1")
+			waitForImageResolution(unleash2, "cleanup-test:v1")
+
+			By("Verifying both instances are in InstanceImages map")
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				return len(releaseChannel.Status.InstanceImages)
+			}, timeout, interval).Should(Equal(2), "InstanceImages should have 2 entries")
+
+			By("Deleting one of the Unleash instances")
+			Expect(k8sClient.Delete(ctx, unleash1)).Should(Succeed())
+
+			By("Waiting for unleash1 to be deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, unleash1.NamespacedName(), &unleashv1.Unleash{})
+				return apierrors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue(), "unleash1 should be deleted")
+
+			By("Verifying InstanceImages is cleaned up to only contain remaining instance")
+			Eventually(func() int {
+				Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+				GinkgoWriter.Printf("InstanceImages: %v\n", releaseChannel.Status.InstanceImages)
+				return len(releaseChannel.Status.InstanceImages)
+			}, timeout*2, interval).Should(Equal(1), "InstanceImages should have 1 entry after deletion")
+
+			By("Verifying the remaining entry is for unleash2")
+			Expect(k8sClient.Get(ctx, releaseChannel.NamespacedName(), releaseChannel)).Should(Succeed())
+			_, exists := releaseChannel.Status.InstanceImages[unleash2.ObjectMeta.Name]
+			Expect(exists).Should(BeTrue(), "InstanceImages should contain unleash2")
+		})
+	})
 })

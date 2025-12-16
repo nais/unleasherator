@@ -81,6 +81,9 @@ var _ = Describe("Unleash Controller", func() {
 		testCounter      int
 		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
 		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
+		// Longer timeout for tests involving multi-controller coordination
+		// In CI with parallel tests, controller workqueues can get backed up
+		coordinationTimeout = time.Second * 30
 	)
 
 	BeforeEach(func() {
@@ -345,12 +348,13 @@ var _ = Describe("Unleash Controller", func() {
 			By("By verifying ReleaseChannel controller does NOT interfere during initial creation")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			// Wait for initial reconciliation to complete
+			// Use coordinationTimeout because in CI, controller workqueues can get backed up
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return false
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
-			}, timeout, interval).Should(BeTrue())
+			}, coordinationTimeout, interval).Should(BeTrue())
 
 			// In the new status-based architecture, coordination happens through status fields
 			// rather than annotations, so we expect no coordination-related annotations
@@ -495,6 +499,8 @@ var _ = Describe("Unleash Controller", func() {
 
 		It("Should publish Unleash instance when federation is enabled", func() {
 			ctx := context.Background()
+			// Use longer timeout for this test - federation involves multiple reconcile cycles
+			federationTimeout := time.Second * 10
 
 			By("By mocking Unleash Publisher")
 			matcher := func(unleash *unleashv1.Unleash) bool {
@@ -517,13 +523,13 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By faking Deployment status as available")
 			createdDeployment := &appsv1.Deployment{}
-			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			Eventually(getDeployment, federationTimeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
 			setDeploymentStatusAvailable(createdDeployment)
 			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
 
 			By("By checking that Unleash is connected")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
-			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
+			Eventually(getUnleash, federationTimeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeConnected,
 				Status:  metav1.ConditionTrue,
 				Reason:  "Reconciling",
@@ -533,7 +539,7 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 			Eventually(func() int {
 				return len(mockPublisher.Calls)
-			}, timeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
+			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
 
 			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 
