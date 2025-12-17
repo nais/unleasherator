@@ -235,16 +235,29 @@ status:
 - **instancesUpToDate**: Number of instances running the target image
 - **canaryInstances**: Number of canary instances (if canary enabled)
 - **canaryInstancesUpToDate**: Number of canary instances running the target image
-- **completed**: Whether all instances are up-to-date
+- **completed**: Whether all instances are up-to-date (alias for `rollout`)
+- **rollout**: Boolean flag indicating rollout completion - true when all instances are up to date
 - **phase**: Current rollout phase (Idle, Validating, Canary, Rolling, Completed, Failed, RollingBack)
 - **progress**: Rollout progress as percentage (0-100)
+- **version**: Version reported by Unleash instances after successful health check (populated from the first up-to-date instance's `status.version` field)
 - **startTime**: When the current rollout started
 - **estimatedCompletion**: Estimated completion time (reserved for future use)
 - **lastReconcileTime**: When the ReleaseChannel was last processed
+- **lastImageChangeTime**: Timestamp when `spec.image` was last changed (detected when PreviousImage is updated)
 - **instanceImages**: Map of instance names to their desired images (source of truth for pull-based coordination)
 - **instanceImagesGeneration**: Incremented when instanceImages changes (allows Unleash controller to detect stale reads)
 - **previousImage**: Previous image stored for rollback purposes
 - **failureReason**: Reason for rollout failure (if failed)
+
+### Condition Types
+
+The ReleaseChannel reports its state via the `Reconciled` condition with the following reasons:
+
+- **Ready**: All instances are up to date and running the target image
+- **NoInstances**: No Unleash instances reference this ReleaseChannel
+- **Progressing**: Rollout is in progress (shows count of updated instances)
+- **RollingBack**: Rolling back to previous image due to failure
+- **FailedRollout**: Rollout failed (check `failureReason` for details)
 
 ### Monitoring Commands
 
@@ -720,15 +733,18 @@ status:
   conditions:
   - type: Reconciled
     status: "True"
-    reason: ReconcileSuccess
-    message: ReleaseChannel reconciled successfully
+    reason: Ready
+    message: All 5 instances are up to date
   instances: 5
   instancesUpToDate: 5
   canaryInstances: 2
   canaryInstancesUpToDate: 2
   completed: true
+  rollout: true
+  version: "6.3.0"
   lastReconcileTime: "2025-08-05T10:30:00Z"
-  version: "unknown"
+  lastImageChangeTime: "2025-08-05T10:00:00Z"
+  previousImage: "quay.io/unleash/unleash-server:6.2.0"
 ```
 
 ### Status Fields
@@ -737,8 +753,12 @@ status:
 - **instancesUpToDate**: Number of instances running the target image
 - **canaryInstances**: Number of instances identified as canary instances
 - **canaryInstancesUpToDate**: Number of canary instances running the target image
-- **completed**: Boolean indicating if all instances are up-to-date
+- **completed**: Boolean indicating if all instances are up-to-date (alias for `rollout`)
+- **rollout**: Boolean flag indicating rollout completion
+- **version**: Version reported by Unleash instances (from first up-to-date instance)
 - **lastReconcileTime**: Timestamp of last reconciliation
+- **lastImageChangeTime**: Timestamp when spec.image was last changed
+- **previousImage**: Previous image for rollback purposes
 
 ### kubectl Commands
 
