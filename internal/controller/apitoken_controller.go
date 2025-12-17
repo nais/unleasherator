@@ -111,6 +111,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
+			apiTokenStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.ApiTokenStatusConditionTypeCreated)
+			apiTokenStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.ApiTokenStatusConditionTypeFailed)
 			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get ApiToken")

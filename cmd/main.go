@@ -152,6 +152,12 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "ReleaseChannel")
 		os.Exit(1)
 	}
+
+	// Add metrics initializer to populate gauges for existing resources on startup
+	if err = mgr.Add(&controller.MetricsInitializer{Client: mgr.GetClient()}); err != nil {
+		setupLog.Error(err, "unable to add metrics initializer")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	go func(ctx context.Context) {

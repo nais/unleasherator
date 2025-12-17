@@ -120,6 +120,8 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Unleash resource not found. Ignoring since object must be deleted")
+			unleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeReconciled)
+			unleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeConnected)
 			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get Unleash")
