@@ -40,7 +40,7 @@ type Config struct {
 	HealthProbeBindAddress     string `envconfig:"HEALTH_PROBE_BIND_ADDRESS" default:":8081"`
 	LeaderElectionEnabled      bool   `envconfig:"LEADER_ELECTION_ENABLED" default:"true"`
 	LeaderElectionResourceName string `envconfig:"LEADER_ELECTION_RESOURCE_NAME" default:"509984d3.nais.io"`
-	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:"127.0.0.1:8080"`
+	MetricsBindAddress         string `envconfig:"METRICS_BIND_ADDRESS" default:":8080"`
 	ClusterName                string `envconfig:"CLUSTER_NAME" required:"true"`
 	PodName                    string `envconfig:"POD_NAME" required:"true"`
 	PodNamespace               string `envconfig:"POD_NAMESPACE" required:"true"`

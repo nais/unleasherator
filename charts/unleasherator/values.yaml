@@ -1,27 +1,4 @@
 controllerManager:
-  kubeRbacProxy:
-    args:
-    - --secure-listen-address=0.0.0.0:8443
-    - --upstream=http://127.0.0.1:8080/
-    - --logtostderr=true
-    - --v=0
-    containerSecurityContext:
-      allowPrivilegeEscalation: false
-      capabilities:
-        drop:
-        - ALL
-      seccompProfile:
-        type: RuntimeDefault
-    image:
-      repository: gcr.io/kubebuilder/kube-rbac-proxy
-      tag: v0.13.0
-    resources:
-      limits:
-        cpu: 500m
-        memory: 128Mi
-      requests:
-        cpu: 5m
-        memory: 64Mi
   manager:
     containerSecurityContext:
       allowPrivilegeEscalation: false
@@ -43,7 +20,7 @@ controllerManager:
       httpsProxy: ""
       leaderElectionEnabled: "true"
       leaderElectionResourceName: 509984d3.nais.io
-      metricsBindAddress: 127.0.0.1:8080
+      metricsBindAddress: :8080
       noProxy: ""
       otelExporterOtlpEndpoint: http://localhost:4317
       otelExporterOtlpProtocol: grpc
@@ -71,8 +48,8 @@ controllerManagerGcp:
 kubernetesClusterDomain: cluster.local
 metricsService:
   ports:
-  - name: https
-    port: 8443
+  - name: http
+    port: 8080
     protocol: TCP
-    targetPort: https
+    targetPort: http
   type: ClusterIP
