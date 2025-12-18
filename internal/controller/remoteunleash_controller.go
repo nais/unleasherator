@@ -92,6 +92,8 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("RemoteUnleash resource not found. Ignoring since object must be deleted")
+			remoteUnleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeReconciled)
+			remoteUnleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeConnected)
 			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get RemoteUnleash")

@@ -102,14 +102,6 @@ var (
 		[]string{"namespace", "name", "result"},
 	)
 
-	releaseChannelInstanceUpdates = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "unleasherator_releasechannel_instance_updates_total",
-			Help: "Total number of instance updates attempted by ReleaseChannel",
-		},
-		[]string{"namespace", "name", "result"},
-	)
-
 	releaseChannelRolloutDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "unleasherator_releasechannel_rollout_duration_seconds",
@@ -150,7 +142,6 @@ func init() {
 		releaseChannelInstances,
 		releaseChannelInstancesUpToDate,
 		releaseChannelRollouts,
-		releaseChannelInstanceUpdates,
 		releaseChannelRolloutDuration,
 		releaseChannelConflicts,
 		releaseChannelPhaseTransitions,
@@ -179,7 +170,6 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("ReleaseChannel deleted, ignoring")
-			// Clear metrics for deleted ReleaseChannel
 			releaseChannelStatus.DeleteLabelValues(labels...)
 			releaseChannelInstances.DeleteLabelValues(labels...)
 			releaseChannelInstancesUpToDate.DeleteLabelValues(labels...)
