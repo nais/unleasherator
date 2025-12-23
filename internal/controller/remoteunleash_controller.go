@@ -226,15 +226,6 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err = r.updateStatusReconcileSuccess(ctx, remoteUnleash, nil); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
-		log.Error(err, "Failed to get RemoteUnleash")
-		return ctrl.Result{}, err
-	}
-
 	stats, _, err := unleashClient.GetInstanceAdminStats(ctx)
 	if err != nil {
 		if err := r.updateStatusConnectionFailed(ctx, remoteUnleash, stats, err, fmt.Sprintf("Failed to connect to Unleash instance statistics endpoint on host %s", remoteUnleash.URL())); err != nil {
@@ -245,8 +236,8 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Set RemoteUnleash status to connected
-	err = r.updateStatusConnectionSuccess(ctx, stats, remoteUnleash)
+	// Set RemoteUnleash status to reconciled and connected in a single update
+	err = r.updateStatusSuccess(ctx, stats, remoteUnleash)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -254,40 +245,105 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: remoteUnleashRequeueAfter}, nil
 }
 
-func (r *RemoteUnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
+func (r *RemoteUnleashReconciler) updateStatusSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
 	log := log.FromContext(ctx).WithName("remoteunleash")
 
-	log.Info("Successfully connected to Unleash")
-	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
+	log.Info("Successfully reconciled and connected to Unleash")
+
+	// Get fresh copy before updating
+	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
+		log.Error(err, "Failed to get RemoteUnleash")
+		return err
+	}
+
+	// Set version from stats
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			remoteUnleash.Status.Version = stats.VersionEnterprise
+		} else {
+			remoteUnleash.Status.Version = stats.VersionOSS
+		}
+	}
+
+	// Set both statuses
+	remoteUnleash.Status.Reconciled = true
+	remoteUnleash.Status.Connected = true
+
+	// Update metrics
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Set(1)
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Set(1)
+
+	// Set both conditions
+	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
+		Message: "Reconciled successfully",
+	})
+	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Successfully connected to Unleash",
 	})
+
+	// Single status update
+	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+		log.Error(err, "Failed to update status for RemoteUnleash")
+		return err
+	}
+
+	return nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, err error, message string) error {
 	log := log.FromContext(ctx).WithName("remoteunleash")
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
-	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeConnected,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Reconciling",
-		Message: message,
-	})
-}
 
-func (r *RemoteUnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult) error {
-	log := log.FromContext(ctx).WithName("remoteunleash")
+	// Get fresh copy before updating
+	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
+		log.Error(err, "Failed to get RemoteUnleash")
+		return err
+	}
 
-	log.Info("Successfully reconciled RemoteUnleash")
-	return r.updateStatus(ctx, remoteUnleash, stats, metav1.Condition{
+	// Set version from stats if available
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			remoteUnleash.Status.Version = stats.VersionEnterprise
+		} else {
+			remoteUnleash.Status.Version = stats.VersionOSS
+		}
+	}
+
+	// Reconciled succeeded (we got this far), but connection failed
+	remoteUnleash.Status.Reconciled = true
+	remoteUnleash.Status.Connected = false
+
+	// Update metrics
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Set(1)
+	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Set(0)
+
+	// Set both conditions in single update
+	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Reconciled successfully",
 	})
+	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeConnected,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: message,
+	})
+
+	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+		log.Error(err, "Failed to update status for RemoteUnleash")
+		return err
+	}
+
+	return nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, err error, message string) error {
