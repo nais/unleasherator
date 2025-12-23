@@ -91,6 +91,11 @@ var _ = BeforeSuite(func() {
 	// Activate httpmock globally so it's available when controllers create HTTP clients
 	httpmock.Activate()
 
+	// Use a default responder as catch-all for any unmatched HTTP requests.
+	// Controllers run continuously and may reconcile resources from completed tests.
+	// Without this, concurrent controller reconciliations fail with "no responder found".
+	httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
+
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
