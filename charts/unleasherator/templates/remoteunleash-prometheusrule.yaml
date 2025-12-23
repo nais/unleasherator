@@ -1,0 +1,140 @@
+{{- if and ((.Values.prometheusRules).enabled | default true) ((.Values.prometheusRules).remoteUnleash).enabled }}
+{{- /* Default configuration - merged with user values */}}
+{{- $defaults := dict
+  "runbookUrl" ""
+  "labels" dict
+  "annotations" dict
+  "alerts" (dict
+    "connectionProblem" (dict "for" "5m" "severity" "critical")
+    "notReconciled" (dict "for" "10m" "severity" "warning")
+    "reconcileErrors" (dict "for" "10m" "severity" "warning" "threshold" 0.1)
+    "reconcileSlow" (dict "for" "15m" "severity" "warning" "thresholdSeconds" 30)
+    "workqueueBacklog" (dict "for" "10m" "severity" "warning" "threshold" 10)
+    "federationReceiveFailing" (dict "for" "10m" "severity" "warning" "threshold" 0.1)
+    "metricsAbsent" (dict "for" "30m" "severity" "info")
+  )
+}}
+{{- $ru := mustMergeOverwrite $defaults (.Values.prometheusRules.remoteUnleash | default dict) }}
+{{- $alerts := $ru.alerts }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-remoteunleash
+  labels:
+    {{- include "unleasherator.labels" . | nindent 4 }}
+    {{- with $ru.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $ru.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: unleasherator.remoteunleash
+      rules:
+        # Connection status - critical for API token provisioning in app clusters
+        - alert: RemoteUnleashConnectionProblem
+          expr: |
+            unleasherator_remoteunleash_status{status="Connected"} == 0
+          for: {{ $alerts.connectionProblem.for }}
+          labels:
+            severity: {{ $alerts.connectionProblem.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "RemoteUnleash {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} cannot connect to Unleash server"
+            consequence: "Applications in this cluster cannot obtain API tokens for feature flags. New deployments requiring Unleash tokens will fail."
+            action: "Check network connectivity to the remote Unleash server. Verify the Unleash instance is running and the admin secret is valid."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Reconciliation status
+        - alert: RemoteUnleashNotReconciled
+          expr: |
+            unleasherator_remoteunleash_status{status="Reconciled"} == 0
+          for: {{ $alerts.notReconciled.for }}
+          labels:
+            severity: {{ $alerts.notReconciled.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "RemoteUnleash {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not reconciled"
+            consequence: "The RemoteUnleash configuration may be out of sync. API token provisioning may not work correctly."
+            action: "Check Unleasherator controller logs for reconciliation errors. Verify the RemoteUnleash spec and referenced secrets exist."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Controller reconciliation errors
+        - alert: RemoteUnleashReconcileErrors
+          expr: |
+            (
+              sum(rate(controller_runtime_reconcile_total{controller="remoteunleash",result="error"}[15m]))
+              /
+              (sum(rate(controller_runtime_reconcile_total{controller="remoteunleash"}[15m])) > 0)
+            ) > {{ $alerts.reconcileErrors.threshold }}
+          for: {{ $alerts.reconcileErrors.for }}
+          labels:
+            severity: {{ $alerts.reconcileErrors.severity }}
+          annotations:
+            summary: "RemoteUnleash controller has high reconciliation error rate"
+            consequence: "The RemoteUnleash controller is failing to reconcile resources. Connection state to remote Unleash servers may be stale."
+            action: "Check Unleasherator controller logs for errors. Verify network connectivity and admin secrets."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Slow reconciliation
+        - alert: RemoteUnleashReconcileSlow
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (
+                rate(controller_runtime_reconcile_time_seconds_bucket{controller="remoteunleash"}[15m])
+              )
+            ) > {{ $alerts.reconcileSlow.thresholdSeconds }}
+          for: {{ $alerts.reconcileSlow.for }}
+          labels:
+            severity: {{ $alerts.reconcileSlow.severity }}
+          annotations:
+            summary: "RemoteUnleash controller reconciliation is slow (P95: {{ "{{" }} $value | humanizeDuration {{ "}}" }})"
+            consequence: "Health checks and connection validation to remote Unleash servers are taking longer than expected."
+            action: "Check network latency to remote Unleash servers. Review controller resource limits."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Workqueue backlog
+        - alert: RemoteUnleashWorkqueueBacklog
+          expr: |
+            workqueue_depth{name="remoteunleash"} > {{ $alerts.workqueueBacklog.threshold }}
+          for: {{ $alerts.workqueueBacklog.for }}
+          labels:
+            severity: {{ $alerts.workqueueBacklog.severity }}
+          annotations:
+            summary: "RemoteUnleash controller workqueue has {{ "{{" }} $value {{ "}}" }} items pending"
+            consequence: "The controller is falling behind processing RemoteUnleash resources. Connection status may be stale."
+            action: "Check controller logs for slow operations. Consider increasing controller resources."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Federation receive failures (app cluster)
+        - alert: RemoteUnleashFederationReceiveFailing
+          expr: |
+            (
+              sum(rate(unleasherator_federation_received_total{status="error"}[15m]))
+              /
+              (sum(rate(unleasherator_federation_received_total[15m])) > 0)
+            ) > {{ $alerts.federationReceiveFailing.threshold }}
+          for: {{ $alerts.federationReceiveFailing.for }}
+          labels:
+            severity: {{ $alerts.federationReceiveFailing.severity }}
+          annotations:
+            summary: "RemoteUnleash federation receiving has high failure rate"
+            consequence: "This cluster is not receiving Unleash instance updates from the management cluster. New Unleash instances or updates will not be available."
+            action: "Check Pub/Sub subscription, IAM permissions, and Unleasherator logs for subscription errors."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+
+        # Absent metric detection
+        - alert: RemoteUnleashMetricsAbsent
+          expr: |
+            absent(unleasherator_remoteunleash_status) == 1
+          for: {{ $alerts.metricsAbsent.for }}
+          labels:
+            severity: {{ $alerts.metricsAbsent.severity }}
+          annotations:
+            summary: "RemoteUnleash metrics are missing"
+            consequence: "No RemoteUnleash status metrics are being reported. This may indicate the controller is down or no RemoteUnleash instances exist in this cluster."
+            action: "Verify the Unleasherator controller is running. If this is a management cluster (not an app cluster), RemoteUnleash resources are not expected."
+            runbook_url: {{ $ru.runbookUrl | quote }}
+{{- end }}
