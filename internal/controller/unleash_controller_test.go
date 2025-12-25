@@ -78,9 +78,9 @@ var _ = Describe("Unleash Controller", func() {
 		UnleashNamespace string // Use unique namespace per test for envtest isolation
 		testCounter      int
 		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
-		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
+		timeout          = time.Millisecond * 5000 // 5s for single-controller operations
 		// Longer timeout for tests involving multi-controller coordination
-		// In CI with parallel tests, controller workqueues can get backed up
+		// (e.g., ReleaseChannel → Unleash). In CI, controller workqueues can get backed up.
 		coordinationTimeout = time.Second * 30
 	)
 
