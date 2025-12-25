@@ -1,0 +1,106 @@
+{{- if and ((.Values.prometheusRules).enabled | default true) ((.Values.prometheusRules).apiToken).enabled }}
+{{- /* Default configuration - merged with user values */}}
+{{- $defaults := dict
+  "runbookUrl" ""
+  "labels" dict
+  "annotations" dict
+  "alerts" (dict
+    "failed" (dict "for" "5m" "severity" "critical")
+    "notCreated" (dict "for" "15m" "severity" "warning")
+    "highChurn" (dict "for" "15m" "severity" "warning" "threshold" 0.5)
+    "excessiveTokens" (dict "for" "10m" "severity" "warning" "threshold" 50)
+    "metricsAbsent" (dict "for" "30m" "severity" "info")
+  )
+}}
+{{- $at := mustMergeOverwrite $defaults (.Values.prometheusRules.apiToken | default dict) }}
+{{- $alerts := $at.alerts }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-apitoken
+  labels:
+    {{- include "unleasherator.labels" . | nindent 4 }}
+    {{- with $at.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $at.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: unleasherator.apitoken
+      rules:
+        # Status-based alerts
+        - alert: ApiTokenFailed
+          expr: |
+            unleasherator_apitoken_status{status="Failed"} == 1
+          for: {{ $alerts.failed.for }}
+          labels:
+            severity: {{ $alerts.failed.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
+            consequence: "Applications depending on this API token will not be able to authenticate with Unleash. Feature flag evaluations may fail or return defaults."
+            action: "Check Unleasherator logs for token creation errors. Verify the target Unleash instance is accessible and the admin token has sufficient permissions."
+            runbook_url: {{ $at.runbookUrl | quote }}
+
+        - alert: ApiTokenNotCreated
+          expr: |
+            unleasherator_apitoken_status{status="Created"} == 0
+            unless on(namespace, name) unleasherator_apitoken_status{status="Failed"} == 1
+          for: {{ $alerts.notCreated.for }}
+          labels:
+            severity: {{ $alerts.notCreated.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} not created"
+            consequence: "The API token has not been provisioned. Applications waiting for this token cannot connect to Unleash."
+            action: "Check if the ApiToken CR is valid and the referenced Unleash instance exists. Review controller logs for pending operations."
+            runbook_url: {{ $at.runbookUrl | quote }}
+
+        # Churn detection - tokens being created/deleted rapidly
+        - alert: ApiTokenHighChurn
+          expr: |
+            (
+              sum by (namespace, name) (rate(unleasherator_apitoken_created_total[15m]))
+              +
+              sum by (namespace, name) (rate(unleasherator_apitoken_deleted_total[15m]))
+            ) > {{ $alerts.highChurn.threshold }}
+          for: {{ $alerts.highChurn.for }}
+          labels:
+            severity: {{ $alerts.highChurn.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanize {{ "}}" }} token operations/sec"
+            consequence: "Tokens are being created and deleted rapidly. This may cause authentication failures for applications and unnecessary load on Unleash."
+            action: "Check for reconciliation loops, competing controllers, or misconfigured ApiToken specs. Review controller logs for repeated create/delete operations."
+            runbook_url: {{ $at.runbookUrl | quote }}
+
+        # Too many tokens per environment
+        - alert: ApiTokenExcessiveTokens
+          expr: |
+            unleasherator_apitoken_existing_tokens > {{ $alerts.excessiveTokens.threshold }}
+          for: {{ $alerts.excessiveTokens.for }}
+          labels:
+            severity: {{ $alerts.excessiveTokens.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} tokens in {{ "{{" }} $labels.environment {{ "}}" }}"
+            consequence: "An unexpectedly high number of tokens exist for this environment. This may indicate token cleanup issues or duplicate token creation."
+            action: "Review existing tokens in Unleash for this environment. Check if old tokens should be cleaned up or if the threshold should be adjusted."
+            runbook_url: {{ $at.runbookUrl | quote }}
+
+        # Absent metric detection - fires when controller stops reporting
+        - alert: ApiTokenMetricsAbsent
+          expr: |
+            absent(unleasherator_apitoken_status) == 1
+          for: {{ $alerts.metricsAbsent.for }}
+          labels:
+            severity: {{ $alerts.metricsAbsent.severity }}
+          annotations:
+            summary: "ApiToken metrics are missing"
+            consequence: "No ApiToken metrics are being reported. Monitoring of token provisioning status is unavailable."
+            action: "Verify the Unleasherator controller is running. If no ApiTokens exist, this alert can be ignored."
+            runbook_url: {{ $at.runbookUrl | quote }}
+{{- end }}

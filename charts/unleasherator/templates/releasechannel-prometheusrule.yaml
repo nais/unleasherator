@@ -1,0 +1,176 @@
+{{- if and ((.Values.prometheusRules).enabled | default true) ((.Values.prometheusRules).releaseChannel).enabled }}
+{{- /* Default configuration - merged with user values */}}
+{{- $defaults := dict
+  "runbookUrl" ""
+  "labels" dict
+  "annotations" dict
+  "alerts" (dict
+    "failed" (dict "for" "5m" "severity" "critical")
+    "stuckInProgress" (dict "for" "1h" "severity" "warning")
+    "instancesOutOfSync" (dict "for" "30m" "severity" "warning")
+    "noInstances" (dict "for" "30m" "severity" "info")
+    "highFailureRate" (dict "for" "15m" "severity" "critical" "threshold" 0.1)
+    "healthChecksFailing" (dict "for" "10m" "severity" "warning" "threshold" 0.01)
+    "slowRollout" (dict "for" "15m" "severity" "warning" "thresholdSeconds" 300)
+    "highConflictRate" (dict "for" "15m" "severity" "warning" "threshold" 0.05)
+    "metricsAbsent" (dict "for" "30m" "severity" "info")
+  )
+}}
+{{- $rc := mustMergeOverwrite $defaults (.Values.prometheusRules.releaseChannel | default dict) }}
+{{- $alerts := $rc.alerts }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-releasechannel
+  labels:
+    {{- include "unleasherator.labels" . | nindent 4 }}
+    {{- with $rc.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $rc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: unleasherator.releasechannel
+      rules:
+        # Status-based alerts
+        - alert: ReleaseChannelFailed
+          expr: |
+            unleasherator_releasechannel_status == 0
+          for: {{ $alerts.failed.for }}
+          labels:
+            severity: {{ $alerts.failed.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
+            consequence: "Image rollout has failed. Unleash instances managed by this ReleaseChannel may be running inconsistent versions."
+            action: "Check the ReleaseChannel status and events. Verify the target image exists and is accessible. Review Unleasherator controller logs for errors."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        - alert: ReleaseChannelStuckInProgress
+          expr: |
+            unleasherator_releasechannel_status == 0.5
+          for: {{ $alerts.stuckInProgress.for }}
+          labels:
+            severity: {{ $alerts.stuckInProgress.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} stuck in progress"
+            consequence: "A rollout is taking longer than expected. Some Unleash instances may be running the old version while others have the new version."
+            action: "Check if Unleash pods are failing to start or pass health checks. Verify resource availability and image pull status."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Instance sync alerts
+        - alert: ReleaseChannelInstancesOutOfSync
+          expr: |
+            (
+              unleasherator_releasechannel_instances_total
+              - unleasherator_releasechannel_instances_up_to_date
+            ) > 0
+          for: {{ $alerts.instancesOutOfSync.for }}
+          labels:
+            severity: {{ $alerts.instancesOutOfSync.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} instances out of sync"
+            consequence: "Some Unleash instances are not running the target image version. Feature flag behavior may differ between instances."
+            action: "Check which Unleash instances are out of sync and why they haven't updated. Look for pod scheduling issues or image pull errors."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        - alert: ReleaseChannelNoInstances
+          expr: |
+            unleasherator_releasechannel_instances_total == 0
+            and on(namespace, name) unleasherator_releasechannel_status >= 0
+          for: {{ $alerts.noInstances.for }}
+          labels:
+            severity: {{ $alerts.noInstances.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has no instances"
+            consequence: "The ReleaseChannel exists but manages no Unleash instances. This may be expected during initial setup."
+            action: "Verify the ReleaseChannel selector matches the intended Unleash resources. If this is expected, consider disabling this alert."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Rollout failure rate - safe division with fallback
+        - alert: ReleaseChannelHighFailureRate
+          expr: |
+            (
+              sum by (namespace, name) (rate(unleasherator_releasechannel_rollouts_total{result="failed"}[1h]))
+              /
+              (sum by (namespace, name) (rate(unleasherator_releasechannel_rollouts_total[1h])) > 0)
+            ) > {{ $alerts.highFailureRate.threshold }}
+          for: {{ $alerts.highFailureRate.for }}
+          labels:
+            severity: {{ $alerts.highFailureRate.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanizePercentage {{ "}}" }} rollout failure rate"
+            consequence: "A high percentage of rollout attempts are failing. New image versions may not be deploying successfully."
+            action: "Review recent rollout failures in the ReleaseChannel events. Check for image availability, resource constraints, or configuration issues."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Health check failures - threshold prevents alerting on single transient failure
+        - alert: ReleaseChannelHealthChecksFailing
+          expr: |
+            sum by (namespace, name) (
+              rate(unleasherator_releasechannel_health_checks_total{result="failed"}[15m])
+            ) > {{ $alerts.healthChecksFailing.threshold }}
+          for: {{ $alerts.healthChecksFailing.for }}
+          labels:
+            severity: {{ $alerts.healthChecksFailing.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} health checks failing"
+            consequence: "Unleash instances are failing health checks during rollout. The rollout may be blocked or rolled back."
+            action: "Check Unleash pod logs for startup errors. Verify database connectivity and resource availability."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Slow rollouts - histogram with empty data protection
+        - alert: ReleaseChannelSlowRollout
+          expr: |
+            histogram_quantile(0.95,
+              sum by (namespace, name, le) (
+                rate(unleasherator_releasechannel_rollout_duration_seconds_bucket[15m])
+              )
+            ) > {{ $alerts.slowRollout.thresholdSeconds }}
+          for: {{ $alerts.slowRollout.for }}
+          labels:
+            severity: {{ $alerts.slowRollout.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} rollouts taking {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
+            consequence: "Rollouts are taking longer than expected. New features and fixes will be delayed reaching all instances."
+            action: "Check for slow pod scheduling, image pull times, or extended health check wait times."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Conflict detection
+        - alert: ReleaseChannelHighConflictRate
+          expr: |
+            sum by (namespace, name) (
+              rate(unleasherator_releasechannel_conflicts_total[15m])
+            ) > {{ $alerts.highConflictRate.threshold }}
+          for: {{ $alerts.highConflictRate.for }}
+          labels:
+            severity: {{ $alerts.highConflictRate.severity }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+          annotations:
+            summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} experiencing {{ "{{" }} $value | humanize {{ "}}" }} conflicts/sec"
+            consequence: "Resource conflicts are occurring during rollouts. This may slow down rollouts or cause inconsistent state."
+            action: "Check for multiple controllers managing the same resources, or manual modifications to Unleash resources during rollouts."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+
+        # Absent metric detection - fires when controller stops reporting
+        - alert: ReleaseChannelMetricsAbsent
+          expr: |
+            absent(unleasherator_releasechannel_status) == 1
+          for: {{ $alerts.metricsAbsent.for }}
+          labels:
+            severity: {{ $alerts.metricsAbsent.severity }}
+          annotations:
+            summary: "ReleaseChannel metrics are missing"
+            consequence: "No ReleaseChannel metrics are being reported. Monitoring of rollout status is unavailable."
+            action: "Verify the Unleasherator controller is running. If no ReleaseChannels exist, this alert can be ignored."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+{{- end }}

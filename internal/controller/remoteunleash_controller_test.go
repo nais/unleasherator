@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -17,7 +16,6 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/federation"
 	"github.com/nais/unleasherator/internal/pb"
-	"github.com/nais/unleasherator/internal/unleashclient"
 )
 
 func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
@@ -30,9 +28,8 @@ func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleas
 
 var _ = Describe("RemoteUnleash Controller", func() {
 	const (
-		RemoteUnleashServerURL = "http://remoteunleash.nais.io"
-		RemoteUnleashToken     = "test"
-		RemoteUnleashVersion   = "v5.1.2"
+		RemoteUnleashToken   = "test"
+		RemoteUnleashVersion = "v5.1.2"
 
 		timeout  = time.Millisecond * 2500 // Increased to 2.5s to allow for status update retries
 		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms
@@ -62,24 +59,8 @@ var _ = Describe("RemoteUnleash Controller", func() {
 
 		promCounterVecFlush(remoteUnleashReceived)
 
-		// Ensure httpmock is fully reset and activated for each test
-		httpmock.DeactivateAndReset()
-		httpmock.Activate()
-
-		// Register mock responder using regex pattern to match any host
-		pattern := fmt.Sprintf("=~%s$", unleashclient.InstanceAdminStatsEndpoint)
-		httpmock.RegisterResponder("GET", pattern,
-			func(req *http.Request) (*http.Response, error) {
-				GinkgoWriter.Printf("Mock responder called for: %s\n", req.URL.String())
-				return httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, RemoteUnleashVersion))(req)
-			})
-	})
-	AfterEach(func() {
-		// Clean up any pending mock calls to prevent state leakage
-		httpmock.Reset()
-	})
-	AfterEach(func() {
-		// Cleanup handled in AfterSuite
+		// Global httpmock responders from BeforeSuite work for all tests
+		// No per-test reset needed since regex patterns match any host
 	})
 
 	Context("When creating a RemoteUnleash", func() {
@@ -87,10 +68,12 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			ctx := context.Background()
 
 			RemoteUnleashName := "test-unleash-fail-secret"
+			// Use unique URL per test based on name/namespace to ensure httpmock isolation
+			remoteUnleashURL := mockRemoteUnleashURL(RemoteUnleashName, RemoteUnleashNamespace)
 
 			By("By creating a new RemoteUnleash")
 			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
-			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashServerURL, secret)
+			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, remoteUnleashURL, secret)
 			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
 
 			createdRemoteUnleash := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
@@ -114,13 +97,19 @@ var _ = Describe("RemoteUnleash Controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 			RemoteUnleashName := "test-unleash-success"
+			// Use unique URL per test based on name/namespace to ensure httpmock isolation
+			remoteUnleashURL := mockRemoteUnleashURL(RemoteUnleashName, RemoteUnleashNamespace)
 
 			By("By creating a new Unleash secret")
 			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
 			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 
 			By("By creating a new RemoteUnleash")
-			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashServerURL, secret)
+			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, remoteUnleashURL, secret)
+
+			By("By registering httpmock responders for this specific RemoteUnleash URL")
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+
 			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
 
 			createdRemoteUnleash := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
@@ -183,8 +172,10 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			name := "test-unleash-other-cluster"
 			namespaces := []string{"some-namespace"}
 			clusters := []string{"some-cluster"}
+			// Use unique URL per RemoteUnleash
+			remoteUnleashURL := mockRemoteUnleashURL(name, namespaces[0])
 			secret := remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
-			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
@@ -196,8 +187,11 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			name = "test-unleash-same-cluster"
 			namespaces = []string{"default"}
 			clusters = []string{"test-cluster"}
+			remoteUnleashURL = mockRemoteUnleashURL(name, namespaces[0])
 			secret = remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
-			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
+			// Register mocks for this specific URL
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
@@ -210,8 +204,9 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			name = "test-unleash-same-cluster"
 			namespaces = []string{"default"}
 			clusters = []string{"test-cluster"}
+			remoteUnleashURL = mockRemoteUnleashURL(name, namespaces[0])
 			secret = remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
-			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
+			_, remoteUnleash = remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			Eventually(func() error {
@@ -251,8 +246,10 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			name := "test-unleash-namespaces-not-found"
 			namespaces := []string{"namespace-not-found"}
 			clusters := []string{"test-cluster"}
+			// Use unique URL per RemoteUnleash
+			remoteUnleashURL := mockRemoteUnleashURL(name, namespaces[0])
 			secret := remoteUnleashSecretResource(name, "default", RemoteUnleashToken)
-			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], RemoteUnleashServerURL, secret)
+			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)

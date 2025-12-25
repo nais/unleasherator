@@ -40,39 +40,62 @@ The Unleasherator controller exposes metrics across several dimensions:
 
 **Purpose**: Monitor centralized image rollout management
 
-| Metric | Type | Description | Labels |
-|--------|------|-------------|--------|
-| `unleasherator_releasechannel_status` | Gauge | Current status of ReleaseChannels | `namespace`, `name` |
-| `unleasherator_releasechannel_instances_total` | Gauge | Total instances managed by ReleaseChannel | `namespace`, `name` |
-| `unleasherator_releasechannel_instances_up_to_date` | Gauge | Instances running target image | `namespace`, `name` |
-| `unleasherator_releasechannel_rollouts_total` | Counter | Total rollout events | `namespace`, `name`, `result` |
-| `unleasherator_releasechannel_rollout_duration_seconds` | Histogram | Rollout completion time | `namespace`, `name` |
-| `unleasherator_releasechannel_instance_updates_total` | Counter | Instance update attempts | `namespace`, `name`, `result` |
-| `unleasherator_releasechannel_conflicts_total` | Counter | Resource conflicts during updates | `namespace`, `name` |
+| Metric                                                  | Type      | Description                               | Labels                        |
+| ------------------------------------------------------- | --------- | ----------------------------------------- | ----------------------------- |
+| `unleasherator_releasechannel_status`                   | Gauge     | Current status of ReleaseChannels         | `namespace`, `name`           |
+| `unleasherator_releasechannel_instances_total`          | Gauge     | Total instances managed by ReleaseChannel | `namespace`, `name`           |
+| `unleasherator_releasechannel_instances_up_to_date`     | Gauge     | Instances running target image            | `namespace`, `name`           |
+| `unleasherator_releasechannel_rollouts_total`           | Counter   | Total rollout events                      | `namespace`, `name`, `result` |
+| `unleasherator_releasechannel_rollout_duration_seconds` | Histogram | Rollout completion time                   | `namespace`, `name`           |
+| `unleasherator_releasechannel_instance_updates_total`   | Counter   | Instance update attempts                  | `namespace`, `name`, `result` |
+| `unleasherator_releasechannel_conflicts_total`          | Counter   | Resource conflicts during updates         | `namespace`, `name`           |
 
 #### 2. Unleash Instance Metrics
 
-**Purpose**: Monitor individual Unleash server health and performance
+**Purpose**: Monitor individual Unleash server health and federation status
 
-| Metric | Type | Description | Labels |
-|--------|------|-------------|--------|
-| `unleasherator_unleash_instances_total` | Gauge | Total Unleash instances | `namespace` |
-| `unleasherator_unleash_ready_instances` | Gauge | Ready Unleash instances | `namespace` |
-| `unleasherator_unleash_reconcile_total` | Counter | Reconciliation events | `namespace`, `name`, `result` |
-| `unleasherator_unleash_reconcile_duration_seconds` | Histogram | Reconciliation duration | `namespace`, `name` |
-| `unleasherator_unleash_errors_total` | Counter | Error events by type | `namespace`, `name`, `error_type` |
+| Metric                                     | Type    | Description                                               | Labels                        |
+| ------------------------------------------ | ------- | --------------------------------------------------------- | ----------------------------- |
+| `unleasherator_unleash_status`             | Gauge   | Status of Unleash instances (1=connected, 0=disconnected) | `namespace`, `name`, `status` |
+| `unleasherator_federation_published_total` | Counter | Federation messages published                             | `state`, `status`             |
 
-#### 3. Controller Health Metrics
+#### 3. RemoteUnleash Metrics
 
-**Purpose**: Monitor controller-runtime and operator health
+**Purpose**: Monitor RemoteUnleash instances in app clusters
 
-| Metric | Type | Description | Labels |
-|--------|------|-------------|--------|
-| `controller_runtime_reconcile_total` | Counter | Total reconciliations | `controller`, `result` |
-| `controller_runtime_reconcile_time_seconds` | Histogram | Reconciliation duration | `controller` |
-| `workqueue_adds_total` | Counter | Work queue additions | `name` |
-| `workqueue_depth` | Gauge | Current work queue depth | `name` |
-| `workqueue_longest_running_processor_seconds` | Gauge | Longest running processor | `name` |
+| Metric                                    | Type    | Description                                                     | Labels                        |
+| ----------------------------------------- | ------- | --------------------------------------------------------------- | ----------------------------- |
+| `unleasherator_remoteunleash_status`      | Gauge   | Status of RemoteUnleash instances (1=connected, 0=disconnected) | `namespace`, `name`, `status` |
+| `unleasherator_federation_received_total` | Counter | Federation messages received                                    | `state`, `status`             |
+
+#### 4. ApiToken Metrics
+
+**Purpose**: Monitor API token lifecycle and management
+
+| Metric                                   | Type    | Description                                                     | Labels                             |
+| ---------------------------------------- | ------- | --------------------------------------------------------------- | ---------------------------------- |
+| `unleasherator_apitoken_status`          | Gauge   | Status of ApiToken instances (1=created, 0.5=pending, 0=failed) | `namespace`, `name`, `status`      |
+| `unleasherator_apitoken_existing_tokens` | Gauge   | Existing tokens in Unleash for ApiToken                         | `namespace`, `name`, `environment` |
+| `unleasherator_apitoken_created_total`   | Counter | ApiTokens created in Unleash                                    | `namespace`, `name`                |
+| `unleasherator_apitoken_deleted_total`   | Counter | ApiTokens deleted from Unleash                                  | `namespace`, `name`                |
+
+#### 5. Controller Health Metrics (from controller-runtime)
+
+**Purpose**: Monitor controller-runtime and operator health. These metrics are automatically provided by the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) library and apply to all controllers (unleash, releasechannel, apitoken, remoteunleash).
+
+| Metric                                        | Type      | Description                     | Labels                 |
+| --------------------------------------------- | --------- | ------------------------------- | ---------------------- |
+| `controller_runtime_reconcile_total`          | Counter   | Total reconciliations by result | `controller`, `result` |
+| `controller_runtime_reconcile_time_seconds`   | Histogram | Reconciliation duration         | `controller`           |
+| `controller_runtime_reconcile_errors_total`   | Counter   | Total reconciliation errors     | `controller`           |
+| `workqueue_adds_total`                        | Counter   | Work queue additions            | `name`                 |
+| `workqueue_depth`                             | Gauge     | Current work queue depth        | `name`                 |
+| `workqueue_queue_duration_seconds`            | Histogram | Time items spend in queue       | `name`                 |
+| `workqueue_work_duration_seconds`             | Histogram | Time to process items           | `name`                 |
+| `workqueue_longest_running_processor_seconds` | Gauge     | Longest running processor       | `name`                 |
+| `workqueue_retries_total`                     | Counter   | Total retries                   | `name`                 |
+
+> **Note**: Reconciliation metrics, error counts, and duration tracking are provided by controller-runtime. Custom `unleasherator_*` metrics focus on domain-specific status and business events (federation, token lifecycle, rollout progress) that controller-runtime cannot provide.
 
 ### Prometheus Configuration
 
@@ -195,21 +218,21 @@ data:
         Log_Level     info
         Daemon        off
         Parsers_File  parsers.conf
-    
+
     [INPUT]
         Name              tail
         Path              /var/log/containers/*unleasherator*.log
         Parser            docker
         Tag               unleasherator.*
         Refresh_Interval  5
-    
+
     [FILTER]
         Name                parser
         Match               unleasherator.*
         Key_Name            log
         Parser              json
         Reserve_Data        On
-    
+
     [OUTPUT]
         Name  es
         Match unleasherator.*
@@ -239,7 +262,7 @@ groups:
 
   - alert: UnleasheratorHighErrorRate
     expr: |
-      rate(controller_runtime_reconcile_total{controller=~"unleash|releasechannel|apitoken",result="error"}[5m]) / 
+      rate(controller_runtime_reconcile_total{controller=~"unleash|releasechannel|apitoken",result="error"}[5m]) /
       rate(controller_runtime_reconcile_total{controller=~"unleash|releasechannel|apitoken"}[5m]) > 0.1
     for: 5m
     labels:
@@ -264,7 +287,7 @@ groups:
 
   - alert: ReleaseChannelInstancesOutOfSync
     expr: |
-      (unleasherator_releasechannel_instances_total - 
+      (unleasherator_releasechannel_instances_total -
        unleasherator_releasechannel_instances_up_to_date) > 0
     for: 30m
     labels:
@@ -275,7 +298,7 @@ groups:
 
   - alert: ReleaseChannelSlowRollout
     expr: |
-      histogram_quantile(0.95, 
+      histogram_quantile(0.95,
         rate(unleasherator_releasechannel_rollout_duration_seconds_bucket[5m])
       ) > 600
     for: 10m
@@ -301,7 +324,7 @@ groups:
 
   - alert: UnleashReconciliationStuck
     expr: |
-      rate(unleasherator_unleash_reconcile_total[5m]) == 0 and 
+      rate(unleasherator_unleash_reconcile_total[5m]) == 0 and
       unleasherator_unleash_instances_total > 0
     for: 10m
     labels:
@@ -527,7 +550,7 @@ resources:
 #### Scaling Guidelines
 
 | Unleash Instances | Controller CPU | Controller Memory | Reconciliation Rate |
-|-------------------|----------------|-------------------|---------------------|
+| ----------------- | -------------- | ----------------- | ------------------- |
 | 1-10              | 100m           | 128Mi             | ~1/sec              |
 | 11-50             | 200m           | 256Mi             | ~5/sec              |
 | 51-100            | 500m           | 512Mi             | ~10/sec             |
@@ -549,7 +572,7 @@ spec:
     leaseDuration: 15s
     renewDeadline: 10s
     retryPeriod: 2s
-  
+
   # Controller-specific settings
   controller:
     groupKindConcurrency:

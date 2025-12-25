@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jarcoal/httpmock"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/internal/unleashclient"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
@@ -210,4 +212,21 @@ func remoteUnleashSuccessCondition() metav1.Condition {
 		Reason:  "Reconciling",
 		Message: "Successfully connected to Unleash",
 	}
+}
+
+// mockRemoteUnleashURL generates a unique URL for RemoteUnleash based on name and namespace.
+// This mirrors the Unleash.URL() pattern: http://<name>.<namespace>
+// Using unique URLs per test ensures httpmock isolation between concurrent tests.
+func mockRemoteUnleashURL(name, namespace string) string {
+	return fmt.Sprintf("http://%s.%s", name, namespace)
+}
+
+// registerHTTPMocksForRemoteUnleash registers httpmock responders for a RemoteUnleash instance.
+// Each RemoteUnleash should use a unique URL (via mockRemoteUnleashURL) to prevent cross-test interference.
+func registerHTTPMocksForRemoteUnleash(remoteUnleash *unleashv1.RemoteUnleash, version string) {
+	url := remoteUnleash.URL()
+	httpmock.RegisterResponder("GET", fmt.Sprintf("%s%s", url, unleashclient.HealthEndpoint),
+		httpmock.NewStringResponder(200, `{"health": "OK"}`))
+	httpmock.RegisterResponder("GET", fmt.Sprintf("%s%s", url, unleashclient.InstanceAdminStatsEndpoint),
+		httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, version)))
 }

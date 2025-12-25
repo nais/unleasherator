@@ -49,19 +49,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 
 		promCounterVecFlush(unleashPublished)
 
-		// Ensure complete httpmock isolation between tests
-		httpmock.DeactivateAndReset()
-		httpmock.Activate()
-
-		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
-			httpmock.NewStringResponder(200, `{"health": "OK"}`))
-		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-			httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, releaseChannelUnleashVersion)))
-	})
-
-	AfterEach(func() {
-		// Clean up httpmock state after each test
-		httpmock.Reset()
+		// Global httpmock responders from BeforeSuite work for all tests
+		// No per-test reset needed since regex patterns match any host
 	})
 
 	// Helper functions to reduce test duplication
