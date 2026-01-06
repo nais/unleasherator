@@ -108,3 +108,54 @@ values:
     ignoreKind:
       - management
       - onprem
+  # Prometheus Rules
+  prometheusRules.enabled:
+    displayName: Enable Prometheus Alerts
+    config:
+      type: bool
+  # Management cluster alerts (Unleash instances and ReleaseChannels run here)
+  prometheusRules.unleash.enabled:
+    displayName: Unleash CRD Alerts
+    computed:
+      template: "true"
+    ignoreKind:
+      - tenant
+      - legacy
+      - onprem
+  prometheusRules.releaseChannel.enabled:
+    displayName: ReleaseChannel Alerts
+    computed:
+      template: "true"
+    ignoreKind:
+      - tenant
+      - legacy
+      - onprem
+  prometheusRules.unleashServer.enabled:
+    displayName: Unleash Server Alerts
+    computed:
+      template: "true"
+    ignoreKind:
+      - tenant
+      - legacy
+      - onprem
+  prometheusRules.unleashServer.namespace:
+    displayName: Unleash instance namespace
+    computed:
+      template: '"{{ .Management.bifrost_unleash_namespace }}"'
+    ignoreKind:
+      - tenant
+      - legacy
+      - onprem
+  # App cluster alerts (ApiTokens and RemoteUnleash resources run here)
+  prometheusRules.apiToken.enabled:
+    displayName: ApiToken Alerts
+    computed:
+      template: "true"
+    ignoreKind:
+      - management
+  prometheusRules.remoteUnleash.enabled:
+    displayName: RemoteUnleash Alerts
+    computed:
+      template: "true"
+    ignoreKind:
+      - management

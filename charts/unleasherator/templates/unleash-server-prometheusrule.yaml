@@ -1,0 +1,182 @@
+{{- if and ((.Values.prometheusRules).enabled | default true) ((.Values.prometheusRules).unleashServer).enabled }}
+{{- /* Default configuration for Unleash server monitoring */}}
+{{- $defaults := dict
+  "namespace" "bifrost-unleash"
+  "runbookUrl" ""
+  "labels" dict
+  "annotations" dict
+  "alerts" (dict
+    "dbPoolExhaustion" (dict "enabled" true "for" "5m" "severity" "critical" "threshold" 0.9)
+    "dbPoolPendingAcquires" (dict "enabled" true "for" "5m" "severity" "warning" "threshold" 5)
+    "dbQuerySlow" (dict "enabled" true "for" "10m" "severity" "warning" "thresholdMs" 100)
+    "httpRequestSlow" (dict "enabled" true "for" "10m" "severity" "warning" "thresholdMs" 500)
+    "httpErrorRate" (dict "enabled" true "for" "5m" "severity" "warning" "threshold" 0.05)
+    "podRestarts" (dict "enabled" true "for" "15m" "severity" "warning" "threshold" 3)
+    "oomEvents" (dict "enabled" true "for" "5m" "severity" "critical")
+    "memoryPressure" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.9)
+  )
+}}
+{{- $s := mustMergeOverwrite $defaults (.Values.prometheusRules.unleashServer | default dict) }}
+{{- $alerts := $s.alerts }}
+{{- $ns := $s.namespace }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "unleasherator.fullname" . }}-unleash-server
+  labels:
+    {{- include "unleasherator.labels" . | nindent 4 }}
+    {{- with $s.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $s.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    - name: unleash.server.database
+      rules:
+        {{- if $alerts.dbPoolExhaustion.enabled }}
+        # Database connection pool exhaustion
+        - alert: UnleashDbPoolExhaustion
+          expr: |
+            (
+              sum by (service) (db_pool_used{namespace="{{ $ns }}"})
+              /
+              sum by (service) (db_pool_max{namespace="{{ $ns }}"})
+            ) > {{ $alerts.dbPoolExhaustion.threshold }}
+          for: {{ $alerts.dbPoolExhaustion.for }}
+          labels:
+            severity: {{ $alerts.dbPoolExhaustion.severity }}
+          annotations:
+            summary: "Unleash database pool near exhaustion for {{ "{{" }} $labels.service {{ "}}" }}"
+            consequence: "Database connections are running low. New requests may fail or queue up waiting for available connections."
+            action: "Check for slow queries, connection leaks, or increase pool size. Review db_query_duration_seconds for slow operations."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.dbPoolPendingAcquires.enabled }}
+        # Database connection pool pending acquires
+        - alert: UnleashDbPoolPendingAcquires
+          expr: |
+            sum by (service) (db_pool_pending_acquires{namespace="{{ $ns }}"}) > {{ $alerts.dbPoolPendingAcquires.threshold }}
+          for: {{ $alerts.dbPoolPendingAcquires.for }}
+          labels:
+            severity: {{ $alerts.dbPoolPendingAcquires.severity }}
+          annotations:
+            summary: "Unleash database pool has pending connection requests for {{ "{{" }} $labels.service {{ "}}" }}"
+            consequence: "Requests are waiting for database connections, causing increased latency."
+            action: "Investigate slow queries or increase connection pool size."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.dbQuerySlow.enabled }}
+        # Slow database queries (average)
+        - alert: UnleashDbQuerySlow
+          expr: |
+            (
+              sum by (service) (rate(db_query_duration_seconds_sum{namespace="{{ $ns }}"}[5m]))
+              /
+              sum by (service) (rate(db_query_duration_seconds_count{namespace="{{ $ns }}"}[5m]))
+            ) * 1000 > {{ $alerts.dbQuerySlow.thresholdMs }}
+          for: {{ $alerts.dbQuerySlow.for }}
+          labels:
+            severity: {{ $alerts.dbQuerySlow.severity }}
+          annotations:
+            summary: "Unleash database queries are slow for {{ "{{" }} $labels.service {{ "}}" }}"
+            consequence: "High database latency affecting API response times and user experience."
+            action: "Check for missing indexes, complex queries, or database resource constraints."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+    - name: unleash.server.http
+      rules:
+        {{- if $alerts.httpRequestSlow.enabled }}
+        # Slow HTTP requests (average)
+        - alert: UnleashHttpRequestSlow
+          expr: |
+            (
+              sum by (service) (rate(http_request_duration_milliseconds_sum{namespace="{{ $ns }}"}[5m]))
+              /
+              sum by (service) (rate(http_request_duration_milliseconds_count{namespace="{{ $ns }}"}[5m]))
+            ) > {{ $alerts.httpRequestSlow.thresholdMs }}
+          for: {{ $alerts.httpRequestSlow.for }}
+          labels:
+            severity: {{ $alerts.httpRequestSlow.severity }}
+          annotations:
+            summary: "Unleash HTTP requests are slow for {{ "{{" }} $labels.service {{ "}}" }}"
+            consequence: "API and UI response times are degraded, affecting user experience and SDK polling."
+            action: "Check database performance, application logs, and resource utilization."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.httpErrorRate.enabled }}
+        # HTTP 5xx error rate
+        - alert: UnleashHttpErrorRate
+          expr: |
+            (
+              sum by (service) (rate(http_request_duration_milliseconds_count{namespace="{{ $ns }}", status=~"5.."}[5m]))
+              /
+              sum by (service) (rate(http_request_duration_milliseconds_count{namespace="{{ $ns }}"}[5m]))
+            ) > {{ $alerts.httpErrorRate.threshold }}
+          for: {{ $alerts.httpErrorRate.for }}
+          labels:
+            severity: {{ $alerts.httpErrorRate.severity }}
+          annotations:
+            summary: "Unleash HTTP error rate elevated for {{ "{{" }} $labels.service {{ "}}" }}"
+            consequence: "Applications may have problems fetching feature toggles or managing flags in the UI."
+            action: "Check application logs for error details and investigate root cause."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+    - name: unleash.server.resources
+      rules:
+        {{- if $alerts.podRestarts.enabled }}
+        # Pod restarts
+        - alert: UnleashPodRestarts
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="{{ $ns }}"}[1h]) > {{ $alerts.podRestarts.threshold }}
+          for: {{ $alerts.podRestarts.for }}
+          labels:
+            severity: {{ $alerts.podRestarts.severity }}
+          annotations:
+            summary: "Unleash pod {{ "{{" }} $labels.pod {{ "}}" }} is restarting frequently"
+            consequence: "Service instability and potential data loss during restarts."
+            action: "Check pod logs for crash reasons, OOM events, or liveness probe failures."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.oomEvents.enabled }}
+        # OOM events
+        - alert: UnleashOOMKill
+          expr: |
+            increase(container_oom_events_total{namespace="{{ $ns }}"}[5m]) > 0
+          for: {{ $alerts.oomEvents.for }}
+          labels:
+            severity: {{ $alerts.oomEvents.severity }}
+          annotations:
+            summary: "Unleash container {{ "{{" }} $labels.container {{ "}}" }} experienced OOM kill"
+            consequence: "Container was killed due to memory exhaustion, causing service disruption."
+            action: "Increase memory limits or investigate memory leaks in the application."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.memoryPressure.enabled }}
+        # Memory pressure (working set vs limits)
+        - alert: UnleashMemoryPressure
+          expr: |
+            (
+              sum by (pod, container) (container_memory_working_set_bytes{namespace="{{ $ns }}", container!=""})
+              /
+              sum by (pod, container) (kube_pod_container_resource_limits{namespace="{{ $ns }}", resource="memory", container!=""})
+            ) > {{ $alerts.memoryPressure.threshold }}
+          for: {{ $alerts.memoryPressure.for }}
+          labels:
+            severity: {{ $alerts.memoryPressure.severity }}
+          annotations:
+            summary: "Unleash container {{ "{{" }} $labels.container {{ "}}" }} memory usage high"
+            consequence: "Container is approaching memory limits and may be OOM killed soon."
+            action: "Investigate memory usage patterns or increase memory limits."
+            runbook_url: {{ $s.runbookUrl | quote }}
+        {{- end }}
+{{- end }}

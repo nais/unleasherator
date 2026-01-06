@@ -282,8 +282,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 
 		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info(fmt.Sprintf("Token is outdated in Unleash. Token diff: %s", token.Diff(t)))
-
-		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
 		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
 
 		// If ApiTokenUpdateEnabled is false, prevent deletion of outdated tokens and subsequent creation of new tokens
@@ -299,8 +297,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
-		// At this point we know that the token is outdated our duplicate and it is safe to delete it
+		// At this point we know that the token is outdated or duplicate and it is safe to delete it
 		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
+		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
 		err = apiClient.DeleteApiToken(ctx, t.Secret)
 		if err != nil {
 			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {

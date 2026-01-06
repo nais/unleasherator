@@ -50,28 +50,37 @@ Follow [tiger style](https://tigerstyle.dev/): safety, performance, developer ex
 
 ### httpmock Isolation
 
-HTTP mocking requires careful lifecycle management to prevent test pollution:
+All 4 controllers run continuously via shared `k8sManager` and reconcile resources from ALL tests concurrently. Global responder reset doesn't work—use unique URLs per test instead:
 
 ```go
-// suite_test.go - global activation
-BeforeSuite(func() {
-    os.Setenv("UNLEASH_TEST_MODE", "true")
-    httpmock.Activate()
-})
+// Generate unique URL per test using resource name + namespace
+func mockRemoteUnleashURL(name, namespace string) string {
+    return fmt.Sprintf("http://%s.%s", name, namespace)
+}
 
-// controller_test.go - per-test reset
+// Register mocks for specific URL only
+func registerHTTPMocksForRemoteUnleash(remoteUnleash *unleashv1.RemoteUnleash, version string) {
+    serverURL := remoteUnleash.Spec.Server.URL
+    httpmock.RegisterResponder("GET", serverURL+"/api/admin/instance-admin/statistics",
+        httpmock.NewJsonResponderOrPanic(200, map[string]any{"versionOSS": version}))
+}
+
+// In test
 BeforeEach(func() {
-    httpmock.DeactivateAndReset()  // Complete state reset
-    httpmock.Activate()             // Reinstall transport
-    httpmock.RegisterResponder(...)
-})
-
-AfterEach(func() {
-    httpmock.Reset()  // Clear history only, safe for parallel tests
+    name := fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), testCounter)
+    serverURL := mockRemoteUnleashURL(name, namespace)
+    remoteUnleash := makeRemoteUnleash(name, namespace, serverURL, secretName)
+    registerHTTPMocksForRemoteUnleash(remoteUnleash, "6.1.0")
 })
 ```
 
-Why: `DeactivateAndReset()` clears both responders and history; `Reset()` only clears history. Never deactivate mid-test or after other tests start.
+Why: `instance.URL()` returns `http://<name>.<namespace>`, giving each test a unique hostname. Responders registered with full URLs only match their specific test's requests.
+
+**Rules:**
+
+- Never use path-only patterns like `=~/api/.*` (matches all hosts)
+- Use full URLs: `serverURL + "/api/admin/..."`
+- Call count checks must use full URL keys: `httpmock.GetCallCountInfo()[serverURL+"/api/..."]`
 
 ### envtest Isolation
 
