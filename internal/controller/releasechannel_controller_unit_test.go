@@ -1034,3 +1034,191 @@ func TestReleaseChannelStatusEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateInstanceCounts_VersionFromCorrectReleaseChannel(t *testing.T) {
+	// This test verifies the fix for a bug where switching an Unleash instance
+	// from one ReleaseChannel to another caused the new ReleaseChannel's status.version
+	// to be updated to an older version. The issue occurred because the version was
+	// captured from any up-to-date instance without verifying that the instance's
+	// status.releaseChannelName matched the current ReleaseChannel.
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	reconciler := &ReleaseChannelReconciler{
+		Scheme:   scheme,
+		Recorder: &record.FakeRecorder{},
+	}
+
+	tests := []struct {
+		name            string
+		releaseChannel  *unleashv1.ReleaseChannel
+		targetInstances []unleashv1.Unleash
+		expectedVersion string
+		description     string
+	}{
+		{
+			name: "instance switching from old channel - version not captured",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-channel",
+					Namespace: "default",
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "unleash:v5.0",
+				},
+			},
+			targetInstances: []unleashv1.Unleash{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "switching-instance",
+						Namespace: "default",
+					},
+					Spec: unleashv1.UnleashSpec{
+						ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+							Name: "new-channel", // spec points to new channel
+						},
+					},
+					Status: unleashv1.UnleashStatus{
+						ResolvedReleaseChannelImage: "unleash:v5.0", // happens to match new channel's image
+						ReleaseChannelName:          "old-channel",  // but status still shows old channel
+						Version:                     "4.20.0",       // old version from old channel
+					},
+				},
+			},
+			expectedVersion: "", // should NOT capture version from switching instance
+			description:     "Version should not be captured from instance still tracking old release channel",
+		},
+		{
+			name: "instance properly managed by this channel - version captured",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-channel",
+					Namespace: "default",
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "unleash:v5.0",
+				},
+			},
+			targetInstances: []unleashv1.Unleash{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "managed-instance",
+						Namespace: "default",
+					},
+					Spec: unleashv1.UnleashSpec{
+						ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+							Name: "my-channel",
+						},
+					},
+					Status: unleashv1.UnleashStatus{
+						ResolvedReleaseChannelImage: "unleash:v5.0",
+						ReleaseChannelName:          "my-channel", // correctly tracking this channel
+						Version:                     "5.0.0",
+					},
+				},
+			},
+			expectedVersion: "5.0.0", // should capture version from properly managed instance
+			description:     "Version should be captured from instance managed by this release channel",
+		},
+		{
+			name: "mix of switching and properly managed instances",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-channel",
+					Namespace: "default",
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "unleash:v5.0",
+				},
+			},
+			targetInstances: []unleashv1.Unleash{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "switching-instance",
+						Namespace: "default",
+					},
+					Spec: unleashv1.UnleashSpec{
+						ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+							Name: "new-channel",
+						},
+					},
+					Status: unleashv1.UnleashStatus{
+						ResolvedReleaseChannelImage: "unleash:v5.0",
+						ReleaseChannelName:          "old-channel", // still tracking old channel
+						Version:                     "4.20.0",      // old version
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "properly-managed",
+						Namespace: "default",
+					},
+					Spec: unleashv1.UnleashSpec{
+						ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+							Name: "new-channel",
+						},
+					},
+					Status: unleashv1.UnleashStatus{
+						ResolvedReleaseChannelImage: "unleash:v5.0",
+						ReleaseChannelName:          "new-channel", // correctly tracking new channel
+						Version:                     "5.0.0",       // correct version
+					},
+				},
+			},
+			expectedVersion: "5.0.0", // should capture version from properly managed instance, not switching one
+			description:     "Version should be captured from properly managed instance, ignoring switching instance",
+		},
+		{
+			name: "all instances not yet updated to this channel",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "new-channel",
+					Namespace: "default",
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "unleash:v5.0",
+				},
+				Status: unleashv1.ReleaseChannelStatus{
+					Version: "5.0.0", // existing version should be preserved
+				},
+			},
+			targetInstances: []unleashv1.Unleash{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "switching-instance",
+						Namespace: "default",
+					},
+					Spec: unleashv1.UnleashSpec{
+						ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+							Name: "new-channel",
+						},
+					},
+					Status: unleashv1.UnleashStatus{
+						ResolvedReleaseChannelImage: "unleash:v5.0",
+						ReleaseChannelName:          "old-channel",
+						Version:                     "4.20.0",
+					},
+				},
+			},
+			expectedVersion: "5.0.0", // should preserve existing version when no valid version found
+			description:     "Existing version should be preserved when no properly managed instances are found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Preserve existing version for the test case
+			existingVersion := tt.releaseChannel.Status.Version
+
+			reconciler.updateInstanceCounts(tt.releaseChannel, tt.targetInstances)
+
+			if tt.expectedVersion == "" {
+				// If we expect no version to be captured, the existing version should be preserved
+				assert.Equal(t, existingVersion, tt.releaseChannel.Status.Version, tt.description)
+			} else {
+				assert.Equal(t, tt.expectedVersion, tt.releaseChannel.Status.Version, tt.description)
+			}
+		})
+	}
+}

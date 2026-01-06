@@ -1442,8 +1442,11 @@ func (r *ReleaseChannelReconciler) updateInstanceCounts(releaseChannel *unleashv
 
 		if instance.Status.ResolvedReleaseChannelImage == targetImage {
 			upToDateCount++
-			// Capture version from any up-to-date instance (all should report same version)
-			if resolvedVersion == "" && instance.Status.Version != "" {
+			// Capture version from up-to-date instances, but only if the instance
+			// was actually managed by THIS ReleaseChannel (not switching from another).
+			// This prevents version downgrades when instances switch between channels.
+			if resolvedVersion == "" && instance.Status.Version != "" &&
+				instance.Status.ReleaseChannelName == releaseChannel.ObjectMeta.Name {
 				resolvedVersion = instance.Status.Version
 			}
 		}
