@@ -410,6 +410,11 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 	for ctx.Err() == nil && permanentError == nil {
 		log.Info("Waiting for pubsub messages")
 		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+			if len(remoteUnleashes) == 0 {
+				log.Info("Received pubsub message with no namespaces, ignoring", "status", status, "clusters", clusters)
+				return nil
+			}
+
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
 			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
