@@ -1217,6 +1217,7 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 	if err := r.Status().Update(ctx, releaseChannel); err != nil {
 		if apierrors.IsConflict(err) {
 			log.V(1).Info("Resource conflict when updating ReleaseChannel status, will retry on next reconcile")
+			releaseChannelConflicts.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name).Inc()
 			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
@@ -1583,6 +1584,7 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 		if err := r.Status().Update(ctx, releaseChannel); err != nil {
 			if apierrors.IsConflict(err) && i < maxRetries-1 {
 				log.V(1).Info("Resource conflict during status update, retrying", "attempt", i+1, "error", err)
+				releaseChannelConflicts.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name).Inc()
 
 				// Fetch fresh copy and reapply our status
 				fresh := &unleashv1.ReleaseChannel{}
