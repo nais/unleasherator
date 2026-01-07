@@ -410,6 +410,11 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 	for ctx.Err() == nil && permanentError == nil {
 		log.Info("Waiting for pubsub messages")
 		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+			if len(remoteUnleashes) == 0 {
+				log.Info("Received pubsub message with no namespaces, ignoring", "status", status, "clusters", clusters)
+				return nil
+			}
+
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
 			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
@@ -419,8 +424,43 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 			switch status {
 			case pb.Status_Removed:
-				log.Info("Received Status_Removed, not implemented yet")
-				remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+				log.Info("Received Status_Removed, deleting RemoteUnleash resources and secret")
+
+				// Delete RemoteUnleash resources
+				objectsCtx, objectsCancel := r.Timeout.WriteContext(ctx)
+				defer objectsCancel()
+
+				if errs := utils.DeleteAllObjects(objectsCtx, r.Client, remoteUnleashes); len(errs) > 0 {
+					for _, err := range errs {
+						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						log.Error(err, "Failed to delete RemoteUnleash")
+
+						if !retriableError(err) {
+							permanentError = err
+						}
+					}
+					if permanentError != nil {
+						return permanentError
+					}
+					return errs[0]
+				}
+
+				// Delete the admin secret
+				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
+				defer secretCancel()
+
+				if err := utils.DeleteObject(secretCtx, r.Client, adminSecret); err != nil {
+					remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+					log.Error(err, "Failed to delete admin secret")
+
+					if !retriableError(err) {
+						permanentError = err
+					}
+					return err
+				}
+
+				remoteUnleashReceived.WithLabelValues("removed", "success").Inc()
+				log.Info("Successfully deleted RemoteUnleash resources and secret")
 				return nil
 
 			case pb.Status_Provisioned:
