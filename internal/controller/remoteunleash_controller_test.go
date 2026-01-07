@@ -140,6 +140,49 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			}
 			Expect(totalCalls).To(BeNumerically(">=", 1), "Expected at least one HTTP call to stats endpoint")
 		})
+
+		It("Should allow deletion when the Unleash server is unresponsive", func() {
+			ctx := context.Background()
+			RemoteUnleashName := "test-unleash-delete-unresponsive"
+			// Use unique URL per test based on name/namespace to ensure httpmock isolation
+			remoteUnleashURL := mockRemoteUnleashURL(RemoteUnleashName, RemoteUnleashNamespace)
+
+			By("By creating a new Unleash secret")
+			secret := remoteUnleashSecretResource(RemoteUnleashName, RemoteUnleashNamespace, RemoteUnleashToken)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+
+			By("By creating a new RemoteUnleash")
+			_, remoteUnleash := remoteUnleashResource(RemoteUnleashName, RemoteUnleashNamespace, remoteUnleashURL, secret)
+
+			By("By registering httpmock responders for this specific RemoteUnleash URL")
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			createdRemoteUnleash := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdRemoteUnleash).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+
+			Expect(createdRemoteUnleash.IsReady()).To(BeTrue())
+
+			By("By simulating an unresponsive Unleash server")
+			// Register a responder that returns an error for this specific URL
+			httpmock.RegisterResponder("GET", remoteUnleashURL+"/api/admin/instance-admin/statistics",
+				httpmock.NewErrorResponder(fmt.Errorf("connection refused")))
+
+			By("By deleting the RemoteUnleash while server is unresponsive")
+			Expect(k8sClient.Delete(ctx, createdRemoteUnleash)).Should(Succeed())
+
+			By("By verifying the RemoteUnleash is deleted")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, remoteUnleash.NamespacedName(), &unleashv1.RemoteUnleash{})
+				return err != nil
+			}, timeout, interval).Should(BeTrue(), "RemoteUnleash should be deleted")
+		})
 	})
 
 	Context("When subscribing to federated Unleash", func() {

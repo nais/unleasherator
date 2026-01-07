@@ -100,47 +100,32 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Check if marked for deletion
+	// Check if marked for deletion - handle this early to allow deletion even if Unleash server is down
 	if remoteUnleash.GetDeletionTimestamp() != nil {
 		log.Info("RemoteUnleash marked for deletion")
 		if controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
 			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
 
+			// Try to update status, but don't block deletion if it fails
 			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
 				Status:  metav1.ConditionUnknown,
 				Reason:  "Finalizing",
-				Message: "Performing finalizer options",
+				Message: "Performing finalizer operations",
 			})
 
 			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
-				log.Error(err, "Failed to update RemoteUnleash status")
-				return ctrl.Result{}, err
+				log.Info("Failed to update RemoteUnleash status during deletion, proceeding anyway", "error", err.Error())
 			}
 
+			// Perform finalizer operations - currently a no-op but allows for future cleanup
 			r.doFinalizerOperationsForToken(remoteUnleash)
 
-			if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
-				log.Error(err, "Failed to get RemoteUnleash")
-				return ctrl.Result{}, err
-			}
-
-			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
-				Status:  metav1.ConditionTrue,
-				Reason:  "Finalizing",
-				Message: fmt.Sprintf("Finalizer operations for RemoteUnleash %s name were successfully accomplished", remoteUnleash.Name),
-			})
-
-			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
-				log.Error(err, "Failed to update Unleash status")
-				return ctrl.Result{}, err
-			}
-
-			log.Info("Removing finalizer from RemoteUnleash after successfully perform the operations")
+			// Remove the finalizer to allow deletion to proceed
+			log.Info("Removing finalizer from RemoteUnleash")
 			if ok := controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer); !ok {
-				log.Error(err, "Failed to remove finalizer from RemoteUnleash")
-				return ctrl.Result{Requeue: true}, err
+				log.Info("Failed to remove finalizer from RemoteUnleash")
+				return ctrl.Result{Requeue: true}, nil
 			}
 
 			if err = r.Update(ctx, remoteUnleash); err != nil {
