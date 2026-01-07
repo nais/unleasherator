@@ -5,11 +5,11 @@
   "labels" dict
   "annotations" dict
   "alerts" (dict
-    "failed" (dict "for" "5m" "severity" "critical")
-    "notCreated" (dict "for" "15m" "severity" "warning")
-    "highChurn" (dict "for" "15m" "severity" "warning" "threshold" 0.5)
-    "excessiveTokens" (dict "for" "10m" "severity" "warning" "threshold" 50)
-    "metricsAbsent" (dict "for" "30m" "severity" "info")
+    "failed" (dict "enabled" true "for" "5m" "severity" "critical")
+    "notCreated" (dict "enabled" true "for" "15m" "severity" "warning")
+    "highChurn" (dict "enabled" true "for" "15m" "severity" "warning" "threshold" 0.5)
+    "excessiveTokens" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 50)
+    "metricsAbsent" (dict "enabled" false "for" "30m" "severity" "info")
   )
 }}
 {{- $at := mustMergeOverwrite $defaults (.Values.prometheusRules.apiToken | default dict) }}
@@ -32,6 +32,7 @@ spec:
     - name: unleasherator.apitoken
       rules:
         # Status-based alerts
+        {{- if $alerts.failed.enabled }}
         - alert: ApiTokenFailed
           expr: |
             unleasherator_apitoken_status{status="Failed"} == 1
@@ -44,7 +45,9 @@ spec:
             consequence: "Applications depending on this API token will not be able to authenticate with Unleash. Feature flag evaluations may fail or return defaults."
             action: "Check Unleasherator logs for token creation errors. Verify the target Unleash instance is accessible and the admin token has sufficient permissions."
             runbook_url: {{ $at.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.notCreated.enabled }}
         - alert: ApiTokenNotCreated
           expr: |
             unleasherator_apitoken_status{status="Created"} == 0
@@ -58,8 +61,10 @@ spec:
             consequence: "The API token has not been provisioned. Applications waiting for this token cannot connect to Unleash."
             action: "Check if the ApiToken CR is valid and the referenced Unleash instance exists. Review controller logs for pending operations."
             runbook_url: {{ $at.runbookUrl | quote }}
+        {{- end }}
 
         # Churn detection - tokens being created/deleted rapidly
+        {{- if $alerts.highChurn.enabled }}
         - alert: ApiTokenHighChurn
           expr: |
             (
@@ -76,8 +81,10 @@ spec:
             consequence: "Tokens are being created and deleted rapidly. This may cause authentication failures for applications and unnecessary load on Unleash."
             action: "Check for reconciliation loops, competing controllers, or misconfigured ApiToken specs. Review controller logs for repeated create/delete operations."
             runbook_url: {{ $at.runbookUrl | quote }}
+        {{- end }}
 
         # Too many tokens per environment
+        {{- if $alerts.excessiveTokens.enabled }}
         - alert: ApiTokenExcessiveTokens
           expr: |
             unleasherator_apitoken_existing_tokens > {{ $alerts.excessiveTokens.threshold }}
@@ -90,8 +97,10 @@ spec:
             consequence: "An unexpectedly high number of tokens exist for this environment. This may indicate token cleanup issues or duplicate token creation."
             action: "Review existing tokens in Unleash for this environment. Check if old tokens should be cleaned up or if the threshold should be adjusted."
             runbook_url: {{ $at.runbookUrl | quote }}
+        {{- end }}
 
         # Absent metric detection - fires when controller stops reporting
+        {{- if $alerts.metricsAbsent.enabled }}
         - alert: ApiTokenMetricsAbsent
           expr: |
             absent(unleasherator_apitoken_status) == 1
@@ -103,4 +112,5 @@ spec:
             consequence: "No ApiToken metrics are being reported. Monitoring of token provisioning status is unavailable."
             action: "Verify the Unleasherator controller is running. If no ApiTokens exist, this alert can be ignored."
             runbook_url: {{ $at.runbookUrl | quote }}
+        {{- end }}
 {{- end }}

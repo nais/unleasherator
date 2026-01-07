@@ -5,15 +5,15 @@
   "labels" dict
   "annotations" dict
   "alerts" (dict
-    "failed" (dict "for" "5m" "severity" "critical")
-    "stuckInProgress" (dict "for" "1h" "severity" "warning")
-    "instancesOutOfSync" (dict "for" "30m" "severity" "warning")
-    "noInstances" (dict "for" "30m" "severity" "info")
-    "highFailureRate" (dict "for" "15m" "severity" "critical" "threshold" 0.1)
-    "healthChecksFailing" (dict "for" "10m" "severity" "warning" "threshold" 0.01)
-    "slowRollout" (dict "for" "15m" "severity" "warning" "thresholdSeconds" 300)
-    "highConflictRate" (dict "for" "15m" "severity" "warning" "threshold" 0.05)
-    "metricsAbsent" (dict "for" "30m" "severity" "info")
+    "failed" (dict "enabled" true "for" "5m" "severity" "critical")
+    "stuckInProgress" (dict "enabled" true "for" "1h" "severity" "warning")
+    "instancesOutOfSync" (dict "enabled" true "for" "30m" "severity" "warning")
+    "noInstances" (dict "enabled" false "for" "30m" "severity" "info")
+    "highFailureRate" (dict "enabled" true "for" "15m" "severity" "critical" "threshold" 0.1)
+    "healthChecksFailing" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.01)
+    "slowRollout" (dict "enabled" true "for" "15m" "severity" "warning" "thresholdSeconds" 300)
+    "highConflictRate" (dict "enabled" true "for" "15m" "severity" "warning" "threshold" 0.05)
+    "metricsAbsent" (dict "enabled" false "for" "30m" "severity" "info")
   )
 }}
 {{- $rc := mustMergeOverwrite $defaults (.Values.prometheusRules.releaseChannel | default dict) }}
@@ -35,6 +35,7 @@ spec:
   groups:
     - name: unleasherator.releasechannel
       rules:
+        {{- if $alerts.failed.enabled }}
         # Status-based alerts
         - alert: ReleaseChannelFailed
           expr: |
@@ -48,7 +49,9 @@ spec:
             consequence: "Image rollout has failed. Unleash instances managed by this ReleaseChannel may be running inconsistent versions."
             action: "Check the ReleaseChannel status and events. Verify the target image exists and is accessible. Review Unleasherator controller logs for errors."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.stuckInProgress.enabled }}
         - alert: ReleaseChannelStuckInProgress
           expr: |
             unleasherator_releasechannel_status == 0.5
@@ -61,7 +64,9 @@ spec:
             consequence: "A rollout is taking longer than expected. Some Unleash instances may be running the old version while others have the new version."
             action: "Check if Unleash pods are failing to start or pass health checks. Verify resource availability and image pull status."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.instancesOutOfSync.enabled }}
         # Instance sync alerts
         - alert: ReleaseChannelInstancesOutOfSync
           expr: |
@@ -78,7 +83,9 @@ spec:
             consequence: "Some Unleash instances are not running the target image version. Feature flag behavior may differ between instances."
             action: "Check which Unleash instances are out of sync and why they haven't updated. Look for pod scheduling issues or image pull errors."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.noInstances.enabled }}
         - alert: ReleaseChannelNoInstances
           expr: |
             unleasherator_releasechannel_instances_total == 0
@@ -92,7 +99,9 @@ spec:
             consequence: "The ReleaseChannel exists but manages no Unleash instances. This may be expected during initial setup."
             action: "Verify the ReleaseChannel selector matches the intended Unleash resources. If this is expected, consider disabling this alert."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.highFailureRate.enabled }}
         # Rollout failure rate - safe division with fallback
         - alert: ReleaseChannelHighFailureRate
           expr: |
@@ -110,7 +119,9 @@ spec:
             consequence: "A high percentage of rollout attempts are failing. New image versions may not be deploying successfully."
             action: "Review recent rollout failures in the ReleaseChannel events. Check for image availability, resource constraints, or configuration issues."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.healthChecksFailing.enabled }}
         # Health check failures - threshold prevents alerting on single transient failure
         - alert: ReleaseChannelHealthChecksFailing
           expr: |
@@ -126,7 +137,9 @@ spec:
             consequence: "Unleash instances are failing health checks during rollout. The rollout may be blocked or rolled back."
             action: "Check Unleash pod logs for startup errors. Verify database connectivity and resource availability."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.slowRollout.enabled }}
         # Slow rollouts - histogram with empty data protection
         - alert: ReleaseChannelSlowRollout
           expr: |
@@ -144,7 +157,9 @@ spec:
             consequence: "Rollouts are taking longer than expected. New features and fixes will be delayed reaching all instances."
             action: "Check for slow pod scheduling, image pull times, or extended health check wait times."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.highConflictRate.enabled }}
         # Conflict detection
         - alert: ReleaseChannelHighConflictRate
           expr: |
@@ -160,7 +175,9 @@ spec:
             consequence: "Resource conflicts are occurring during rollouts. This may slow down rollouts or cause inconsistent state."
             action: "Check for multiple controllers managing the same resources, or manual modifications to Unleash resources during rollouts."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 
+        {{- if $alerts.metricsAbsent.enabled }}
         # Absent metric detection - fires when controller stops reporting
         - alert: ReleaseChannelMetricsAbsent
           expr: |
@@ -173,4 +190,5 @@ spec:
             consequence: "No ReleaseChannel metrics are being reported. Monitoring of rollout status is unavailable."
             action: "Verify the Unleasherator controller is running. If no ReleaseChannels exist, this alert can be ignored."
             runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
 {{- end }}
