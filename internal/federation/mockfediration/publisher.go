@@ -16,6 +16,11 @@ func (m *MockPublisher) Publish(ctx context.Context, unleash *unleashv1.Unleash,
 	return args.Error(0)
 }
 
+func (m *MockPublisher) PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash) error {
+	args := m.Called(ctx, unleash)
+	return args.Error(0)
+}
+
 func (m *MockPublisher) Close() error {
 	args := m.Called()
 	return args.Error(0)

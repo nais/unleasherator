@@ -8,6 +8,7 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/google/uuid"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	"github.com/nais/unleasherator/internal/pb"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -21,6 +22,7 @@ const pubsubOrderingKey = "order"
 
 type Publisher interface {
 	Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error
+	PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash) error
 	Close() error
 }
 
@@ -47,9 +49,20 @@ func (p *publisher) otelSpanOptions() []trace.SpanStartOption {
 // Publish publishes the given Unleash instance to the federation topic using the provided API token.
 // Returns an error if the message could not be published.
 func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error {
+	instance := UnleashFederationInstance(unleash, apiToken)
+	return p.publish(ctx, instance)
+}
+
+// PublishRemoved publishes a removal message for the given Unleash instance.
+// This notifies federated clusters to delete their RemoteUnleash resources.
+func (p *publisher) PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash) error {
+	instance := UnleashFederationInstanceRemoved(unleash)
+	return p.publish(ctx, instance)
+}
+
+func (p *publisher) publish(ctx context.Context, instance *pb.Instance) error {
 	log := log.FromContext(ctx).WithName("publish")
 
-	instance := UnleashFederationInstance(unleash, apiToken)
 	payload, err := proto.Marshal(instance)
 	if err != nil {
 		log.Error(err, "failed to marshal protobuf message")

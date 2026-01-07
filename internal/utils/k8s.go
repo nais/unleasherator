@@ -100,3 +100,33 @@ func removeEmptyErrs(slice []error) []error {
 	}
 	return result
 }
+
+// DeleteObject deletes the given object from Kubernetes. If the object does not exist,
+// no error is returned (idempotent delete).
+func DeleteObject[T client.Object](ctx context.Context, r client.Client, obj T) error {
+	err := r.Delete(ctx, obj)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// DeleteAllObjects deletes all objects in the given slice from the Kubernetes API server.
+// Objects that don't exist are silently skipped.
+// The function returns a slice of errors, one for each object that failed to be deleted.
+func DeleteAllObjects[T client.Object](ctx context.Context, r client.Client, objects []T) []error {
+	errs := make([]error, len(objects))
+	var wg sync.WaitGroup
+
+	for i, obj := range objects {
+		wg.Add(1)
+		go func(i int, obj T) {
+			defer wg.Done()
+			errs[i] = DeleteObject(ctx, r, obj)
+		}(i, obj)
+	}
+
+	wg.Wait()
+
+	return removeEmptyErrs(errs)
+}

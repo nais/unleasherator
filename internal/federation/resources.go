@@ -6,9 +6,17 @@ import (
 )
 
 func UnleashFederationInstance(unleash *unleashv1.Unleash, token string) *pb.Instance {
+	return unleashFederationInstanceWithStatus(unleash, token, pb.Status_Provisioned)
+}
+
+func UnleashFederationInstanceRemoved(unleash *unleashv1.Unleash) *pb.Instance {
+	return unleashFederationInstanceWithStatus(unleash, "", pb.Status_Removed)
+}
+
+func unleashFederationInstanceWithStatus(unleash *unleashv1.Unleash, token string, status pb.Status) *pb.Instance {
 	return &pb.Instance{
 		Version:     pb.Version,
-		Status:      pb.Status_Provisioned,
+		Status:      status,
 		Name:        unleash.GetName(),
 		Url:         unleash.PublicApiURL(),
 		SecretToken: token,

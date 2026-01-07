@@ -46,6 +46,7 @@ const (
 	unleashPublishMetricStatusSending = "sending"
 	unleashPublishMetricStatusSuccess = "success"
 	unleashPublishMetricStatusFailed  = "failed"
+	unleashPublishMetricStatusSkipped = "skipped"
 )
 
 var (
@@ -412,6 +413,22 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 // finalizeUnleash will perform the required operations before delete the CR.
 func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) {
+	// Publish removal message to federated clusters
+	if r.Federation.Enabled && cr.Spec.Federation.Enabled {
+		log.Info("Publishing removal message to federation")
+		unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSending).Inc()
+
+		if err := r.Federation.Publisher.PublishRemoved(ctx, cr); err != nil {
+			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusFailed).Inc()
+			log.Error(err, "Failed to publish removal to federation - remote clusters may have orphaned RemoteUnleash resources")
+			r.Recorder.Event(cr, "Warning", "FederationPublishFailed",
+				fmt.Sprintf("Failed to publish removal to federation: %v", err))
+		} else {
+			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSuccess).Inc()
+			log.Info("Successfully published removal message to federation")
+		}
+	}
+
 	// @TODO make it optional to delete the operator secret
 	operatorSecret := cr.NamespacedOperatorSecretName(r.OperatorNamespace)
 
