@@ -5,14 +5,14 @@
   "labels" dict
   "annotations" dict
   "alerts" (dict
-    "connectionProblem" (dict "for" "5m" "severity" "critical")
-    "notReconciled" (dict "for" "10m" "severity" "warning")
-    "degraded" (dict "for" "5m" "severity" "warning")
-    "reconcileErrors" (dict "for" "10m" "severity" "warning" "threshold" 0.1)
-    "reconcileSlow" (dict "for" "15m" "severity" "warning" "thresholdSeconds" 30)
-    "workqueueBacklog" (dict "for" "10m" "severity" "warning" "threshold" 10)
-    "federationPublishFailing" (dict "for" "10m" "severity" "warning" "threshold" 0.1)
-    "metricsAbsent" (dict "for" "30m" "severity" "info")
+    "connectionProblem" (dict "enabled" true "for" "5m" "severity" "critical")
+    "notReconciled" (dict "enabled" true "for" "10m" "severity" "warning")
+    "degraded" (dict "enabled" true "for" "5m" "severity" "warning")
+    "reconcileErrors" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.1)
+    "reconcileSlow" (dict "enabled" true "for" "15m" "severity" "warning" "thresholdSeconds" 30)
+    "workqueueBacklog" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 10)
+    "federationPublishFailing" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.1)
+    "metricsAbsent" (dict "enabled" false "for" "30m" "severity" "info")
   )
 }}
 {{- $u := mustMergeOverwrite $defaults (.Values.prometheusRules.unleash | default dict) }}
@@ -35,6 +35,7 @@ spec:
     - name: unleasherator.unleash
       rules:
         # Connection status - critical for API token provisioning
+        {{- if $alerts.connectionProblem.enabled }}
         - alert: UnleashConnectionProblem
           expr: |
             unleasherator_unleash_status{status="Connected"} == 0
@@ -47,8 +48,10 @@ spec:
             consequence: "Unleasherator cannot connect to this Unleash instance and will not be able to create or manage API tokens for applications."
             action: "Check the Unleash instance health, network connectivity, and Unleasherator logs for connection errors."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Reconciliation status
+        {{- if $alerts.notReconciled.enabled }}
         - alert: UnleashNotReconciled
           expr: |
             unleasherator_unleash_status{status="Reconciled"} == 0
@@ -61,8 +64,10 @@ spec:
             consequence: "The Unleash instance configuration may be out of sync with the desired state. Deployments, services, or other resources may not be correctly configured."
             action: "Check Unleasherator controller logs for reconciliation errors. Verify the Unleash CR spec is valid and all referenced secrets/configmaps exist."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Degraded status
+        {{- if $alerts.degraded.enabled }}
         - alert: UnleashDegraded
           expr: |
             unleasherator_unleash_status{status="Degraded"} == 1
@@ -75,8 +80,10 @@ spec:
             consequence: "The Unleash instance is running but experiencing issues. Some functionality may be impaired."
             action: "Check Unleash pod logs and events. Verify database connectivity and resource availability."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Controller reconciliation errors
+        {{- if $alerts.reconcileErrors.enabled }}
         - alert: UnleashReconcileErrors
           expr: |
             (
@@ -92,8 +99,10 @@ spec:
             consequence: "The Unleash controller is failing to reconcile resources. Unleash instances may not be created or updated correctly."
             action: "Check Unleasherator controller logs for errors. Look for invalid Unleash CR specs, missing secrets, or API server issues."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Slow reconciliation
+        {{- if $alerts.reconcileSlow.enabled }}
         - alert: UnleashReconcileSlow
           expr: |
             histogram_quantile(0.95,
@@ -109,8 +118,10 @@ spec:
             consequence: "Changes to Unleash resources are taking longer than expected to apply. This may delay instance updates and token provisioning."
             action: "Check for API server latency, complex Unleash specs, or resource contention. Review controller resource limits."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Workqueue backlog
+        {{- if $alerts.workqueueBacklog.enabled }}
         - alert: UnleashWorkqueueBacklog
           expr: |
             workqueue_depth{name="unleash"} > {{ $alerts.workqueueBacklog.threshold }}
@@ -122,8 +133,10 @@ spec:
             consequence: "The controller is falling behind processing Unleash resources. Changes may be delayed."
             action: "Check controller logs for slow operations. Consider increasing controller replicas or resources."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Federation publish failures (management cluster only)
+        {{- if $alerts.federationPublishFailing.enabled }}
         - alert: UnleashFederationPublishFailing
           expr: |
             (
@@ -139,8 +152,10 @@ spec:
             consequence: "Unleash instance configurations may not be propagating to app clusters. Remote clusters will not receive updates about new or modified Unleash instances."
             action: "Check Pub/Sub connectivity, IAM permissions, and Unleasherator logs for publishing errors."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 
         # Absent metric detection
+        {{- if $alerts.metricsAbsent.enabled }}
         - alert: UnleashMetricsAbsent
           expr: |
             absent(unleasherator_unleash_status) == 1
@@ -152,4 +167,5 @@ spec:
             consequence: "No Unleash status metrics are being reported. This may indicate the controller is down or no Unleash instances exist."
             action: "Verify the Unleasherator controller is running. If no Unleash instances are expected, this alert can be ignored or disabled."
             runbook_url: {{ $u.runbookUrl | quote }}
+        {{- end }}
 {{- end }}
