@@ -70,7 +70,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "min(unleasherator_releasechannel_status{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "expr": "min(unleasherator_releasechannel_status{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
           "legendFormat": "Overall Status",
           "refId": "A"
         }
@@ -103,7 +103,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "count(max by (namespace, name) (unleasherator_releasechannel_status{namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
+          "expr": "count(max by (resource_namespace, name) (unleasherator_releasechannel_status{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -143,7 +143,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(max by (namespace, name) (unleasherator_releasechannel_instances_total{namespace=~\"$namespace\", name=~\"$releasechannel\"})) - sum(max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
+          "expr": "sum(max by (resource_namespace, name) (unleasherator_releasechannel_instances_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})) - sum(max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
           "legendFormat": "Out of Sync",
           "refId": "A"
         }
@@ -185,7 +185,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(rate(unleasherator_releasechannel_rollouts_total{namespace=~\"$namespace\", name=~\"$releasechannel\", result=\"success\"}[$__rate_interval])) / sum(rate(unleasherator_releasechannel_rollouts_total{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) * 100",
+          "expr": "sum(rate(unleasherator_releasechannel_rollouts_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\", result=\"success\"}[$__rate_interval])) / sum(rate(unleasherator_releasechannel_rollouts_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) * 100",
           "legendFormat": "Success Rate",
           "refId": "A"
         }
@@ -225,7 +225,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "histogram_quantile($quantile, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile($quantile, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
           "legendFormat": "p${quantile} Duration",
           "refId": "A"
         }
@@ -264,7 +264,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(increase(unleasherator_releasechannel_rollouts_total{namespace=~\"$namespace\", name=~\"$releasechannel\", result=\"failed\"}[1h]))",
+          "expr": "sum(increase(unleasherator_releasechannel_rollouts_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\", result=\"failed\"}[1h]))",
           "legendFormat": "Failed (1h)",
           "refId": "A"
         }
@@ -330,13 +330,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
+          "expr": "sum(max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
           "legendFormat": "Up to Date",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(max by (namespace, name) (unleasherator_releasechannel_instances_total{namespace=~\"$namespace\", name=~\"$releasechannel\"})) - sum(max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
+          "expr": "sum(max by (resource_namespace, name) (unleasherator_releasechannel_instances_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})) - sum(max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}))",
           "legendFormat": "Out of Sync",
           "refId": "B"
         }
@@ -380,8 +380,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"}) / max by (namespace, name) (unleasherator_releasechannel_instances_total{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
-          "legendFormat": "{{ namespace }}/{{ name }}",
+          "expr": "max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}) / max by (resource_namespace, name) (unleasherator_releasechannel_instances_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "legendFormat": "{{ resource_namespace }}/{{ name }}",
           "refId": "A"
         }
       ],
@@ -446,7 +446,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum by (result) (increase(unleasherator_releasechannel_rollouts_total{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
+          "expr": "sum by (result) (increase(unleasherator_releasechannel_rollouts_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
           "legendFormat": "{{ result }}",
           "refId": "A"
         }
@@ -495,19 +495,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "histogram_quantile(0.50, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "histogram_quantile(0.90, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.90, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "histogram_quantile(0.99, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(unleasherator_releasechannel_rollout_duration_seconds_bucket{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -573,7 +573,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum by (result) (increase(unleasherator_releasechannel_health_checks_total{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
+          "expr": "sum by (result) (increase(unleasherator_releasechannel_health_checks_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
           "legendFormat": "{{ result }}",
           "refId": "A"
         }
@@ -622,7 +622,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum by (phase) (increase(unleasherator_releasechannel_phase_transitions_total{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
+          "expr": "sum by (phase) (increase(unleasherator_releasechannel_phase_transitions_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
           "legendFormat": "{{ phase }}",
           "refId": "A"
         }
@@ -676,7 +676,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "sum(increase(unleasherator_releasechannel_conflicts_total{namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
+          "expr": "sum(increase(unleasherator_releasechannel_conflicts_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}[$__rate_interval]))",
           "legendFormat": "Conflicts",
           "refId": "A"
         }
@@ -748,7 +748,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "max by (namespace, name) (unleasherator_releasechannel_status{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "expr": "max by (resource_namespace, name) (unleasherator_releasechannel_status{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -756,7 +756,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "max by (namespace, name) (unleasherator_releasechannel_instances_total{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "expr": "max by (resource_namespace, name) (unleasherator_releasechannel_instances_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -764,7 +764,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "expr": "max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -772,7 +772,7 @@
         },
         {
           "datasource": { "type": "prometheus", "uid": "${tenant}" },
-          "expr": "max by (namespace, name) (unleasherator_releasechannel_instances_up_to_date{namespace=~\"$namespace\", name=~\"$releasechannel\"}) / max by (namespace, name) (unleasherator_releasechannel_instances_total{namespace=~\"$namespace\", name=~\"$releasechannel\"})",
+          "expr": "max by (resource_namespace, name) (unleasherator_releasechannel_instances_up_to_date{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"}) / max by (resource_namespace, name) (unleasherator_releasechannel_instances_total{resource_namespace=~\"$namespace\", name=~\"$releasechannel\"})",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -785,9 +785,9 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true, "__name__": true, "__name__ 1": true, "__name__ 2": true, "__name__ 3": true, "__name__ 4": true, "job": true, "job 1": true, "job 2": true, "job 3": true, "job 4": true, "namespace 1": true, "namespace 2": true, "namespace 3": true, "namespace 4": true },
+            "excludeByName": { "Time": true, "Time 1": true, "Time 2": true, "Time 3": true, "Time 4": true, "__name__": true, "__name__ 1": true, "__name__ 2": true, "__name__ 3": true, "__name__ 4": true, "job": true, "job 1": true, "job 2": true, "job 3": true, "job 4": true, "resource_namespace 1": true, "resource_namespace 2": true, "resource_namespace 3": true, "resource_namespace 4": true },
             "indexByName": {},
-            "renameByName": { "Value #A": "Status", "Value #B": "Total", "Value #C": "Up to Date", "Value #D": "Sync %", "name": "Name", "namespace": "Namespace" }
+            "renameByName": { "Value #A": "Status", "Value #B": "Total", "Value #C": "Up to Date", "Value #D": "Sync %", "name": "Name", "resource_namespace": "Namespace" }
           }
         }
       ],
@@ -827,14 +827,14 @@
           "type": "prometheus",
           "uid": "${tenant}"
         },
-        "definition": "label_values(unleasherator_releasechannel_status, namespace)",
+        "definition": "label_values(unleasherator_releasechannel_status, resource_namespace)",
         "includeAll": true,
         "label": "namespace",
         "multi": true,
         "name": "namespace",
         "options": [],
         "query": {
-          "query": "label_values(unleasherator_releasechannel_status, namespace)",
+          "query": "label_values(unleasherator_releasechannel_status, resource_namespace)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
@@ -852,14 +852,14 @@
           "type": "prometheus",
           "uid": "${tenant}"
         },
-        "definition": "label_values(unleasherator_releasechannel_status{namespace=~\"$namespace\"}, name)",
+        "definition": "label_values(unleasherator_releasechannel_status{resource_namespace=~\"$namespace\"}, name)",
         "includeAll": true,
         "label": "releasechannel",
         "multi": true,
         "name": "releasechannel",
         "options": [],
         "query": {
-          "query": "label_values(unleasherator_releasechannel_status{namespace=~\"$namespace\"}, name)",
+          "query": "label_values(unleasherator_releasechannel_status{resource_namespace=~\"$namespace\"}, name)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,

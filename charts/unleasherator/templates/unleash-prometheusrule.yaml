@@ -42,9 +42,9 @@ spec:
           for: {{ $alerts.connectionProblem.for }}
           labels:
             severity: {{ $alerts.connectionProblem.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not connected"
+            summary: "Unleash instance {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not connected"
             consequence: "Unleasherator cannot connect to this Unleash instance and will not be able to create or manage API tokens for applications."
             action: "Check the Unleash instance health, network connectivity, and Unleasherator logs for connection errors."
             runbook_url: {{ $u.runbookUrl | quote }}
@@ -58,9 +58,9 @@ spec:
           for: {{ $alerts.notReconciled.for }}
           labels:
             severity: {{ $alerts.notReconciled.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not reconciled"
+            summary: "Unleash instance {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not reconciled"
             consequence: "The Unleash instance configuration may be out of sync with the desired state. Deployments, services, or other resources may not be correctly configured."
             action: "Check Unleasherator controller logs for reconciliation errors. Verify the Unleash CR spec is valid and all referenced secrets/configmaps exist."
             runbook_url: {{ $u.runbookUrl | quote }}
@@ -74,9 +74,9 @@ spec:
           for: {{ $alerts.degraded.for }}
           labels:
             severity: {{ $alerts.degraded.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is degraded"
+            summary: "Unleash instance {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is degraded"
             consequence: "The Unleash instance is running but experiencing issues. Some functionality may be impaired."
             action: "Check Unleash pod logs and events. Verify database connectivity and resource availability."
             runbook_url: {{ $u.runbookUrl | quote }}

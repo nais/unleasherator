@@ -60,7 +60,7 @@ var (
 			Name: "unleasherator_unleash_status",
 			Help: "Status of Unleash instances",
 		},
-		[]string{"namespace", "name", "status"},
+		[]string{"resource_namespace", "name", "status"},
 	)
 
 	unleashPublished = prometheus.NewCounterVec(

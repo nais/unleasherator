@@ -423,7 +423,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "namespace"
+              "options": "resource_namespace"
             },
             "properties": [
               {
@@ -495,7 +495,7 @@
         "sortBy": [
           {
             "desc": false,
-            "displayName": "namespace"
+            "displayName": "resource_namespace"
           }
         ]
       },
@@ -564,7 +564,7 @@
               "k8s_cluster_name": true,
               "k8s_cluster_name 1": true,
               "k8s_cluster_name 2": true,
-              "namespace 2": true,
+              "resource_namespace 2": true,
               "pod": true,
               "pod 1": true,
               "pod 2": true,
@@ -579,12 +579,12 @@
               "Value #Connected": 2,
               "Value #Reconciled": 3,
               "name": 1,
-              "namespace 1": 0
+              "resource_namespace 1": 0
             },
             "renameByName": {
               "Value #Connected": "Connected",
               "Value #Reconciled": "Reconciled",
-              "namespace 1": "namespace"
+              "resource_namespace 1": "namespace"
             }
           }
         }
@@ -1394,7 +1394,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "namespace"
+              "options": "resource_namespace"
             },
             "properties": [
               {
@@ -1533,7 +1533,7 @@
               "job 1": true,
               "job 2": true,
               "k8s_cluster_name 2": true,
-              "namespace 2": true,
+              "resource_namespace 2": true,
               "pod": true,
               "pod 1": true,
               "pod 2": true,
@@ -1549,13 +1549,13 @@
               "Value #Reconciled": 4,
               "k8s_cluster_name 1": 0,
               "name": 2,
-              "namespace 1": 1
+              "resource_namespace 1": 1
             },
             "renameByName": {
               "Value #Connected": "Connected",
               "Value #Reconciled": "Reconciled",
               "k8s_cluster_name 1": "Cluster",
-              "namespace 1": "namespace"
+              "resource_namespace 1": "namespace"
             }
           }
         }
@@ -1609,7 +1609,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "namespace"
+              "options": "resource_namespace"
             },
             "properties": [
               {
