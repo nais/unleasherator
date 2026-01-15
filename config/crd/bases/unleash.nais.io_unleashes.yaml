@@ -4476,6 +4476,12 @@ spec:
                   This is used for kubectl printing purposes. Rather than relying on this
                   value, check the conditions instead.
                 type: boolean
+              lastPublishedHash:
+                description: |-
+                  LastPublishedHash is a FNV-1a hash of the last published federation data.
+                  Used to avoid redundant publishes when nothing has changed.
+                format: int64
+                type: integer
               reconciled:
                 default: false
                 description: |-

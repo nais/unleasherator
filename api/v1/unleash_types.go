@@ -309,6 +309,11 @@ type UnleashStatus struct {
 	// This ensures we only use the resolved image if it matches the current ReleaseChannel
 	// +kubebuilder:validation:Optional
 	ReleaseChannelName string `json:"releaseChannelName,omitempty"`
+
+	// LastPublishedHash is a FNV-1a hash of the last published federation data.
+	// Used to avoid redundant publishes when nothing has changed.
+	// +kubebuilder:validation:Optional
+	LastPublishedHash int64 `json:"lastPublishedHash,omitempty"`
 }
 
 func (u *Unleash) NamespacedName() types.NamespacedName {
