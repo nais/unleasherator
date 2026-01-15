@@ -34,6 +34,7 @@ var (
 	// RemoteUnleash controller timeouts - prefixed to avoid conflicts with other controllers
 	remoteUnleashErrorRetryDelay = 1 * time.Minute
 	remoteUnleashRequeueAfter    = 1 * time.Hour
+	remoteUnleashRequeueJitter   = 10 * time.Minute // Jitter to spread reconciliations
 
 	// remoteUnleashStatus is a Prometheus metric which will be used to expose the status of the RemoteUnleash instances
 	remoteUnleashStatus = prometheus.NewGaugeVec(
@@ -227,7 +228,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	return ctrl.Result{RequeueAfter: remoteUnleashRequeueAfter}, nil
+	return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(remoteUnleashRequeueAfter, remoteUnleashRequeueJitter)}, nil
 }
 
 func (r *RemoteUnleashReconciler) updateStatusSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {
@@ -517,7 +518,7 @@ func (r *RemoteUnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&unleashv1.RemoteUnleash{}).
 		WithEventFilter(pred).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 1, // Prevent race conditions with rapid simultaneous changes
+			MaxConcurrentReconciles: 4, // Process multiple instances in parallel
 		}).
 		Complete(r)
 }

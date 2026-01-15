@@ -25,12 +25,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -51,8 +55,9 @@ const (
 
 var (
 	// Unleash controller timeouts - prefixed to avoid conflicts with other controllers
-	unleashDeploymentTimeout      = 5 * time.Minute
-	unleashControllerRequeueAfter = 30 * time.Second // Poll ReleaseChannel status for image changes
+	unleashDeploymentTimeout       = 5 * time.Minute
+	unleashControllerRequeueAfter  = 60 * time.Second // Poll ReleaseChannel status for image changes
+	unleashControllerRequeueJitter = 15 * time.Second // Jitter to spread reconciliations
 
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -369,8 +374,9 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Only requeue periodically if using ReleaseChannel (for pull-based coordination)
 	// Instances with CustomImage or default image don't need periodic polling
 	if unleash.Spec.ReleaseChannel.Name != "" {
-		log.V(1).Info("Requeuing for periodic ReleaseChannel polling", "interval", unleashControllerRequeueAfter)
-		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+		requeueAfter := utils.RequeueAfterWithJitter(unleashControllerRequeueAfter, unleashControllerRequeueJitter)
+		log.V(1).Info("Requeuing for periodic ReleaseChannel polling", "interval", requeueAfter)
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	return ctrl.Result{}, nil
@@ -379,6 +385,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // publish the Unleash instance to pubsub if federation is enabled.
 // It fetches the API token and publishes the instance using the federation publisher.
 // If the API token cannot be fetched, it returns an error.
+// Publishing is skipped if the instance data hasn't changed since last publish.
 func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unleash) error {
 	log := log.FromContext(ctx).WithName("publish")
 
@@ -390,10 +397,6 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 	ctx, span := r.Tracer.Start(ctx, "Publish Federation")
 	defer span.End()
 
-	log.Info("Publishing Unleash instance to federation")
-	// Count the number of Unleash instances published
-	unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSending).Inc()
-
 	token, err := unleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
 		unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusFailed).Inc()
@@ -401,10 +404,32 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 		return fmt.Errorf("publish could not fetch API token: %w", err)
 	}
 
+	// Compute hash of the data we're about to publish
+	instance := federation.UnleashFederationInstance(unleash, string(token))
+	currentHash := federation.ComputeInstanceHash(instance)
+
+	// Skip if nothing has changed since last publish
+	if unleash.Status.LastPublishedHash == currentHash {
+		log.V(1).Info("Skipping publish, federation data unchanged", "hash", currentHash)
+		unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSkipped).Inc()
+		return nil
+	}
+
+	log.Info("Publishing Unleash instance to federation", "previousHash", unleash.Status.LastPublishedHash, "newHash", currentHash)
+	unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSending).Inc()
+
 	err = r.Federation.Publisher.Publish(ctx, unleash, string(token))
 	if err != nil {
 		unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusFailed).Inc()
 		return fmt.Errorf("publish could not publish Unleash instance: %w", err)
+	}
+
+	// Update status with the hash of what we just published
+	unleash.Status.LastPublishedHash = currentHash
+	if err := r.Status().Update(ctx, unleash); err != nil {
+		// Log but don't fail - the publish succeeded, we just couldn't track it
+		// Next reconcile will re-publish which is fine (idempotent)
+		log.V(1).Info("Failed to update LastPublishedHash status", "error", err.Error())
 	}
 
 	unleashPublished.WithLabelValues("provisioned", unleashPublishMetricStatusSuccess).Inc()
@@ -1076,11 +1101,77 @@ func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.Unleash{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 1, // Prevent concurrent reconciles that could cause race conditions
+			MaxConcurrentReconciles: 4, // Process multiple instances in parallel
 		}).
 		WithEventFilter(predicate.Or(
 			predicate.GenerationChangedPredicate{}, // Spec changes (user updates)
 			predicate.LabelChangedPredicate{},      // Label changes (might affect ReleaseChannel matching)
 		)).
+		// Watch ReleaseChannel changes to trigger Unleash reconciliation when InstanceImages changes
+		Watches(
+			&unleashv1.ReleaseChannel{},
+			handler.EnqueueRequestsFromMapFunc(r.findUnleashesForReleaseChannel),
+			// Only react to status updates (InstanceImages changes)
+			builder.WithPredicates(predicate.Funcs{
+				CreateFunc: func(_ event.CreateEvent) bool {
+					// Don't trigger on create - Unleash already gets reconciled on its own create
+					return false
+				},
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					oldRC, ok := e.ObjectOld.(*unleashv1.ReleaseChannel)
+					if !ok {
+						return false
+					}
+					newRC, ok := e.ObjectNew.(*unleashv1.ReleaseChannel)
+					if !ok {
+						return false
+					}
+					// Trigger if InstanceImages changed or Image spec changed
+					if !equality.Semantic.DeepEqual(oldRC.Status.InstanceImages, newRC.Status.InstanceImages) {
+						return true
+					}
+					if oldRC.Spec.Image != newRC.Spec.Image {
+						return true
+					}
+					return false
+				},
+				DeleteFunc: func(_ event.DeleteEvent) bool {
+					// Trigger on delete so Unleash can fall back to default image
+					return true
+				},
+				GenericFunc: func(_ event.GenericEvent) bool {
+					return false
+				},
+			}),
+		).
 		Complete(r)
+}
+
+// findUnleashesForReleaseChannel returns reconcile requests for all Unleash instances
+// that reference the given ReleaseChannel
+func (r *UnleashReconciler) findUnleashesForReleaseChannel(ctx context.Context, obj client.Object) []reconcile.Request {
+	releaseChannel, ok := obj.(*unleashv1.ReleaseChannel)
+	if !ok {
+		return nil
+	}
+
+	// List all Unleash instances in the same namespace
+	unleashList := &unleashv1.UnleashList{}
+	if err := r.Client.List(ctx, unleashList, client.InNamespace(releaseChannel.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, unleash := range unleashList.Items {
+		// Only include Unleash instances that reference this ReleaseChannel
+		if unleash.Spec.ReleaseChannel.Name == releaseChannel.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      unleash.Name,
+					Namespace: unleash.Namespace,
+				},
+			})
+		}
+	}
+	return requests
 }
