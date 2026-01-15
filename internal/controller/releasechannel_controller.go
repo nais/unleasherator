@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,7 +50,6 @@ var (
 	releaseChannelRollingBackWaitDelay    = 1 * time.Minute
 	releaseChannelFailedRetryDelay        = 10 * time.Minute
 	releaseChannelStatusUpdateSuccess     = 30 * time.Second
-	releaseChannelStatusUpdateRetry       = 500 * time.Millisecond
 	releaseChannelBackoffBase             = 10 * time.Second
 	releaseChannelBackoffMedium           = 20 * time.Second
 	releaseChannelBackoffLong             = 30 * time.Second
@@ -184,10 +184,27 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.handleDeletion(ctx, releaseChannel, log)
 	}
 
-	// Add finalizer if not present
+	// Add finalizer if not present - use retry to handle concurrent modifications
 	if !controllerutil.ContainsFinalizer(releaseChannel, ReleaseChannelFinalizer) {
-		controllerutil.AddFinalizer(releaseChannel, ReleaseChannelFinalizer)
-		if err := r.Update(ctx, releaseChannel); err != nil {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			// Fetch fresh copy for each retry attempt
+			fresh := &unleashv1.ReleaseChannel{}
+			if err := r.Get(ctx, req.NamespacedName, fresh); err != nil {
+				return err
+			}
+			// Check again - another reconcile might have added it
+			if controllerutil.ContainsFinalizer(fresh, ReleaseChannelFinalizer) {
+				*releaseChannel = *fresh
+				return nil
+			}
+			controllerutil.AddFinalizer(fresh, ReleaseChannelFinalizer)
+			err := r.Update(ctx, fresh)
+			if err == nil {
+				*releaseChannel = *fresh
+			}
+			return err
+		})
+		if err != nil {
 			log.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -255,14 +272,21 @@ func (r *ReleaseChannelReconciler) handleDeletion(ctx context.Context, releaseCh
 			"referencingInstances", instanceNames,
 			"count", len(referencingInstances))
 
-		// Update status to indicate deletion is blocked
-		meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
-			Type:    "DeletionBlocked",
-			Status:  metav1.ConditionTrue,
-			Reason:  "ReferencingInstancesExist",
-			Message: fmt.Sprintf("Cannot delete: %d Unleash instance(s) still reference this ReleaseChannel: %v", len(referencingInstances), instanceNames),
+		// Update status to indicate deletion is blocked - use retry for conflict handling
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			fresh := &unleashv1.ReleaseChannel{}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
+				return err
+			}
+			meta.SetStatusCondition(&fresh.Status.Conditions, metav1.Condition{
+				Type:    "DeletionBlocked",
+				Status:  metav1.ConditionTrue,
+				Reason:  "ReferencingInstancesExist",
+				Message: fmt.Sprintf("Cannot delete: %d Unleash instance(s) still reference this ReleaseChannel: %v", len(referencingInstances), instanceNames),
+			})
+			return r.Status().Update(ctx, fresh)
 		})
-		if err := r.Status().Update(ctx, releaseChannel); err != nil {
+		if err != nil {
 			log.Error(err, "Failed to update status with deletion blocked condition")
 		}
 
@@ -272,9 +296,16 @@ func (r *ReleaseChannelReconciler) handleDeletion(ctx context.Context, releaseCh
 
 	log.Info("No referencing instances found, proceeding with deletion")
 
-	// Remove finalizer to allow deletion
-	controllerutil.RemoveFinalizer(releaseChannel, ReleaseChannelFinalizer)
-	if err := r.Update(ctx, releaseChannel); err != nil {
+	// Remove finalizer to allow deletion - use retry for conflict handling
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		fresh := &unleashv1.ReleaseChannel{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
+			return err
+		}
+		controllerutil.RemoveFinalizer(fresh, ReleaseChannelFinalizer)
+		return r.Update(ctx, fresh)
+	})
+	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
@@ -1176,50 +1207,59 @@ func (r *ReleaseChannelReconciler) getInstancesToUpdate(instances []unleashv1.Un
 func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Coordinating deployment by updating InstanceImages map", "instances", len(instances), "phase", releaseChannel.Status.Phase)
 
-	// Initialize InstanceImages map if needed
-	if releaseChannel.Status.InstanceImages == nil {
-		releaseChannel.Status.InstanceImages = make(map[string]string)
-	}
-
-	// Initialize LastTargetImages map if needed - tracks what we last deployed to detect changes
-	if releaseChannel.Status.LastTargetImages == nil {
-		releaseChannel.Status.LastTargetImages = make(map[string]string)
-	}
-
-	// Track if any changes were made to increment generation
-	changesDetected := false
-
-	// Update ReleaseChannel's InstanceImages map with desired images for each instance
-	// Unleash controllers will PULL from this map
+	// Build the desired instance images map from instances
+	desiredImages := make(map[string]string)
 	for _, instance := range instances {
-		// Determine the target image for this specific instance based on the rollout phase
 		targetImage := r.getExpectedImageForInstance(ctx, &instance, string(releaseChannel.Spec.Image))
+		desiredImages[instance.ObjectMeta.Name] = targetImage
+	}
 
-		// Set desired image in ReleaseChannel status (Unleash will pull this)
-		if releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] != targetImage {
-			releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] = targetImage
-			changesDetected = true
-			log.Info("Set desired image for instance in ReleaseChannel", "instance", instance.ObjectMeta.Name, "image", targetImage)
+	// Use RetryOnConflict for robust conflict handling
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Fetch fresh copy
+		fresh := &unleashv1.ReleaseChannel{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
+			return err
 		}
 
-		// Track last target for change detection
-		releaseChannel.Status.LastTargetImages[instance.ObjectMeta.Name] = targetImage
-	}
+		// Initialize maps if needed
+		if fresh.Status.InstanceImages == nil {
+			fresh.Status.InstanceImages = make(map[string]string)
+		}
+		if fresh.Status.LastTargetImages == nil {
+			fresh.Status.LastTargetImages = make(map[string]string)
+		}
 
-	// Increment generation if changes were made to signal Unleash controllers
-	if changesDetected {
-		releaseChannel.Status.InstanceImagesGeneration++
-		log.Info("Incremented InstanceImagesGeneration", "generation", releaseChannel.Status.InstanceImagesGeneration)
-	}
+		// Track if any changes were made
+		changesDetected := false
 
-	// Update ReleaseChannel status with the new InstanceImages map
-	// This single update replaces all the individual Unleash status updates
-	if err := r.Status().Update(ctx, releaseChannel); err != nil {
-		if apierrors.IsConflict(err) {
-			log.V(1).Info("Resource conflict when updating ReleaseChannel status, will retry on next reconcile")
+		// Apply desired images to fresh copy
+		for name, targetImage := range desiredImages {
+			if fresh.Status.InstanceImages[name] != targetImage {
+				fresh.Status.InstanceImages[name] = targetImage
+				changesDetected = true
+				log.Info("Set desired image for instance in ReleaseChannel", "instance", name, "image", targetImage)
+			}
+			fresh.Status.LastTargetImages[name] = targetImage
+		}
+
+		// Increment generation if changes were made
+		if changesDetected {
+			fresh.Status.InstanceImagesGeneration++
+			log.Info("Incremented InstanceImagesGeneration", "generation", fresh.Status.InstanceImagesGeneration)
+		}
+
+		err := r.Status().Update(ctx, fresh)
+		if err == nil {
+			*releaseChannel = *fresh
+		} else if apierrors.IsConflict(err) {
+			log.V(1).Info("Resource conflict when updating InstanceImages, retrying", "error", err)
 			releaseChannelConflicts.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name).Inc()
-			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
+		return err
+	})
+
+	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
 	}
 
@@ -1560,56 +1600,40 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 	// Store the status values we want to persist
 	statusToApply := releaseChannel.Status.DeepCopy()
 
-	// Fetch fresh copy to compare status and avoid unnecessary updates
-	fresh := &unleashv1.ReleaseChannel{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to fetch resource for status comparison: %w", err)
-	}
-
-	// Compare status (ignoring LastTransitionTime in conditions)
-	if releaseChannelStatusEqual(&fresh.Status, statusToApply) {
-		log.V(1).Info("Status unchanged, skipping update", "phase", statusToApply.Phase)
-		return ctrl.Result{}, nil
-	}
-
-	log.V(1).Info("Persisting ReleaseChannel status", "instances", statusToApply.Instances, "upToDate", statusToApply.InstancesUpToDate, "phase", statusToApply.Phase)
-
-	// Apply our status to the fresh copy
-	fresh.Status = *statusToApply
-	*releaseChannel = *fresh
-
-	// Retry logic for handling resource conflicts
-	maxRetries := 3
-	for i := 0; i < maxRetries; i++ {
-		if err := r.Status().Update(ctx, releaseChannel); err != nil {
-			if apierrors.IsConflict(err) && i < maxRetries-1 {
-				log.V(1).Info("Resource conflict during status update, retrying", "attempt", i+1, "error", err)
-				releaseChannelConflicts.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name).Inc()
-
-				// Fetch fresh copy and reapply our status
-				fresh := &unleashv1.ReleaseChannel{}
-				if getErr := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); getErr != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to fetch fresh resource after conflict: %w", getErr)
-				}
-
-				// Reapply our status values to the fresh copy
-				fresh.Status = *statusToApply
-				*releaseChannel = *fresh
-
-				time.Sleep(time.Millisecond * 50 * time.Duration(i+1)) // Exponential backoff
-				continue
-			}
-			log.V(1).Info("Failed to update ReleaseChannel status", "error", err, "instances", statusToApply.Instances)
-			return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
+	// Use RetryOnConflict for robust conflict handling with exponential backoff
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Fetch fresh copy to compare status and avoid unnecessary updates
+		fresh := &unleashv1.ReleaseChannel{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(releaseChannel), fresh); err != nil {
+			return err
 		}
-		// Success - use longer interval to reduce aggressive reconciling
-		log.V(1).Info("Successfully updated ReleaseChannel status", "instances", statusToApply.Instances, "upToDate", statusToApply.InstancesUpToDate)
-		return ctrl.Result{RequeueAfter: releaseChannelStatusUpdateSuccess}, nil
+
+		// Compare status (ignoring LastTransitionTime in conditions)
+		if releaseChannelStatusEqual(&fresh.Status, statusToApply) {
+			log.V(1).Info("Status unchanged, skipping update", "phase", statusToApply.Phase)
+			*releaseChannel = *fresh
+			return nil
+		}
+
+		// Apply our status to the fresh copy
+		fresh.Status = *statusToApply
+		err := r.Status().Update(ctx, fresh)
+		if err == nil {
+			log.V(1).Info("Successfully updated ReleaseChannel status", "instances", statusToApply.Instances, "upToDate", statusToApply.InstancesUpToDate)
+			*releaseChannel = *fresh
+		} else if apierrors.IsConflict(err) {
+			log.V(1).Info("Resource conflict during status update, retrying", "error", err)
+			releaseChannelConflicts.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name).Inc()
+		}
+		return err
+	})
+
+	if err != nil {
+		log.V(1).Info("Failed to update ReleaseChannel status", "error", err, "instances", statusToApply.Instances)
+		return ctrl.Result{}, fmt.Errorf("failed to update ReleaseChannel status: %w", err)
 	}
 
-	// If we reach here, all retries failed
-	log.V(1).Info("All status update retries failed, requeuing", "instances", statusToApply.Instances)
-	return ctrl.Result{RequeueAfter: releaseChannelStatusUpdateRetry}, nil
+	return ctrl.Result{RequeueAfter: releaseChannelStatusUpdateSuccess}, nil
 }
 
 func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {

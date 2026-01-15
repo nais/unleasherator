@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -123,14 +124,22 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if len(token.Status.Conditions) == 0 {
 		log.Info("Setting status to unknown for ApiToken")
 
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-			Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
-			Status:  metav1.ConditionUnknown,
-			Reason:  "Reconciling",
-			Message: "Starting reconciliation",
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+				return err
+			}
+			if len(token.Status.Conditions) > 0 {
+				return nil // Already has conditions
+			}
+			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "Reconciling",
+				Message: "Starting reconciliation",
+			})
+			return r.Status().Update(ctx, token)
 		})
-
-		if err = r.Status().Update(ctx, token); err != nil {
+		if err != nil {
 			log.Error(err, "Failed to update ApiToken status")
 			return ctrl.Result{}, err
 		}
@@ -146,12 +155,17 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		span.AddEvent("Adding finalizer to ApiToken")
 		log.Info("Adding finalizer to ApiToken")
 
-		if ok := controllerutil.AddFinalizer(token, tokenFinalizer); !ok {
-			log.Error(err, "Failed to add finalizer to ApiToken")
-			return ctrl.Result{}, err
-		}
-
-		if err = r.Update(ctx, token); err != nil {
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+				return err
+			}
+			if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
+				return nil // Already has finalizer
+			}
+			controllerutil.AddFinalizer(token, tokenFinalizer)
+			return r.Update(ctx, token)
+		})
+		if err != nil {
 			log.Error(err, "Failed to update ApiToken to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -173,30 +187,33 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				log.Info("Could not clean up token in Unleash, proceeding with deletion", "error", err.Error())
 			}
 
-			if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-				log.Error(err, "Failed to get ApiToken")
-				return ctrl.Result{}, err
-			}
-
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "Finalizing",
-				Message: "Performing finalizer operations",
+			// Update status to indicate finalizing
+			_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+					return err
+				}
+				meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{
+					Type:    unleashv1.ApiTokenStatusConditionTypeDeleted,
+					Status:  metav1.ConditionUnknown,
+					Reason:  "Finalizing",
+					Message: "Performing finalizer operations",
+				})
+				return r.Status().Update(ctx, token)
 			})
 
-			if err = r.Status().Update(ctx, token); err != nil {
-				log.Error(err, "Failed to update ApiToken status")
-				return ctrl.Result{}, err
-			}
-
+			// Remove finalizer
 			log.Info("Removing finalizer from ApiToken")
-			if ok := controllerutil.RemoveFinalizer(token, tokenFinalizer); !ok {
-				log.Error(err, "Failed to remove finalizer from ApiToken")
-				return ctrl.Result{}, err
-			}
-
-			if err = r.Update(ctx, token); err != nil {
+			err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+					return err
+				}
+				if !controllerutil.ContainsFinalizer(token, tokenFinalizer) {
+					return nil // Already removed
+				}
+				controllerutil.RemoveFinalizer(token, tokenFinalizer)
+				return r.Update(ctx, token)
+			})
+			if err != nil {
 				log.Error(err, "Failed to update ApiToken to remove finalizer")
 				return ctrl.Result{}, err
 			}
@@ -424,24 +441,27 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeCreated).Set(1.0)
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(0.0)
 
-	if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
-		log.Error(err, "Failed to get ApiToken")
-		return err
-	}
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
+			return err
+		}
 
-	meta.RemoveStatusCondition(&apiToken.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
+		meta.RemoveStatusCondition(&apiToken.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
 
-	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
-		Status:  metav1.ConditionTrue,
-		Reason:  "Reconciling",
-		Message: "API token successfully created",
+		meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.ApiTokenStatusConditionTypeCreated,
+			Status:  metav1.ConditionTrue,
+			Reason:  "Reconciling",
+			Message: "API token successfully created",
+		})
+
+		apiToken.Status.Created = true
+		apiToken.Status.Failed = false
+
+		return r.Status().Update(ctx, apiToken)
 	})
 
-	apiToken.Status.Created = true
-	apiToken.Status.Failed = false
-
-	if err := r.Status().Update(ctx, apiToken); err != nil {
+	if err != nil {
 		log.Error(err, "Failed to update status for ApiToken")
 		return err
 	}
@@ -450,32 +470,35 @@ func (r *ApiTokenReconciler) updateStatusSuccess(ctx context.Context, apiToken *
 }
 
 // updateStatusFailed will set the status condition as failed, but not reset the created status condition
-func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, err error, reason, message string) error {
+func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, origErr error, reason, message string) error {
 	log := log.FromContext(ctx).WithName("apitoken")
 
-	if err != nil {
-		log.Error(err, fmt.Sprintf("%s for ApiToken", message))
+	if origErr != nil {
+		log.Error(origErr, fmt.Sprintf("%s for ApiToken", message))
 	} else {
 		log.Info(fmt.Sprintf("%s for ApiToken", message))
 	}
 
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(1.0)
 
-	if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
-		log.Error(err, "Failed to get ApiToken")
-		return err
-	}
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := r.Get(ctx, apiToken.NamespacedName(), apiToken); err != nil {
+			return err
+		}
 
-	meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
-		Status:  metav1.ConditionTrue,
-		Reason:  reason,
-		Message: message,
+		meta.SetStatusCondition(&apiToken.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.ApiTokenStatusConditionTypeFailed,
+			Status:  metav1.ConditionTrue,
+			Reason:  reason,
+			Message: message,
+		})
+
+		apiToken.Status.Failed = true
+
+		return r.Status().Update(ctx, apiToken)
 	})
 
-	apiToken.Status.Failed = true
-
-	if err := r.Status().Update(ctx, apiToken); err != nil {
+	if err != nil {
 		log.Error(err, "Failed to update status for ApiToken")
 		return err
 	}
