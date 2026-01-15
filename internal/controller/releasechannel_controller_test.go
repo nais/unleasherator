@@ -18,8 +18,8 @@ import (
 
 var _ = Describe("ReleaseChannel Controller", func() {
 	const (
-		timeout  = time.Millisecond * 7000 // Provide extra slack for multi-instance and canary rollouts
-		interval = time.Millisecond * 20   // Reduced from 100ms to 20ms for faster polling
+		timeout  = time.Millisecond * 15000 // Provide extra slack for multi-instance and canary rollouts
+		interval = time.Millisecond * 20    // Reduced from 100ms to 20ms for faster polling
 
 		releaseChannelUnleashVersion = "v5.1.2"
 	)

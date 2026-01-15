@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -108,28 +109,35 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			log.Info("Performing Finalizer Operations for RemoteUnleash before deletion")
 
 			// Try to update status, but don't block deletion if it fails
-			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeDegraded,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "Finalizing",
-				Message: "Performing finalizer operations",
+			_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+					return err
+				}
+				meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+					Type:    unleashv1.UnleashStatusConditionTypeDegraded,
+					Status:  metav1.ConditionUnknown,
+					Reason:  "Finalizing",
+					Message: "Performing finalizer operations",
+				})
+				return r.Status().Update(ctx, remoteUnleash)
 			})
-
-			if err := r.Status().Update(ctx, remoteUnleash); err != nil {
-				log.Info("Failed to update RemoteUnleash status during deletion, proceeding anyway", "error", err.Error())
-			}
 
 			// Perform finalizer operations - currently a no-op but allows for future cleanup
 			r.doFinalizerOperationsForToken(remoteUnleash)
 
 			// Remove the finalizer to allow deletion to proceed
 			log.Info("Removing finalizer from RemoteUnleash")
-			if ok := controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer); !ok {
-				log.Info("Failed to remove finalizer from RemoteUnleash")
-				return ctrl.Result{Requeue: true}, nil
-			}
-
-			if err = r.Update(ctx, remoteUnleash); err != nil {
+			err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+				if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+					return err
+				}
+				if !controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
+					return nil // Already removed
+				}
+				controllerutil.RemoveFinalizer(remoteUnleash, tokenFinalizer)
+				return r.Update(ctx, remoteUnleash)
+			})
+			if err != nil {
 				log.Error(err, "Failed to update RemoteUnleash to remove finalizer")
 				return ctrl.Result{}, err
 			}
@@ -141,14 +149,22 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if len(remoteUnleash.Status.Conditions) == 0 {
 		log.Info("Setting status to unknown for RemoteUnleash")
 
-		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-			Status:  metav1.ConditionUnknown,
-			Reason:  "Reconciling",
-			Message: "Starting reconciliation",
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+				return err
+			}
+			if len(remoteUnleash.Status.Conditions) > 0 {
+				return nil // Already has conditions
+			}
+			meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "Reconciling",
+				Message: "Starting reconciliation",
+			})
+			return r.Status().Update(ctx, remoteUnleash)
 		})
-
-		if err = r.Status().Update(ctx, remoteUnleash); err != nil {
+		if err != nil {
 			log.Error(err, "Failed to update RemoteUnleash status")
 			return ctrl.Result{}, err
 		}
@@ -163,12 +179,17 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if !controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
 		log.Info("Adding finalizer to RemoteUnleash")
 
-		if ok := controllerutil.AddFinalizer(remoteUnleash, tokenFinalizer); !ok {
-			log.Error(err, "Failed to add finalizer to RemoteUnleash")
-			return ctrl.Result{}, err
-		}
-
-		if err = r.Update(ctx, remoteUnleash); err != nil {
+		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
+				return err
+			}
+			if controllerutil.ContainsFinalizer(remoteUnleash, tokenFinalizer) {
+				return nil // Already has finalizer
+			}
+			controllerutil.AddFinalizer(remoteUnleash, tokenFinalizer)
+			return r.Update(ctx, remoteUnleash)
+		})
+		if err != nil {
 			log.Error(err, "Failed to update RemoteUnleash to add finalizer")
 			return ctrl.Result{}, err
 		}
@@ -347,31 +368,34 @@ func (r *RemoteUnleashReconciler) updateStatusReconcileFailed(ctx context.Contex
 func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx).WithName("remoteunleash")
 
-	if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
-		log.Error(err, "Failed to get RemoteUnleash")
-		return err
-	}
-
-	if stats != nil {
-		if stats.VersionEnterprise != "" {
-			remoteUnleash.Status.Version = stats.VersionEnterprise
-		} else {
-			remoteUnleash.Status.Version = stats.VersionOSS
-		}
-	}
-
-	switch status.Type {
-	case unleashv1.UnleashStatusConditionTypeReconciled:
-		remoteUnleash.Status.Reconciled = status.Status == metav1.ConditionTrue
-	case unleashv1.UnleashStatusConditionTypeConnected:
-		remoteUnleash.Status.Connected = status.Status == metav1.ConditionTrue
-	}
-
 	val := promGaugeValueForStatus(status.Status)
 	remoteUnleashStatus.WithLabelValues(remoteUnleash.Namespace, remoteUnleash.Name, status.Type).Set(val)
 
-	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
-	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
+			return err
+		}
+
+		if stats != nil {
+			if stats.VersionEnterprise != "" {
+				remoteUnleash.Status.Version = stats.VersionEnterprise
+			} else {
+				remoteUnleash.Status.Version = stats.VersionOSS
+			}
+		}
+
+		switch status.Type {
+		case unleashv1.UnleashStatusConditionTypeReconciled:
+			remoteUnleash.Status.Reconciled = status.Status == metav1.ConditionTrue
+		case unleashv1.UnleashStatusConditionTypeConnected:
+			remoteUnleash.Status.Connected = status.Status == metav1.ConditionTrue
+		}
+
+		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
+		return r.Status().Update(ctx, remoteUnleash)
+	})
+
+	if err != nil {
 		log.Error(err, "Failed to update status for RemoteUnleash")
 		return err
 	}
