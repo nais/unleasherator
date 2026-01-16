@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "id": 0,
+  "id": 274,
   "links": [],
   "panels": [
     {
@@ -363,7 +363,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "100 * sum(increase(unleasherator_federation_published_total{k8s_cluster_name=\"management\", status=\"success\"}[24h])) / sum(increase(unleasherator_federation_published_total{k8s_cluster_name=\"management\"}[24h]))",
+          "expr": "100 * (sum(increase(unleasherator_federation_published_total{k8s_cluster_name=\"management\", status=\"success\"}[24h])) or vector(0)) / ((sum(increase(unleasherator_federation_published_total{k8s_cluster_name=\"management\", status=\"success\"}[24h])) or vector(0)) + (sum(increase(unleasherator_federation_published_total{k8s_cluster_name=\"management\", status=\"failed\"}[24h])) or vector(0)) + 0.0001)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -423,24 +423,24 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "namespace"
+              "options": "name"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 150
+                "value": 200
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "name"
+              "options": "Version"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 180
+                "value": 100
               }
             ]
           },
@@ -452,7 +452,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 90
               },
               {
                 "id": "custom.cellOptions",
@@ -470,7 +470,7 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 90
               },
               {
                 "id": "custom.cellOptions",
@@ -495,7 +495,7 @@
         "sortBy": [
           {
             "desc": false,
-            "displayName": "namespace"
+            "displayName": "name"
           }
         ]
       },
@@ -564,6 +564,8 @@
               "k8s_cluster_name": true,
               "k8s_cluster_name 1": true,
               "k8s_cluster_name 2": true,
+              "namespace": true,
+              "namespace 1": true,
               "namespace 2": true,
               "pod": true,
               "pod 1": true,
@@ -573,18 +575,19 @@
               "service 2": true,
               "status": true,
               "status 1": true,
-              "status 2": true
+              "status 2": true,
+              "version 2": true
             },
             "indexByName": {
               "Value #Connected": 2,
               "Value #Reconciled": 3,
-              "name": 1,
-              "namespace 1": 0
+              "name": 0,
+              "version 1": 1
             },
             "renameByName": {
               "Value #Connected": "Connected",
               "Value #Reconciled": "Reconciled",
-              "namespace 1": "namespace"
+              "version 1": "Version"
             }
           }
         }
@@ -1692,12 +1695,146 @@
       "type": "table"
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cluster"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "namespace"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "id": 42,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Cluster"
+          }
+        ]
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "unleasherator_remoteunleash_status{k8s_cluster_name=~\"$cluster\", k8s_cluster_name!=\"management\", status=\"Connected\"} == 0",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "⚠️ Disconnected RemoteUnleash Instances",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "container": true,
+              "endpoint": true,
+              "instance": true,
+              "job": true,
+              "pod": true,
+              "service": true,
+              "status": true
+            },
+            "indexByName": {
+              "k8s_cluster_name": 0,
+              "name": 2,
+              "namespace": 1
+            },
+            "renameByName": {
+              "k8s_cluster_name": "Cluster"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 43
       },
       "id": 400,
       "panels": [],
@@ -1812,7 +1949,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 44
       },
       "id": 50,
       "options": {
@@ -1966,7 +2103,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 44
+        "y": 52
       },
       "id": 51,
       "options": {
@@ -2038,7 +2175,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 44
+        "y": 52
       },
       "id": 52,
       "options": {
@@ -2136,12 +2273,12 @@
     ]
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Unleasherator Overview",
   "uid": "unleasherator-overview",
-  "version": 10
+  "version": 14
 }

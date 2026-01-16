@@ -66,7 +66,7 @@ var (
 			Name: "unleasherator_unleash_status",
 			Help: "Status of Unleash instances",
 		},
-		[]string{"namespace", "name", "status"},
+		[]string{"name", "status", "version", "release_channel"},
 	)
 
 	unleashPublished = prometheus.NewCounterVec(
@@ -127,8 +127,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Unleash resource not found. Ignoring since object must be deleted")
-			unleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeReconciled)
-			unleashStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.UnleashStatusConditionTypeConnected)
+			unleashStatus.DeletePartialMatch(prometheus.Labels{"name": req.Name})
 			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get Unleash")
@@ -1050,7 +1049,15 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	log := log.FromContext(ctx).WithName("unleash")
 
 	val := promGaugeValueForStatus(status.Status)
-	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type).Set(val)
+	version := unleash.Status.Version
+	if version == "" {
+		version = "unknown"
+	}
+	releaseChannel := unleash.Spec.ReleaseChannel.Name
+	if releaseChannel == "" {
+		releaseChannel = "none"
+	}
+	unleashStatus.WithLabelValues(unleash.Name, status.Type, version, releaseChannel).Set(val)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); err != nil {
