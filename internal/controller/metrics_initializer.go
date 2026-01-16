@@ -47,18 +47,27 @@ func (m *MetricsInitializer) initUnleashMetrics(ctx context.Context) error {
 	log.Info("Initializing metrics for Unleash resources", "count", len(unleashList.Items))
 
 	for _, unleash := range unleashList.Items {
+		version := unleash.Status.Version
+		if version == "" {
+			version = "unknown"
+		}
+		releaseChannel := unleash.Spec.ReleaseChannel.Name
+		if releaseChannel == "" {
+			releaseChannel = "none"
+		}
+
 		reconciledCond := meta.FindStatusCondition(unleash.Status.Conditions, unleashv1.UnleashStatusConditionTypeReconciled)
 		if reconciledCond != nil {
-			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Set(promGaugeValueForStatus(reconciledCond.Status))
+			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(promGaugeValueForStatus(reconciledCond.Status))
 		} else {
-			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled).Set(0)
+			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(0)
 		}
 
 		connectedCond := meta.FindStatusCondition(unleash.Status.Conditions, unleashv1.UnleashStatusConditionTypeConnected)
 		if connectedCond != nil {
-			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Set(promGaugeValueForStatus(connectedCond.Status))
+			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(promGaugeValueForStatus(connectedCond.Status))
 		} else {
-			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeConnected).Set(0)
+			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(0)
 		}
 	}
 
