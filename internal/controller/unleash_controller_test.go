@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -21,6 +22,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/resources"
+	"github.com/nais/unleasherator/internal/unleashclient"
 )
 
 func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1.Unleash) ([]metav1.Condition, error) {
@@ -78,9 +80,9 @@ var _ = Describe("Unleash Controller", func() {
 		UnleashNamespace string // Use unique namespace per test for envtest isolation
 		testCounter      int
 		interval         = time.Millisecond * 10   // Reduced from 250ms to 10ms
-		timeout          = time.Millisecond * 5000 // 5s for single-controller operations
+		timeout          = time.Millisecond * 5000 // Increased to 5s for complex ReleaseChannel coordination scenarios
 		// Longer timeout for tests involving multi-controller coordination
-		// (e.g., ReleaseChannel → Unleash). In CI, controller workqueues can get backed up.
+		// In CI with parallel tests, controller workqueues can get backed up
 		coordinationTimeout = time.Second * 30
 	)
 
@@ -106,8 +108,22 @@ var _ = Describe("Unleash Controller", func() {
 		// Reset federation publisher mocks between tests to avoid leakage
 		mockPublisher.Mock = mock.Mock{}
 
-		// Global httpmock responders from BeforeSuite work for all tests
-		// No per-test reset needed since regex patterns match any host
+		httpmock.DeactivateAndReset() // Fully reset including call counts
+		httpmock.Activate()
+		// Re-register the global NoResponder to catch requests from concurrent tests
+		// This is critical because controllers run continuously and may reconcile resources from other tests
+		httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
+		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+			httpmock.NewStringResponder(200, `{"health": "OK"}`))
+		httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+			httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+	})
+
+	AfterEach(func() {
+		// Only clear call history, don't deactivate (allows other concurrent tests to continue)
+		httpmock.Reset()
+		// Re-register NoResponder to catch requests from other concurrent tests
+		httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
 	})
 
 	Context("When comparing Unleash deployments", func() {
@@ -232,6 +248,15 @@ var _ = Describe("Unleash Controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 
+			By("By resetting httpmock to isolate this test")
+			httpmock.Reset()
+			// Re-register NoResponder and necessary responders for connection testing
+			httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
+			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
+				httpmock.NewStringResponder(200, `{"health": "OK"}`))
+			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
+				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
 				Database: unleashv1.UnleashDatabaseConfig{
@@ -260,8 +285,11 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(createdUnleash.Status.Reconciled).To(BeTrue())
 			Expect(createdUnleash.Status.Connected).To(BeTrue())
 
-			// Verify that the controller successfully connected (version populated confirms HTTP calls worked)
-			// The regex-based global responders handle all HTTP calls across all tests
+			By("By verifying appropriate HTTP calls were made for connection verification")
+			// The controller should not call the health endpoint in normal operation
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.HealthEndpoint)]).To(Equal(0))
+			// The controller should call the admin stats endpoint to verify connection and get version
+			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("GET %s", unleashclient.InstanceAdminStatsEndpoint)]).To(BeNumerically(">=", 1))
 
 			deployment := &appsv1.Deployment{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), deployment)).Should(Succeed())
@@ -424,8 +452,7 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By verifying ReleaseChannel controller DOES update status during intentional rollout")
 			// Now the ReleaseChannel controller should update the Unleash status directly
-			// Use coordinationTimeout because this requires Unleash controller to reconcile after
-			// ReleaseChannel controller updates InstanceImages, which can be slow in CI
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
@@ -434,23 +461,26 @@ var _ = Describe("Unleash Controller", func() {
 			}, coordinationTimeout, interval).Should(Equal(newReleaseChannelImage), "ReleaseChannel controller should update resolved image in status during rollout")
 
 			By("By checking that ReleaseChannel name is tracked in status")
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
 				return createdUnleash.Status.ReleaseChannelName
-			}, timeout, interval).Should(Equal(releaseChannel.Name), "ReleaseChannel name should be tracked in status")
+			}, coordinationTimeout, interval).Should(Equal(releaseChannel.Name), "ReleaseChannel name should be tracked in status")
 
 			By("By checking that the Unleash status is updated to the new image")
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage
-			}, timeout, interval).Should(Equal(newReleaseChannelImage))
+			}, coordinationTimeout, interval).Should(Equal(newReleaseChannelImage))
 
 			By("By verifying the status-based coordination works as intended")
 			// The status should contain the expected coordination data
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return false
@@ -461,16 +491,17 @@ var _ = Describe("Unleash Controller", func() {
 				hasReleaseChannelName := createdUnleash.Status.ReleaseChannelName == releaseChannel.Name
 
 				return hasResolvedImage && hasReleaseChannelName
-			}, timeout, interval).Should(BeTrue(), "All coordination status fields should be present during rollout")
+			}, coordinationTimeout, interval).Should(BeTrue(), "All coordination status fields should be present during rollout")
 
 			By("By verifying that ReleaseChannel coordination is phase-aware")
 			// Check that the rollout intent includes the phase information
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
 					return ""
 				}
 				return string(createdReleaseChannel.Status.Phase)
-			}, timeout, interval).Should(BeElementOf("Rolling", "Canary", "Idle"), "ReleaseChannel should transition through rollout phases")
+			}, coordinationTimeout, interval).Should(BeElementOf("Rolling", "Canary", "Idle"), "ReleaseChannel should transition through rollout phases")
 
 			By("By cleaning up resources")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
@@ -517,27 +548,19 @@ var _ = Describe("Unleash Controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			// Count only calls matching our specific Unleash name to avoid interference
-			// from concurrent tests publishing other Unleash resources
 			Eventually(func() int {
-				matchingCalls := 0
-				for _, call := range mockPublisher.Calls {
-					if len(call.Arguments) >= 2 {
-						if u, ok := call.Arguments[1].(*unleashv1.Unleash); ok {
-							if u.Name == "test-unleash-federate" {
-								matchingCalls++
-							}
-						}
-					}
-				}
-				return matchingCalls
-			}, federationTimeout, interval).Should(BeNumerically(">=", 1), "federation publisher should be invoked at least once for our Unleash")
+				return len(mockPublisher.Calls)
+			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
 
 			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 
-			// Note: We don't check prometheus counters here because they're global and can
-			// be flushed by other tests' BeforeEach blocks during concurrent controller
-			// reconciliations. The mock assertion above already proves publish was called.
+			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
+			Expect(err).To(BeNil())
+			Expect(val).To(Equal(float64(1))) // Called once
+
+			val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
+			Expect(err).To(BeNil())
+			Expect(val).To(Equal(float64(1))) // Called once
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
@@ -579,16 +602,16 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By waiting for ReleaseChannel to be ready")
 			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
 					return false
 				}
 				return createdReleaseChannel.Status.Phase == "Idle"
-			}, timeout, interval).Should(BeTrue())
+			}, coordinationTimeout, interval).Should(BeTrue())
 
 			By("By verifying the Unleash now progresses and uses the ReleaseChannel image")
-			// Use coordinationTimeout because this requires Unleash controller to reconcile after
-			// ReleaseChannel controller updates InstanceImages, which can be slow in CI
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
@@ -597,14 +620,16 @@ var _ = Describe("Unleash Controller", func() {
 			}, coordinationTimeout, interval).Should(Equal(releaseChannelImage))
 
 			By("By verifying the deployment is now created with the correct image")
-			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
+			// Use coordinationTimeout because this involves multi-controller coordination
+			Eventually(getDeployment, coordinationTimeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
 
+			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment); err != nil {
 					return ""
 				}
 				return createdDeployment.Spec.Template.Spec.Containers[0].Image
-			}, timeout, interval).Should(Equal(releaseChannelImage))
+			}, coordinationTimeout, interval).Should(Equal(releaseChannelImage))
 
 			By("By cleaning up resources")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
