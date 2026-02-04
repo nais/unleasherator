@@ -42,7 +42,7 @@ spec:
           for: {{ $alerts.connectionProblem.for }}
           labels:
             severity: {{ $alerts.connectionProblem.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not connected"
             consequence: "Unleasherator cannot connect to this Unleash instance and will not be able to create or manage API tokens for applications."
@@ -58,7 +58,7 @@ spec:
           for: {{ $alerts.notReconciled.for }}
           labels:
             severity: {{ $alerts.notReconciled.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not reconciled"
             consequence: "The Unleash instance configuration may be out of sync with the desired state. Deployments, services, or other resources may not be correctly configured."
@@ -74,7 +74,7 @@ spec:
           for: {{ $alerts.degraded.for }}
           labels:
             severity: {{ $alerts.degraded.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash instance {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is degraded"
             consequence: "The Unleash instance is running but experiencing issues. Some functionality may be impaired."
