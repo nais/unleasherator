@@ -39,7 +39,7 @@ spec:
           for: {{ $alerts.failed.for }}
           labels:
             severity: {{ $alerts.failed.severity }}
-            namespace: {{ .Release.Namespace }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
           annotations:
             summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
             consequence: "Applications depending on this API token will not be able to authenticate with Unleash. Feature flag evaluations may fail or return defaults."
@@ -55,7 +55,7 @@ spec:
           for: {{ $alerts.notCreated.for }}
           labels:
             severity: {{ $alerts.notCreated.severity }}
-            namespace: {{ .Release.Namespace }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
           annotations:
             summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} not created"
             consequence: "The API token has not been provisioned. Applications waiting for this token cannot connect to Unleash."
@@ -75,7 +75,7 @@ spec:
           for: {{ $alerts.highChurn.for }}
           labels:
             severity: {{ $alerts.highChurn.severity }}
-            namespace: {{ .Release.Namespace }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
           annotations:
             summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanize {{ "}}" }} token operations/sec"
             consequence: "Tokens are being created and deleted rapidly. This may cause authentication failures for applications and unnecessary load on Unleash."
@@ -91,7 +91,7 @@ spec:
           for: {{ $alerts.excessiveTokens.for }}
           labels:
             severity: {{ $alerts.excessiveTokens.severity }}
-            namespace: {{ .Release.Namespace }}
+            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
           annotations:
             summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} tokens in {{ "{{" }} $labels.environment {{ "}}" }}"
             consequence: "An unexpectedly high number of tokens exist for this environment. This may indicate token cleanup issues or duplicate token creation."
