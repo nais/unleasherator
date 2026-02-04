@@ -41,7 +41,7 @@ spec:
           for: {{ $alerts.connectionProblem.for }}
           labels:
             severity: {{ $alerts.connectionProblem.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "RemoteUnleash {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} cannot connect to Unleash server"
             consequence: "Applications in this cluster cannot obtain API tokens for feature flags. New deployments requiring Unleash tokens will fail."
@@ -57,7 +57,7 @@ spec:
           for: {{ $alerts.notReconciled.for }}
           labels:
             severity: {{ $alerts.notReconciled.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "RemoteUnleash {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is not reconciled"
             consequence: "The RemoteUnleash configuration may be out of sync. API token provisioning may not work correctly."
