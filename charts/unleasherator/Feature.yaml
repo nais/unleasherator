@@ -150,7 +150,7 @@ values:
   prometheusRules.apiToken.enabled:
     displayName: ApiToken Alerts
     computed:
-      template: "true"
+      template: "false"
     ignoreKind:
       - management
   prometheusRules.remoteUnleash.enabled:
