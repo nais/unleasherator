@@ -1057,6 +1057,9 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	if releaseChannel == "" {
 		releaseChannel = "none"
 	}
+	// Delete stale metrics with old label values (version/release_channel can change)
+	// before setting new ones to prevent alerts from matching outdated time series
+	unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleash.Name, "status": status.Type})
 	unleashStatus.WithLabelValues(unleash.Name, status.Type, version, releaseChannel).Set(val)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
