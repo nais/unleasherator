@@ -1087,7 +1087,7 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 		if stats != nil {
 			if stats.VersionEnterprise != "" {
 				unleash.Status.Version = stats.VersionEnterprise
-			} else {
+			} else if stats.VersionOSS != "" {
 				unleash.Status.Version = stats.VersionOSS
 			}
 		}

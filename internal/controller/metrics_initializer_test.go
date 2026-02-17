@@ -16,16 +16,51 @@ import (
 )
 
 // getMetricValue extracts the gauge value for a specific label set from unleashStatus
+// by collecting from the registry. This avoids creating series when checking existence.
 func getMetricValue(name, status, version, releaseChannel string) (float64, bool) {
-	var m dto.Metric
-	gauge := unleashStatus.WithLabelValues(name, status, version, releaseChannel)
-	if err := gauge.Write(&m); err != nil {
-		return 0, false
+	ch := make(chan prometheus.Metric, 16)
+	unleashStatus.Collect(ch)
+	close(ch)
+
+	targetLabels := map[string]string{
+		"name":            name,
+		"status":          status,
+		"version":         version,
+		"release_channel": releaseChannel,
 	}
-	if m.Gauge == nil {
-		return 0, false
+
+	for metric := range ch {
+		var m dto.Metric
+		if err := metric.Write(&m); err != nil {
+			continue
+		}
+
+		if len(m.Label) != len(targetLabels) {
+			continue
+		}
+
+		// Match by label name, not position (labels may be sorted differently)
+		match := true
+		for _, label := range m.Label {
+			expected, ok := targetLabels[label.GetName()]
+			if !ok || label.GetValue() != expected {
+				match = false
+				break
+			}
+		}
+
+		if !match {
+			continue
+		}
+
+		if m.Gauge == nil {
+			return 0, false
+		}
+
+		return m.Gauge.GetValue(), true
 	}
-	return m.Gauge.GetValue(), true
+
+	return 0, false
 }
 
 var _ = Describe("MetricsInitializer", func() {
@@ -180,13 +215,14 @@ var _ = Describe("MetricsInitializer", func() {
 			Expect(val).To(Equal(1.0), "new version metric should be 1 (connected)")
 
 			By("Verifying the old version metric was deleted")
-			// After DeletePartialMatch, creating the gauge again would produce a fresh 0 value,
-			// but we want to verify that querying it returns a fresh/unset state.
-			// The key insight: if we set a value for the old labels, they should NOT be there.
-			// Check that the alert condition (status=Connected, value=0) doesn't match unexpected series
-			// by verifying no metric with old version + new version both exist at value 0
-			newVal, _ := getMetricValue(unleashName, statusType, newVersion, releaseChannel)
-			Expect(newVal).To(Equal(1.0), "only the new version metric should be set to 1")
+			// DeleteLabelValues returns false if the series doesn't exist
+			deleted := unleashStatus.DeleteLabelValues(unleashName, statusType, oldVersion, releaseChannel)
+			Expect(deleted).To(BeFalse(), "old version metric series should no longer exist after DeletePartialMatch")
+
+			By("Ensuring the new version metric still exists with correct value")
+			newVal, found := getMetricValue(unleashName, statusType, newVersion, releaseChannel)
+			Expect(found).To(BeTrue(), "new version metric should still exist")
+			Expect(newVal).To(Equal(1.0), "new version metric should be 1 (connected)")
 		})
 	})
 })
