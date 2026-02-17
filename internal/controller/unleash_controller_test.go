@@ -323,6 +323,47 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
+		It("Should delete secrets when Unleash is deleted", func() {
+			ctx := context.Background()
+
+			By("By creating a new Unleash")
+			unleash := unleashResource("test-unleash-delete-secrets", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By waiting for secrets to be created")
+			instanceSecret := &corev1.Secret{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedInstanceSecretName(), instanceSecret)
+			}, timeout, interval).Should(Succeed())
+
+			operatorSecret := &corev1.Secret{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedOperatorSecretName(namespace), operatorSecret)
+			}, timeout, interval).Should(Succeed())
+
+			By("By deleting the Unleash")
+			Expect(k8sClient.Delete(ctx, unleash)).Should(Succeed())
+
+			By("By verifying the Unleash is gone")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{}))
+			}, timeout, interval).Should(BeTrue())
+
+			By("By verifying the operator secret is deleted")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedOperatorSecretName(namespace), &corev1.Secret{}))
+			}, timeout, interval).Should(BeTrue())
+
+			By("By verifying the instance secret is deleted")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedInstanceSecretName(), &corev1.Secret{}))
+			}, timeout, interval).Should(BeTrue())
+		})
+
 		It("Should resolve ReleaseChannel image on creation and not update on subsequent reconciles", func() {
 			ctx := context.Background()
 
