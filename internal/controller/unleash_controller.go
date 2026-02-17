@@ -1048,8 +1048,16 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx).WithName("unleash")
 
-	val := promGaugeValueForStatus(status.Status)
+	// Derive version from stats if available (same logic as status update below)
+	// to ensure metric label matches what we're about to write to status
 	version := unleash.Status.Version
+	if stats != nil {
+		if stats.VersionEnterprise != "" {
+			version = stats.VersionEnterprise
+		} else if stats.VersionOSS != "" {
+			version = stats.VersionOSS
+		}
+	}
 	if version == "" {
 		version = "unknown"
 	}
@@ -1057,6 +1065,11 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	if releaseChannel == "" {
 		releaseChannel = "none"
 	}
+
+	// Delete stale metrics with old label values (version/release_channel can change)
+	// before setting new ones to prevent alerts from matching outdated time series
+	val := promGaugeValueForStatus(status.Status)
+	unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleash.Name, "status": status.Type})
 	unleashStatus.WithLabelValues(unleash.Name, status.Type, version, releaseChannel).Set(val)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -1074,7 +1087,7 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 		if stats != nil {
 			if stats.VersionEnterprise != "" {
 				unleash.Status.Version = stats.VersionEnterprise
-			} else {
+			} else if stats.VersionOSS != "" {
 				unleash.Status.Version = stats.VersionOSS
 			}
 		}

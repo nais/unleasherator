@@ -107,3 +107,65 @@ Why: Unique namespaces prevent race conditions and cross-test interference in pa
 - No `GinkgoRandomSeed()` (same value per suite run)
 - Use `DeferCleanup` for guaranteed cleanup
 - Combine timestamp + counter for unique resource names when needed
+
+### Avoiding Flaky Tests
+
+**Use standardized timeouts from `test_constants_test.go`:**
+
+```go
+// Good - use standardized constants
+Eventually(...).WithTimeout(TestTimeoutMedium).WithPolling(TestInterval).Should(...)
+
+// Bad - arbitrary per-test timeouts
+const timeout = time.Millisecond * 1234
+```
+
+**Wait for stable state before assertions:**
+
+```go
+// Good - wait for controller to finish reconciling
+waitForCondition(ctx, k8sClient, unleash,
+    unleashv1.UnleashStatusConditionTypeConnected,
+    metav1.ConditionTrue, TestTimeoutMedium, TestInterval)
+
+// Bad - check status immediately after creation
+Expect(unleash.Status.Connected).To(BeTrue()) // May fail if controller hasn't run yet
+```
+
+**Use atomic counter for unique IDs:**
+
+```go
+// Good - guaranteed unique across parallel execution
+testID := generateTestID() // uses atomic.AddUint64
+
+// Bad - can collide within same nanosecond
+testID := fmt.Sprintf("%d", time.Now().UnixNano())
+```
+
+**Handle optimistic locking conflicts:**
+
+```go
+// Good - retry on conflict
+Eventually(func() error {
+    Expect(k8sClient.Get(ctx, key, obj)).Should(Succeed())
+    obj.Status.Field = newValue
+    return k8sClient.Status().Update(ctx, obj)
+}, TestTimeoutShort, TestInterval).Should(Succeed())
+
+// Bad - single update attempt
+obj.Status.Field = newValue
+Expect(k8sClient.Status().Update(ctx, obj)).Should(Succeed()) // May fail with conflict
+```
+
+**Don't rely on httpmock call counts for shared resources:**
+
+```go
+// Good - check final state
+Eventually(func() string {
+    Expect(k8sClient.Get(ctx, key, obj)).Should(Succeed())
+    return obj.Status.Version
+}, TestTimeoutMedium, TestInterval).Should(Equal("v5.1.2"))
+
+// Bad - call count can include background reconciliations from other tests
+Expect(httpmock.GetCallCountInfo()[endpoint]).To(Equal(1))
+```

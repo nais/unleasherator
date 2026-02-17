@@ -309,11 +309,13 @@ var _ = Describe("Unleash Controller", func() {
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
+			// Reconciled metric uses "unknown" version because stats is nil during reconcile status update
 			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, "unknown", "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
-			val, err = promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected, "unknown", "none")
+			// Connected metric uses the actual version from stats (returned by API during connection test)
+			val, err = promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected, UnleashVersion, "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
