@@ -159,7 +159,10 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return ctrl.Result{}, err
 			}
 
-			r.doFinalizerOperationsForUnleash(unleash, ctx, log)
+			if err := r.doFinalizerOperationsForUnleash(unleash, ctx, log); err != nil {
+				log.Error(err, "Failed to perform finalizer operations for Unleash")
+				return ctrl.Result{}, err
+			}
 
 			// Update status to indicate finalization complete
 			err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -447,7 +450,7 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 }
 
 // finalizeUnleash will perform the required operations before delete the CR.
-func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) {
+func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
 	// Publish removal message to federated clusters
 	if r.Federation.Enabled && cr.Spec.Federation.Enabled {
 		log.Info("Publishing removal message to federation")
@@ -464,31 +467,37 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 		}
 	}
 
-	// @TODO make it optional to delete the operator secret
-	operatorSecret := cr.NamespacedOperatorSecretName(r.OperatorNamespace)
-
-	err := r.Delete(ctx, &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      operatorSecret.Name,
-			Namespace: operatorSecret.Namespace,
-		},
-	})
-	if err != nil {
-		log.Error(err, fmt.Sprintf("Failed to delete the secret %s from the namespace %s",
-			operatorSecret.Name,
-			operatorSecret.Namespace))
-
-		r.Recorder.Event(cr, "Warning", "Deleting",
-			fmt.Sprintf("Failed to delete the secret %s from the namespace %s",
-				operatorSecret.Name,
-				operatorSecret.Namespace))
+	if err := r.deleteSecret(ctx, cr, cr.NamespacedOperatorSecretName(r.OperatorNamespace), log); err != nil {
+		return err
+	}
+	if err := r.deleteSecret(ctx, cr, cr.NamespacedInstanceSecretName(), log); err != nil {
+		return err
 	}
 
-	// The following implementation will raise an event
 	r.Recorder.Event(cr, "Warning", "Deleting",
 		fmt.Sprintf("Unleash %s is being deleted from the namespace %s",
 			cr.Name,
 			cr.Namespace))
+	return nil
+}
+
+func (r *UnleashReconciler) deleteSecret(ctx context.Context, cr *unleashv1.Unleash, key types.NamespacedName, log logr.Logger) error {
+	err := r.Delete(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+	})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		log.Error(err, "Failed to delete secret", "Secret.Name", key.Name, "Secret.Namespace", key.Namespace)
+		r.Recorder.Event(cr, "Warning", "SecretDeleteFailed",
+			fmt.Sprintf("Failed to delete secret %s from namespace %s", key.Name, key.Namespace))
+		return err
+	}
+	return nil
 }
 
 // reconcileServiceMonitor will ensure that the required ServiceMonitor is created
