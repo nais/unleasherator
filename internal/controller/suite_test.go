@@ -39,6 +39,7 @@ var (
 	testEnv                 *envtest.Environment
 	ctx                     context.Context
 	cancel                  context.CancelFunc
+	managerDone             chan struct{}
 	remoteUnleashReconciler *RemoteUnleashReconciler
 	ApiTokenNameSuffix      = "unleasherator"
 	mockSubscriber          = &mockfederation.MockSubscriber{}
@@ -124,11 +125,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	gracefulTimeout := 5 * time.Second
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 		Metrics: server.Options{
 			BindAddress: "0", // disable firewall prompt on mac
 		},
+		GracefulShutdownTimeout: &gracefulTimeout,
 	})
 	Expect(err).ToNot(HaveOccurred())
 
@@ -182,8 +185,10 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	managerDone = make(chan struct{})
 	go func() {
 		defer GinkgoRecover()
+		defer close(managerDone)
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
@@ -191,6 +196,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	cancel()
+	<-managerDone
 	httpmock.DeactivateAndReset()
 	By("tearing down the test environment")
 	err := testEnv.Stop()
