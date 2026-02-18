@@ -564,6 +564,7 @@ var _ = Describe("Unleash Controller", func() {
 				return unleash.Name == "test-unleash-federate"
 			}
 			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher)).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -598,18 +599,24 @@ var _ = Describe("Unleash Controller", func() {
 				return len(mockPublisher.Calls)
 			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
 
-			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
-
 			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1))) // Called once
+			Expect(val).To(Equal(float64(1)))
 
 			val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1))) // Called once
+			Expect(val).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+
+			By("By waiting for the finalizer to complete deletion")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{})
+				return apierrors.IsNotFound(err)
+			}, federationTimeout, interval).Should(BeTrue())
+
+			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 		})
 
 		It("Should wait for ReleaseChannel to become available instead of using default image", func() {
