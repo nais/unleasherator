@@ -56,6 +56,7 @@ var _ = BeforeSuite(func() {
 	// Keep some timeouts at expected values to match test assertions
 	unleashDeploymentTimeout = time.Second * 1 // Test expects "timed out after 1s"
 	unleashControllerRequeueAfter = time.Millisecond * 100
+	unleashConnectionRetryDelay = time.Millisecond * 50
 
 	// Remote Unleash controller timeouts
 	remoteUnleashErrorRetryDelay = time.Millisecond * 50
