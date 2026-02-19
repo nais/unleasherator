@@ -97,7 +97,7 @@ type ApiTokenReconciler struct {
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=apitokens/finalizers,verbs=update
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;update;delete
 
 func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	spanOpts := o11y.ReconcilerAttributes(ctx, req)
