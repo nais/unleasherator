@@ -532,7 +532,7 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 	}
 
 	// If the ServiceMonitor exists, we check if it needs to be updated
-	if !equality.Semantic.DeepEqual(newServiceMonitor.Spec, existingServiceMonitor.Spec) || !equality.Semantic.DeepEqual(newServiceMonitor.ObjectMeta.Labels, existingServiceMonitor.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newServiceMonitor.Spec, existingServiceMonitor.Spec) || !equality.Semantic.DeepEqual(newServiceMonitor.ObjectMeta.Labels, existingServiceMonitor.ObjectMeta.Labels) {
 		log.Info("Updating ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
 
 		existingServiceMonitor.Spec = newServiceMonitor.Spec
@@ -588,7 +588,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 	}
 
 	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
-	if !equality.Semantic.DeepEqual(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepEqual(newNetPol.ObjectMeta.Labels, existingNetPol.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepEqual(newNetPol.ObjectMeta.Labels, existingNetPol.ObjectMeta.Labels) {
 		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 
 		existingNetPol.Spec = newNetPol.Spec
@@ -645,7 +645,7 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 	}
 
 	// If the ingress is enabled and exists, we update it if it has changed.
-	if !equality.Semantic.DeepEqual(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepEqual(newIngress.ObjectMeta.Labels, existingIngress.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepEqual(newIngress.ObjectMeta.Labels, existingIngress.ObjectMeta.Labels) {
 		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 
 		existingIngress.Spec = newIngress.Spec
