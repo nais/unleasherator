@@ -8,7 +8,9 @@ import (
 	"cloud.google.com/go/pubsub"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/nais/unleasherator/internal/federation"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
@@ -77,6 +79,11 @@ func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
 			BindAddress: c.MetricsBindAddress,
 		},
 		HealthProbeBindAddress: c.HealthProbeBindAddress,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{&corev1.Secret{}},
+			},
+		},
 	}
 }
 
