@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -59,6 +58,7 @@ var (
 	unleashDeploymentTimeout       = 5 * time.Minute
 	unleashControllerRequeueAfter  = 60 * time.Second // Poll ReleaseChannel status for image changes
 	unleashControllerRequeueJitter = 15 * time.Second // Jitter to spread reconciliations
+	unleashConnectionRetryDelay    = 5 * time.Second
 
 	// unleashStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	unleashStatus = prometheus.NewGaugeVec(
@@ -102,9 +102,8 @@ type UnleashFederation struct {
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;update;delete
 //+kubebuilder:rbac:groups=core,resources=services/finalizers,verbs=update
-//+kubebuilder:rbac:groups=core,resources=secrets/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses/finalizers,verbs=update
@@ -353,13 +352,6 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// Additional wait for Unleash v7+ instances to ensure admin tokens are properly initialized
-	// This helps prevent 401 authentication errors during multi-instance deployments
-	if r.isUnleashV7OrLater(ctx, unleash) {
-		log.Info("Unleash v7+ detected, allowing additional time for admin token initialization")
-		time.Sleep(time.Second * 3)
-	}
-
 	span.AddEvent("Testing connection to Unleash instance")
 	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
@@ -367,7 +359,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: unleashConnectionRetryDelay}, nil
 	}
 
 	span.SetAttributes(attribute.String("unleash.version", stats.VersionOSS))
@@ -540,7 +532,7 @@ func (r *UnleashReconciler) reconcileServiceMonitor(ctx context.Context, unleash
 	}
 
 	// If the ServiceMonitor exists, we check if it needs to be updated
-	if !equality.Semantic.DeepDerivative(newServiceMonitor.Spec, existingServiceMonitor.Spec) || !equality.Semantic.DeepDerivative(newServiceMonitor.ObjectMeta.Labels, existingServiceMonitor.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newServiceMonitor.Spec, existingServiceMonitor.Spec) || !equality.Semantic.DeepEqual(newServiceMonitor.ObjectMeta.Labels, existingServiceMonitor.ObjectMeta.Labels) {
 		log.Info("Updating ServiceMonitor", "ServiceMonitor.Namespace", existingServiceMonitor.Namespace, "ServiceMonitor.Name", existingServiceMonitor.Name)
 
 		existingServiceMonitor.Spec = newServiceMonitor.Spec
@@ -596,7 +588,7 @@ func (r *UnleashReconciler) reconcileNetworkPolicy(ctx context.Context, unleash 
 	}
 
 	// If the NetworkPolicy is enabled and exists, we update it if it is not up to date.
-	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepDerivative(newNetPol.ObjectMeta.Labels, existingNetPol.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newNetPol.Spec, existingNetPol.Spec) || !equality.Semantic.DeepEqual(newNetPol.ObjectMeta.Labels, existingNetPol.ObjectMeta.Labels) {
 		log.Info("Updating NetworkPolicy", "NetworkPolicy.Namespace", existingNetPol.Namespace, "NetworkPolicy.Name", existingNetPol.Name)
 
 		existingNetPol.Spec = newNetPol.Spec
@@ -653,7 +645,7 @@ func (r *UnleashReconciler) reconcileIngress(ctx context.Context, unleash *unlea
 	}
 
 	// If the ingress is enabled and exists, we update it if it has changed.
-	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepDerivative(newIngress.ObjectMeta.Labels, existingIngress.ObjectMeta.Labels) {
+	if !equality.Semantic.DeepDerivative(newIngress.Spec, existingIngress.Spec) || !equality.Semantic.DeepEqual(newIngress.ObjectMeta.Labels, existingIngress.ObjectMeta.Labels) {
 		log.Info("Updating Ingress", "Ingress.Namespace", existingIngress.Namespace, "Ingress.Name", existingIngress.Name)
 
 		existingIngress.Spec = newIngress.Spec
@@ -715,21 +707,18 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, err
 	}
 
-	// Check if instance secret already exists, if not create a new one
-	instanceSecret := &corev1.Secret{}
-	err = r.Get(ctx, unleash.NamespacedInstanceSecretName(), instanceSecret)
-	if err != nil && apierrors.IsNotFound(err) {
-		instanceSecret, err = resources.InstanceSecretForUnleash(unleash, r.Scheme, adminKey)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		log.Info("Creating Instance Secret for Unleash", "Secret.Namespace", instanceSecret.Namespace, "Secret.Name", instanceSecret.Name)
-		err = r.Create(ctx, instanceSecret)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	} else if err != nil {
+	// Create instance secret if it doesn't already exist (Create+IgnoreAlreadyExists
+	// avoids needing Get permission on secrets in the CR namespace)
+	newInstanceSecret, err := resources.InstanceSecretForUnleash(unleash, r.Scheme, adminKey)
+	if err != nil {
 		return ctrl.Result{}, err
+	}
+	err = r.Create(ctx, newInstanceSecret)
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, err
+	}
+	if err == nil {
+		log.Info("Created Instance Secret for Unleash", "Secret.Namespace", newInstanceSecret.Namespace, "Secret.Name", newInstanceSecret.Name)
 	}
 
 	return ctrl.Result{}, nil
@@ -878,7 +867,7 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, nil
 	} else if err != nil {
 		return ctrl.Result{}, err
-	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) || !equality.Semantic.DeepDerivative(newSvc.ObjectMeta.Labels, existingSvc.ObjectMeta.Labels) {
+	} else if !equality.Semantic.DeepDerivative(newSvc.Spec, existingSvc.Spec) || !equality.Semantic.DeepEqual(newSvc.ObjectMeta.Labels, existingSvc.ObjectMeta.Labels) {
 		log.Info("Updating Service", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 
 		existingSvc.Spec = newSvc.Spec
@@ -911,7 +900,8 @@ func (r *UnleashReconciler) waitForDeployment(ctx context.Context, timeout time.
 	return err
 }
 
-// testConnection will test the connection to the Unleash instance with retry logic for authentication failures
+// testConnection tests the connection to the Unleash instance with a single attempt.
+// On failure, the caller requeues with a delay instead of blocking the worker goroutine.
 func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ctx context.Context, log logr.Logger) (*unleashclient.InstanceAdminStatsResult, error) {
 	client, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {
@@ -919,81 +909,22 @@ func (r *UnleashReconciler) testConnection(unleash resources.UnleashInstance, ct
 		return nil, err
 	}
 
-	// Retry logic for 401 authentication errors - common with Unleash v7 during initialization
-	maxRetries := 3
-	retryDelay := time.Second * 2
-
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		stats, res, err := client.GetInstanceAdminStats(ctx)
-
-		if err != nil {
-			log.Error(err, fmt.Sprintf("Failed to connect to Unleash instance on %s (attempt %d/%d)", unleash.URL(), attempt, maxRetries))
-
-			// For connection refused errors, fail immediately (service not ready)
-			if strings.Contains(err.Error(), "connection refused") {
-				return nil, err
-			}
-
-			// For other errors, retry if we have attempts left
-			if attempt < maxRetries {
-				log.Info(fmt.Sprintf("Retrying connection test in %v", retryDelay))
-				time.Sleep(retryDelay)
-				retryDelay *= 2 // exponential backoff
-				continue
-			}
-			return nil, err
-		}
-
-		if res.StatusCode == http.StatusUnauthorized {
-			log.Info(fmt.Sprintf("Authentication failed (attempt %d/%d) - admin token may not be initialized yet", attempt, maxRetries))
-
-			if attempt < maxRetries {
-				log.Info(fmt.Sprintf("Retrying authentication in %v", retryDelay))
-				time.Sleep(retryDelay)
-				retryDelay *= 2 // exponential backoff
-				continue
-			}
-
-			err = fmt.Errorf("authentication failed after %d attempts - admin token not properly initialized", maxRetries)
-			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
-			return nil, err
-		}
-
-		if res.StatusCode != http.StatusOK {
-			err = fmt.Errorf("unexpected http status code %d", res.StatusCode)
-			log.Error(err, fmt.Sprintf("Unleash connection check failed with status code %d", res.StatusCode))
-			return nil, err
-		}
-
-		// If we reach here, connection was successful
-		log.Info("Successfully connected to Unleash instance")
-		return stats, nil
+	stats, res, err := client.GetInstanceAdminStats(ctx)
+	if err != nil {
+		log.Error(err, "Failed to connect to Unleash instance", "url", unleash.URL())
+		return nil, err
 	}
 
-	// This should never be reached, but just in case
-	return nil, fmt.Errorf("unexpected error in connection retry loop")
-}
-
-// isUnleashV7OrLater determines if this is an Unleash v7+ instance based on the image
-func (r *UnleashReconciler) isUnleashV7OrLater(ctx context.Context, unleash resources.UnleashInstance) bool {
-	// Check if this is an Unleash instance (not RemoteUnleash)
-	if u, ok := unleash.(*unleashv1.Unleash); ok {
-		// Check for custom image first
-		if u.Spec.CustomImage != "" {
-			// Check if custom image contains version 7 indicators
-			return strings.Contains(u.Spec.CustomImage, ":7") ||
-				strings.Contains(u.Spec.CustomImage, "v7") ||
-				strings.Contains(u.Spec.CustomImage, "unleash-server")
-		}
-
-		// Try to resolve the actual image being used
-		if resolvedImage, _, err := resources.ResolveReleaseChannelImage(ctx, r.Client, u); err == nil {
-			return strings.Contains(resolvedImage, ":7") ||
-				strings.Contains(resolvedImage, "v7") ||
-				strings.Contains(resolvedImage, "unleash-server")
-		}
+	if res.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("authentication failed (HTTP 401) - admin token may not be initialized yet")
 	}
-	return false
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected http status code %d", res.StatusCode)
+	}
+
+	log.Info("Successfully connected to Unleash instance")
+	return stats, nil
 }
 
 // getDefaultImage returns the default image when no ReleaseChannel is specified
