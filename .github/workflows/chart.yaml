@@ -113,7 +113,7 @@ jobs:
 
       - name: Create kind cluster
         if: steps.list-changed.outputs.changed == 'true'
-        uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # ratchet:helm/kind-action@v1.13.0
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # ratchet:helm/kind-action@v1.14.0
 
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # ratchet:docker/setup-buildx-action@v3
       - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # ratchet:docker/metadata-action@v5
@@ -123,7 +123,7 @@ jobs:
             ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
           tags: |
             type=raw,value=main
-      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # ratchet:docker/build-push-action@v6
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # ratchet:docker/build-push-action@v6
         with:
           context: .
           tags: ${{ steps.metadata.outputs.tags }}
