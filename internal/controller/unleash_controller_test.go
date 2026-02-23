@@ -309,16 +309,62 @@ var _ = Describe("Unleash Controller", func() {
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
+			// Reconciled metric uses "unknown" version because stats is nil during reconcile status update
 			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, "unknown", "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
-			val, err = promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected, "unknown", "none")
+			// Connected metric uses the actual version from stats (returned by API during connection test)
+			val, err = promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeConnected, UnleashVersion, "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+		})
+
+		It("Should delete secrets when Unleash is deleted", func() {
+			ctx := context.Background()
+			// Deletion requires the in-flight reconcile (deployment wait) to finish first,
+			// plus the finalizer reconcile, so use coordinationTimeout.
+			deleteTimeout := coordinationTimeout
+
+			By("By creating a new Unleash")
+			unleash := unleashResource("test-unleash-delete-secrets", UnleashNamespace, unleashv1.UnleashSpec{
+				Database: unleashv1.UnleashDatabaseConfig{
+					URL: "postgres://unleash:unleash@unleash-postgres:5432/unleash?ssl=false",
+				},
+			})
+			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
+
+			By("By waiting for secrets to be created")
+			instanceSecret := &corev1.Secret{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedInstanceSecretName(), instanceSecret)
+			}, timeout, interval).Should(Succeed())
+
+			operatorSecret := &corev1.Secret{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, unleash.NamespacedOperatorSecretName(namespace), operatorSecret)
+			}, timeout, interval).Should(Succeed())
+
+			By("By deleting the Unleash")
+			Expect(k8sClient.Delete(ctx, unleash)).Should(Succeed())
+
+			By("By verifying the Unleash is gone")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{}))
+			}, deleteTimeout, interval).Should(BeTrue())
+
+			By("By verifying the operator secret is deleted")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedOperatorSecretName(namespace), &corev1.Secret{}))
+			}, deleteTimeout, interval).Should(BeTrue())
+
+			By("By verifying the instance secret is deleted")
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, unleash.NamespacedInstanceSecretName(), &corev1.Secret{}))
+			}, deleteTimeout, interval).Should(BeTrue())
 		})
 
 		It("Should resolve ReleaseChannel image on creation and not update on subsequent reconciles", func() {
@@ -518,6 +564,7 @@ var _ = Describe("Unleash Controller", func() {
 				return unleash.Name == "test-unleash-federate"
 			}
 			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher)).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -552,18 +599,24 @@ var _ = Describe("Unleash Controller", func() {
 				return len(mockPublisher.Calls)
 			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
 
-			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
-
 			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1))) // Called once
+			Expect(val).To(Equal(float64(1)))
 
 			val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
 			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1))) // Called once
+			Expect(val).To(Equal(float64(1)))
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
+
+			By("By waiting for the finalizer to complete deletion")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, unleash.NamespacedName(), &unleashv1.Unleash{})
+				return apierrors.IsNotFound(err)
+			}, federationTimeout, interval).Should(BeTrue())
+
+			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
 		})
 
 		It("Should wait for ReleaseChannel to become available instead of using default image", func() {

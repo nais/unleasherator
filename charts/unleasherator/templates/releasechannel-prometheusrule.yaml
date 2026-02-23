@@ -43,7 +43,7 @@ spec:
           for: {{ $alerts.failed.for }}
           labels:
             severity: {{ $alerts.failed.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
             consequence: "Image rollout has failed. Unleash instances managed by this ReleaseChannel may be running inconsistent versions."
@@ -58,7 +58,7 @@ spec:
           for: {{ $alerts.stuckInProgress.for }}
           labels:
             severity: {{ $alerts.stuckInProgress.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} stuck in progress"
             consequence: "A rollout is taking longer than expected. Some Unleash instances may be running the old version while others have the new version."
@@ -77,7 +77,7 @@ spec:
           for: {{ $alerts.instancesOutOfSync.for }}
           labels:
             severity: {{ $alerts.instancesOutOfSync.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} instances out of sync"
             consequence: "Some Unleash instances are not running the target image version. Feature flag behavior may differ between instances."
@@ -93,7 +93,7 @@ spec:
           for: {{ $alerts.noInstances.for }}
           labels:
             severity: {{ $alerts.noInstances.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has no instances"
             consequence: "The ReleaseChannel exists but manages no Unleash instances. This may be expected during initial setup."
@@ -113,7 +113,7 @@ spec:
           for: {{ $alerts.highFailureRate.for }}
           labels:
             severity: {{ $alerts.highFailureRate.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanizePercentage {{ "}}" }} rollout failure rate"
             consequence: "A high percentage of rollout attempts are failing. New image versions may not be deploying successfully."
@@ -131,7 +131,7 @@ spec:
           for: {{ $alerts.healthChecksFailing.for }}
           labels:
             severity: {{ $alerts.healthChecksFailing.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} health checks failing"
             consequence: "Unleash instances are failing health checks during rollout. The rollout may be blocked or rolled back."
@@ -151,7 +151,7 @@ spec:
           for: {{ $alerts.slowRollout.for }}
           labels:
             severity: {{ $alerts.slowRollout.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} rollouts taking {{ "{{" }} $value | humanizeDuration {{ "}}" }}"
             consequence: "Rollouts are taking longer than expected. New features and fixes will be delayed reaching all instances."
@@ -169,7 +169,7 @@ spec:
           for: {{ $alerts.highConflictRate.for }}
           labels:
             severity: {{ $alerts.highConflictRate.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} experiencing {{ "{{" }} $value | humanize {{ "}}" }} conflicts/sec"
             consequence: "Resource conflicts are occurring during rollouts. This may slow down rollouts or cause inconsistent state."
