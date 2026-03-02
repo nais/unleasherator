@@ -220,6 +220,12 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Execute the rollout based on current phase
 	result, err := r.executePhase(ctx, releaseChannel, log)
 	if err != nil {
+		// Conflict errors are transient — let controller-runtime requeue without
+		// transitioning to Failed phase.
+		if apierrors.IsConflict(err) {
+			log.V(1).Info("Conflict during phase execution, requeueing", "phase", releaseChannel.Status.Phase, "error", err)
+			return ctrl.Result{Requeue: true}, nil
+		}
 		log.Error(err, "Failed to execute phase", "phase", releaseChannel.Status.Phase)
 		r.recordError(ctx, releaseChannel, err)
 		// Record failed rollout
@@ -744,6 +750,9 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	// The getExpectedImageForInstance function determines correct image per instance
 	result, err := r.deployToInstances(ctx, releaseChannel, targetInstances, log)
 	if err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{}, err
+		}
 		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
@@ -875,6 +884,9 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		// Deploy to current batch
 		result, err := r.deployToInstances(ctx, releaseChannel, batch, log)
 		if err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{}, err
+			}
 			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 			r.recordPhaseTransition(releaseChannel, newPhase)
 			releaseChannel.Status.Phase = newPhase

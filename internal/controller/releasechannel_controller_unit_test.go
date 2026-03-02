@@ -2,15 +2,23 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestGetExpectedImageForInstance(t *testing.T) {
@@ -1219,6 +1227,105 @@ func TestUpdateInstanceCounts_VersionFromCorrectReleaseChannel(t *testing.T) {
 			} else {
 				assert.Equal(t, tt.expectedVersion, tt.releaseChannel.Status.Version, tt.description)
 			}
+		})
+	}
+}
+
+func TestReconcile_ConflictRequeuesWithoutFailing(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	conflictErr := apierrors.NewConflict(
+		schema.GroupResource{Group: "unleash.nais.io", Resource: "releasechannels"},
+		"test-rc",
+		fmt.Errorf("the object has been modified"),
+	)
+
+	tests := []struct {
+		name  string
+		phase unleashv1.ReleaseChannelPhase
+	}{
+		{name: "canary phase conflict requeues", phase: unleashv1.ReleaseChannelPhaseCanary},
+		{name: "rolling phase conflict requeues", phase: unleashv1.ReleaseChannelPhaseRolling},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rc := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-rc",
+					Namespace:  "default",
+					Finalizers: []string{ReleaseChannelFinalizer},
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "unleash:v5.0",
+					Strategy: unleashv1.ReleaseChannelStrategy{
+						MaxParallel: 1,
+						Canary: unleashv1.ReleaseChannelCanary{
+							Enabled: tt.phase == unleashv1.ReleaseChannelPhaseCanary,
+						},
+					},
+				},
+				Status: unleashv1.ReleaseChannelStatus{
+					Phase: tt.phase,
+					Conditions: []metav1.Condition{
+						{
+							Type:               unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+							Status:             metav1.ConditionTrue,
+							Reason:             "InProgress",
+							Message:            "Rollout in progress",
+							LastTransitionTime: metav1.Now(),
+						},
+					},
+				},
+			}
+
+			instance := &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "unleash-1",
+					Namespace: "default",
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-rc",
+					},
+				},
+				Status: unleashv1.UnleashStatus{
+					ResolvedReleaseChannelImage: "unleash:v4.0",
+					ReleaseChannelName:          "test-rc",
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rc, instance).
+				WithStatusSubresource(rc, instance).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						return conflictErr
+					},
+				}).
+				Build()
+
+			reconciler := &ReleaseChannelReconciler{
+				Client:   fakeClient,
+				Scheme:   scheme,
+				Recorder: record.NewFakeRecorder(10),
+				Tracer:   otel.Tracer("test"),
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: types.NamespacedName{Name: "test-rc", Namespace: "default"},
+			})
+
+			assert.NoError(t, err, "conflict should not be returned as error")
+			assert.True(t, result.Requeue, "conflict should trigger requeue")
+
+			// Verify the phase was NOT changed to Failed
+			freshRC := &unleashv1.ReleaseChannel{}
+			require.NoError(t, fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-rc", Namespace: "default"}, freshRC))
+			assert.NotEqual(t, unleashv1.ReleaseChannelPhaseFailed, freshRC.Status.Phase, "phase should not be Failed after conflict")
+			assert.NotEqual(t, unleashv1.ReleaseChannelPhaseRollingBack, freshRC.Status.Phase, "phase should not be RollingBack after conflict")
 		})
 	}
 }
