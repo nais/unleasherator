@@ -315,6 +315,11 @@ spec:
                 description: InstancesUpToDate is the number of instances that are
                   up to date.
                 type: integer
+              lastFailureTime:
+                description: LastFailureTime records when the current failure first
+                  occurred
+                format: date-time
+                type: string
               lastImageChangeTime:
                 description: LastImageChangeTime records when spec.image was last
                   changed (detected via PreviousImage update)
@@ -344,6 +349,11 @@ spec:
                   (0-100)
                 maximum: 100
                 minimum: 0
+                type: integer
+              retryCount:
+                default: 0
+                description: RetryCount tracks consecutive retry attempts for transient
+                  failures
                 type: integer
               startTime:
                 description: StartTime is when the current rollout started
