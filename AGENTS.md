@@ -169,3 +169,23 @@ Eventually(func() string {
 // Bad - call count can include background reconciliations from other tests
 Expect(httpmock.GetCallCountInfo()[endpoint]).To(Equal(1))
 ```
+
+**Never use small fixed-size channel buffers with `prometheus.Collect`:**
+
+```go
+// Good - large buffer prevents Collect from blocking when many metrics exist
+ch := make(chan prometheus.Metric, 1024)
+gaugeVec.Collect(ch)
+close(ch)
+
+// Bad - blocks forever if more than 16 metric series exist
+ch := make(chan prometheus.Metric, 16)
+gaugeVec.Collect(ch) // deadlocks when 4 controllers create metrics concurrently
+close(ch)
+```
+
+Why: All 4 controllers run continuously and create metrics for every reconciled resource. With `GaugeVec` labels like `(name, status, version, release_channel)`, the total series count grows with each test's resources. A buffer smaller than the total series count causes `Collect` to block on channel send forever — the goroutine dump shows `prometheus.(*metricMap).Collect` stuck on `chan send`.
+
+**Test timeout:**
+
+`make test` uses `-timeout 120s` to fail fast if tests deadlock, instead of Go's default 600s. If tests legitimately need longer, increase this in the Makefile.
