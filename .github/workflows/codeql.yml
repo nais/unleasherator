@@ -62,7 +62,7 @@ jobs:
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/init@v3
+        uses: github/codeql-action/init@89a39a4e59826350b863aa6b6252a07ad50cf83e # ratchet:github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -78,7 +78,7 @@ jobs:
         # queries: security-extended,security-and-quality
 
 
-        uses: github/codeql-action/autobuild@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@89a39a4e59826350b863aa6b6252a07ad50cf83e # ratchet:github/codeql-action/autobuild@v3
       #   If the Autobuild fails above, remove it and uncomment the following three lines.
 
       #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
@@ -95,7 +95,7 @@ jobs:
 
         # ℹ️ Command-line programs to run using the OS shell.
 
-        uses: github/codeql-action/analyze@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@89a39a4e59826350b863aa6b6252a07ad50cf83e # ratchet:github/codeql-action/analyze@v3
 
         with:
           category: "/language:${{matrix.language}}"
