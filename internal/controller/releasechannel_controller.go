@@ -626,11 +626,15 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	// Auto-retry transient errors before considering rollback
 	if isTransientError(releaseChannel.Status.FailureReason) {
 		if releaseChannel.Status.RetryCount < releaseChannelMaxTransientRetries {
-			backoff := calculateTransientBackoff(releaseChannel.Status.RetryCount)
-			var timeSinceFailure time.Duration
-			if releaseChannel.Status.LastFailureTime != nil {
-				timeSinceFailure = time.Since(releaseChannel.Status.LastFailureTime.Time)
+			// Ensure LastFailureTime is set for backoff calculation
+			if releaseChannel.Status.LastFailureTime == nil {
+				now := metav1.Now()
+				releaseChannel.Status.LastFailureTime = &now
+				return r.updateReleaseChannelStatus(ctx, releaseChannel)
 			}
+
+			backoff := calculateTransientBackoff(releaseChannel.Status.RetryCount)
+			timeSinceFailure := time.Since(releaseChannel.Status.LastFailureTime.Time)
 
 			if timeSinceFailure >= backoff {
 				log.Info("Auto-retrying transient failure",
@@ -640,6 +644,7 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 				releaseChannel.Status.RetryCount++
 				releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
 				releaseChannel.Status.FailureReason = ""
+				releaseChannel.Status.LastFailureTime = nil
 				releaseChannelTransientRetries.WithLabelValues(labels[0], labels[1]).Inc()
 				r.Recorder.Event(releaseChannel, "Normal", "TransientRetry",
 					fmt.Sprintf("Auto-retrying after transient failure (attempt %d/%d)", releaseChannel.Status.RetryCount, releaseChannelMaxTransientRetries))
@@ -1125,6 +1130,9 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	// Clear PreviousImage since rollback is complete
 	releaseChannel.Status.PreviousImage = ""
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+	// Reset transient retry state for future rollouts
+	releaseChannel.Status.RetryCount = 0
+	releaseChannel.Status.LastFailureTime = nil
 	// Record metrics for successful rollback completion
 	r.recordMetrics(releaseChannel, labels)
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -1879,6 +1887,13 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 		return false
 	}
 	if a.FailureReason != b.FailureReason {
+		return false
+	}
+	if a.RetryCount != b.RetryCount {
+		return false
+	}
+	// Compare LastFailureTime: detect if one is nil and the other is not
+	if (a.LastFailureTime == nil) != (b.LastFailureTime == nil) {
 		return false
 	}
 	if a.PreviousImage != b.PreviousImage {

@@ -1387,3 +1387,101 @@ func TestCalculateTransientBackoff(t *testing.T) {
 		})
 	}
 }
+
+func TestExecuteFailedPhaseTransientRetry(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	tests := []struct {
+		name                 string
+		failureReason        string
+		retryCount           int
+		lastFailureTime      *metav1.Time
+		expectPhase          string
+		expectRetryCount     int
+		expectLastFailureNil bool
+	}{
+		{
+			name:                 "transient error with nil LastFailureTime sets timestamp",
+			failureReason:        "the object has been modified",
+			retryCount:           0,
+			lastFailureTime:      nil,
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     0,
+			expectLastFailureNil: false,
+		},
+		{
+			name:                 "transient error with old LastFailureTime triggers retry",
+			failureReason:        "context deadline exceeded",
+			retryCount:           0,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseIdle),
+			expectRetryCount:     1,
+			expectLastFailureNil: true,
+		},
+		{
+			name:                 "transient error at max retries does not retry",
+			failureReason:        "connection refused",
+			retryCount:           5,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     5,
+			expectLastFailureNil: false,
+		},
+		{
+			name:                 "non-transient error does not trigger retry",
+			failureReason:        "health check failed: HTTP 500",
+			retryCount:           0,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     0,
+			expectLastFailureNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rc := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rc",
+					Namespace: "default",
+				},
+				Status: unleashv1.ReleaseChannelStatus{
+					Phase:           unleashv1.ReleaseChannelPhaseFailed,
+					FailureReason:   tt.failureReason,
+					RetryCount:      tt.retryCount,
+					LastFailureTime: tt.lastFailureTime,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rc).
+				WithStatusSubresource(rc).
+				Build()
+
+			reconciler := &ReleaseChannelReconciler{
+				Client:   fakeClient,
+				Scheme:   scheme,
+				Recorder: record.NewFakeRecorder(10),
+				Tracer:   otel.Tracer("test"),
+			}
+
+			log := ctrl.Log.WithName("test")
+			_, err := reconciler.executeFailedPhase(context.Background(), rc, log)
+			assert.NoError(t, err)
+
+			// Fetch updated resource
+			updated := &unleashv1.ReleaseChannel{}
+			require.NoError(t, fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-rc", Namespace: "default"}, updated))
+
+			assert.Equal(t, tt.expectPhase, string(updated.Status.Phase), "phase mismatch")
+			assert.Equal(t, tt.expectRetryCount, updated.Status.RetryCount, "retry count mismatch")
+			if tt.expectLastFailureNil {
+				assert.Nil(t, updated.Status.LastFailureTime, "LastFailureTime should be nil")
+			} else {
+				assert.NotNil(t, updated.Status.LastFailureTime, "LastFailureTime should not be nil")
+			}
+		})
+	}
+}
