@@ -224,7 +224,6 @@ func (r *ReleaseChannelReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		// transitioning to Failed phase.
 		if apierrors.IsConflict(err) {
 			log.V(1).Info("Conflict during phase execution, requeueing", "phase", releaseChannel.Status.Phase, "error", err)
-			releaseChannelConflicts.WithLabelValues(labels[0], labels[1]).Inc()
 			return ctrl.Result{Requeue: true}, nil
 		}
 		log.Error(err, "Failed to execute phase", "phase", releaseChannel.Status.Phase)
