@@ -120,6 +120,7 @@ jobs:
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # ratchet:actions/setup-go@v6
         with:
           go-version: "1.26"
+          cache-dependency-path: go.sum
 
       - name: Build controller binary
         if: steps.list-changed.outputs.changed == 'true'
@@ -130,13 +131,16 @@ jobs:
         env:
           IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main
         run: |
-          docker build -t "${IMAGE}" -f - . <<'EOF'
+          tmp=$(mktemp -d)
+          cp manager "${tmp}/"
+          docker build -t "${IMAGE}" "${tmp}" <<'EOF'
           FROM gcr.io/distroless/static:nonroot
           WORKDIR /
           COPY manager .
           USER 65532:65532
           ENTRYPOINT ["/manager"]
           EOF
+          rm -rf "${tmp}"
           kind load docker-image "${IMAGE}" --name chart-testing
           sed -i "s/imagePullPolicy: Always/imagePullPolicy: Never/g" ./charts/${{ needs.meta.outputs.name }}/values.yaml
 
