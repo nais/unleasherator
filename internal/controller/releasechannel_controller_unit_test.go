@@ -1034,6 +1034,56 @@ func TestReleaseChannelStatusEqual(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "different RetryCount",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:      unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount: 1,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:      unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount: 2,
+			},
+			expected: false,
+		},
+		{
+			name: "nil vs non-nil LastFailureTime",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: nil,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &now,
+			},
+			expected: false,
+		},
+		{
+			name: "different LastFailureTime values",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &now,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &metav1.Time{Time: now.Add(-5 * time.Minute)},
+			},
+			expected: false,
+		},
+		{
+			name: "same RetryCount and LastFailureTime",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount:      3,
+				LastFailureTime: &now,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount:      3,
+				LastFailureTime: &now,
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {

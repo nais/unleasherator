@@ -1896,6 +1896,11 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	if (a.LastFailureTime == nil) != (b.LastFailureTime == nil) {
 		return false
 	}
+	if a.LastFailureTime != nil && b.LastFailureTime != nil {
+		if !a.LastFailureTime.Equal(b.LastFailureTime) {
+			return false
+		}
+	}
 	if a.PreviousImage != b.PreviousImage {
 		return false
 	}
