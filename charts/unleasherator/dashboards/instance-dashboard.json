@@ -43,7 +43,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -93,7 +93,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "count(feature_toggles_total{job=~\"$job\", namespace=\"$namespace\"})",
@@ -108,7 +108,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -158,7 +158,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(feature_toggles_total{job=~\"$job\", namespace=\"$namespace\"})",
@@ -173,7 +173,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -229,7 +229,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(strategies_total{job=~\"$job\", namespace=\"$namespace\"})",
@@ -244,7 +244,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -300,7 +300,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(context_total{job=~\"$job\", namespace=\"$namespace\"})",
@@ -315,7 +315,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -370,7 +370,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(segments_total{job=~\"$job\", namespace=\"$namespace\"})",
@@ -385,7 +385,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "Active Users last 30 days",
       "fieldConfig": {
@@ -435,7 +435,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(users_active_30{job=~\"$job\", namespace=\"$namespace\"})",
@@ -450,7 +450,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -499,7 +499,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(client_apps_total{job=~\"$job\", namespace=\"$namespace\", range=\"allTime\"})",
@@ -527,7 +527,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -610,7 +610,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "db_pool_free{job=~\"$job\", namespace=\"$namespace\"}",
@@ -621,7 +621,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "db_pool_used{job=~\"$job\", namespace=\"$namespace\"}",
@@ -633,7 +633,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "db_pool_max{job=~\"$job\", namespace=\"$namespace\"}",
@@ -645,7 +645,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "db_pool_min{job=~\"$job\", namespace=\"$namespace\"}",
@@ -661,7 +661,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -746,7 +746,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(db_query_duration_seconds{quantile=\"$quantile\", job=~\"$job\", namespace=\"$namespace\"}) by (service)",
@@ -774,7 +774,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -859,7 +859,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(irate(http_request_duration_milliseconds_count{job=~\"$job\", namespace=\"$namespace\"}[$__rate_interval])) by (job)",
@@ -875,7 +875,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "description": "",
       "fieldConfig": {
@@ -960,7 +960,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(rate(http_request_duration_milliseconds{quantile=\"$quantile\", job=~\"$job\", namespace=~\"$namespace\"}[$__rate_interval])) by (quantile, job)",
@@ -972,7 +972,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "histogram_quantile($quantile, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket{service=~\"$job\", namespace=~\"$namespace\"}[$__rate_interval])) by (le, service))*100",
@@ -989,7 +989,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1084,7 +1084,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "100 - (\n    sum(\n        rate(http_request_duration_milliseconds_count{job=~\"$job\", status=~\"5..\"}[5m])\n    ) by (job) or 0 / sum(\n        rate(http_request_duration_milliseconds_count{job=~\"$job\"}[5m])\n    ) by (job) * 100\n)",
@@ -1112,7 +1112,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1201,7 +1201,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "irate(process_cpu_user_seconds_total{job=~\"$job\", namespace=\"$namespace\"}[2m]) * 100",
@@ -1214,7 +1214,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "irate(process_cpu_system_seconds_total{job=~\"$job\", namespace=~\"$namespace\"}[2m]) * 100",
@@ -1275,7 +1275,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1389,7 +1389,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "exemplar": false,
@@ -1410,7 +1410,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1475,7 +1475,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(nodejs_version_info{job=~\"$job\", namespace=~\"$namespace\"}) by (version)",
@@ -1493,7 +1493,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1563,7 +1563,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "sum(changes(process_start_time_seconds{job=~\"$job\", namespace=~\"$namespace\"}[1m]))",
@@ -1580,7 +1580,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1669,7 +1669,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "process_resident_memory_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1682,7 +1682,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_heap_size_total_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1695,7 +1695,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_heap_size_used_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1708,7 +1708,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_external_memory_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1725,7 +1725,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1814,7 +1814,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_active_handles_total{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1827,7 +1827,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_active_requests_total{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1844,7 +1844,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -1933,7 +1933,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_heap_space_size_total_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -1950,7 +1950,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -2039,7 +2039,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_heap_space_size_used_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -2056,7 +2056,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${tenant}"
+        "uid": "${datasource}"
       },
       "fieldConfig": {
         "defaults": {
@@ -2145,7 +2145,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${tenant}"
+            "uid": "${datasource}"
           },
           "editorMode": "code",
           "expr": "nodejs_heap_space_size_available_bytes{job=~\"$job\", namespace=~\"$namespace\"}",
@@ -2170,17 +2170,14 @@
   "templating": {
     "list": [
       {
-        "current": {
-          "text": "nav-management",
-          "value": "P9C371B257411705C"
-        },
+        "current": {},
         "includeAll": false,
-        "label": "tenant",
-        "name": "tenant",
+        "label": "Datasource",
+        "name": "datasource",
         "options": [],
         "query": "prometheus",
         "refresh": 1,
-        "regex": "/-management$/",
+        "regex": "/(.*)-metrics$/",
         "type": "datasource"
       },
       {
@@ -2192,11 +2189,11 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "${tenant}"
+          "uid": "${datasource}"
         },
         "definition": "label_values(feature_toggles_total, namespace)",
         "includeAll": true,
-        "label": "namesapce",
+        "label": "namespace",
         "multi": true,
         "name": "namespace",
         "options": [],
@@ -2218,7 +2215,7 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "${tenant}"
+          "uid": "${datasource}"
         },
         "definition": "label_values(feature_toggles_total, job)",
         "includeAll": true,

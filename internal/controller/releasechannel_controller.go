@@ -127,7 +127,7 @@ var (
 			Name: "unleasherator_releasechannel_transient_retries_total",
 			Help: "Total number of automatic retries for transient failures",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelPhaseTransitions = prometheus.NewCounterVec(
