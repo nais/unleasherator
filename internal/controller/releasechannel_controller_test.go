@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 var _ = Describe("ReleaseChannel Controller", func() {
@@ -80,10 +81,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, releaseChannelUnleashVersion)))
 	}
 
-	simulateDeploymentReady := func(instance *unleashv1.Unleash) {
+	simulateDeploymentReady := func(key types.NamespacedName) {
 		Eventually(func() error {
 			deployment := &appsv1.Deployment{}
-			if err := k8sClient.Get(ctx, instance.NamespacedName(), deployment); err != nil {
+			if err := k8sClient.Get(ctx, key, deployment); err != nil {
 				return err
 			}
 			setDeploymentStatusAvailable(deployment)
@@ -92,40 +93,37 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	}
 
 	// Automatic deployment simulation - runs in background
-	var deploymentSimulationCtx context.Context
 	var cancelDeploymentSimulation context.CancelFunc
 
 	startAutomaticDeploymentSimulation := func() {
-		deploymentSimulationCtx, cancelDeploymentSimulation = context.WithCancel(ctx)
+		simCtx, cancel := context.WithCancel(ctx)
+		cancelDeploymentSimulation = cancel
 
 		go func() {
 			defer GinkgoRecover()
 
-			// Watch for new deployments and immediately make them ready
-			ticker := time.NewTicker(time.Millisecond * 10) // Check every 10ms
+			ticker := time.NewTicker(time.Millisecond * 10)
 			defer ticker.Stop()
 
 			processedDeployments := make(map[string]bool)
 
 			for {
 				select {
-				case <-deploymentSimulationCtx.Done():
+				case <-simCtx.Done():
 					return
 				case <-ticker.C:
 					deployments := &appsv1.DeploymentList{}
-					if err := k8sClient.List(deploymentSimulationCtx, deployments); err != nil {
+					if err := k8sClient.List(simCtx, deployments); err != nil {
 						continue
 					}
 
 					for _, deployment := range deployments.Items {
 						deploymentKey := fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name)
 
-						// Skip if already processed
 						if processedDeployments[deploymentKey] {
 							continue
 						}
 
-						// Check if deployment is not yet ready
 						isReady := false
 						for _, condition := range deployment.Status.Conditions {
 							if condition.Type == appsv1.DeploymentProgressing &&
@@ -137,11 +135,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 						}
 
 						if !isReady {
-							// Make deployment ready immediately
 							deploymentCopy := deployment.DeepCopy()
 							setDeploymentStatusAvailable(deploymentCopy)
 
-							if err := k8sClient.Status().Update(deploymentSimulationCtx, deploymentCopy); err == nil {
+							if err := k8sClient.Status().Update(simCtx, deploymentCopy); err == nil {
 								processedDeployments[deploymentKey] = true
 								GinkgoWriter.Printf("[DEPLOYMENT-SIM] Made deployment %s ready\n", deploymentKey)
 							}
@@ -159,15 +156,17 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	}
 
 	waitForImageResolution := func(instance *unleashv1.Unleash, expectedImage string) {
+		key := instance.NamespacedName()
 		Eventually(func() string {
-			Expect(k8sClient.Get(ctx, instance.NamespacedName(), instance)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, key, instance)).Should(Succeed())
 			return instance.Status.ResolvedReleaseChannelImage
 		}, timeout, interval).Should(Equal(expectedImage))
 	}
 
 	waitForInstanceReady := func(instance *unleashv1.Unleash) {
+		key := instance.NamespacedName()
 		Eventually(func() bool {
-			Expect(k8sClient.Get(ctx, instance.NamespacedName(), instance)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, key, instance)).Should(Succeed())
 			for _, condition := range instance.Status.Conditions {
 				if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
 					return condition.Status == metav1.ConditionTrue
@@ -178,7 +177,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	}
 
 	waitForConnection := func(instance *unleashv1.Unleash) {
-		Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, instance).Should(ContainElement(metav1.Condition{
+		key := instance.NamespacedName()
+		Eventually(func() ([]metav1.Condition, error) {
+			if err := k8sClient.Get(ctx, key, instance); err != nil {
+				return nil, err
+			}
+			return unsetConditionLastTransitionTime(instance.Status.Conditions), nil
+		}, timeout, interval).Should(ContainElement(metav1.Condition{
 			Type:    unleashv1.UnleashStatusConditionTypeConnected,
 			Status:  metav1.ConditionTrue,
 			Reason:  "Reconciling",
@@ -234,7 +239,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			DeferCleanup(k8sClient.Delete, ctx, unleash)
 
 			By("Mocking deployment to be ready")
-			simulateDeploymentReady(unleash)
+			simulateDeploymentReady(unleash.NamespacedName())
 
 			By("Waiting for Unleash instance to be connected")
 			waitForConnection(unleash)
@@ -261,7 +266,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			By("Mocking deployment to be ready")
-			simulateDeploymentReady(unleash)
+			simulateDeploymentReady(unleash.NamespacedName())
 
 			By("Waiting for initial setup")
 			waitForImageResolution(unleash, "update-test:v1")
@@ -299,7 +304,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			By("Mocking deployment to be ready")
-			simulateDeploymentReady(unleash)
+			simulateDeploymentReady(unleash.NamespacedName())
 
 			By("Verifying instance uses CustomImage, not ReleaseChannel image")
 			Consistently(func() string {
@@ -346,8 +351,8 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			}, timeout, interval).Should(Succeed(), "unleash2 should be created")
 
 			By("Mocking deployments to be ready")
-			simulateDeploymentReady(unleash1)
-			simulateDeploymentReady(unleash2)
+			simulateDeploymentReady(unleash1.NamespacedName())
+			simulateDeploymentReady(unleash2.NamespacedName())
 
 			By("Waiting for both instances to be connected")
 			waitForConnection(unleash1)
@@ -478,6 +483,10 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			testCtx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
+			canaryKey := canaryUnleash.NamespacedName()
+			prodKey := prodUnleash.NamespacedName()
+			rcKey := releaseChannel.NamespacedName()
+
 			go func() {
 				var lastPhase unleashv1.ReleaseChannelPhase
 				var lastGeneration int64
@@ -492,7 +501,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 						return
 					case <-ticker.C:
 						var currentRC unleashv1.ReleaseChannel
-						if err := k8sClient.Get(testCtx, releaseChannel.NamespacedName(), &currentRC); err != nil {
+						if err := k8sClient.Get(testCtx, rcKey, &currentRC); err != nil {
 							continue
 						}
 
@@ -506,23 +515,19 @@ var _ = Describe("ReleaseChannel Controller", func() {
 
 							switch currentPhase {
 							case unleashv1.ReleaseChannelPhaseIdle:
-								// Initial setup or completion - ensure both deployments are ready
-								// But only if we've transitioned from another phase (not on initial setup)
 								if lastPhase != "" {
 									GinkgoWriter.Printf("Returned to Idle - ensuring both deployments ready\n")
-									simulateDeploymentReady(canaryUnleash)
-									simulateDeploymentReady(prodUnleash)
+									simulateDeploymentReady(canaryKey)
+									simulateDeploymentReady(prodKey)
 								}
 
 							case unleashv1.ReleaseChannelPhaseCanary:
-								// Canary phase started - simulate canary deployment readiness
 								GinkgoWriter.Printf("Simulating canary deployment readiness\n")
-								simulateDeploymentReady(canaryUnleash)
+								simulateDeploymentReady(canaryKey)
 
 							case unleashv1.ReleaseChannelPhaseRolling:
-								// Rolling phase started - simulate production deployment readiness
 								GinkgoWriter.Printf("Simulating production deployment readiness\n")
-								simulateDeploymentReady(prodUnleash)
+								simulateDeploymentReady(prodKey)
 							}
 
 							lastPhase = currentPhase
@@ -651,7 +656,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
 			By("Mocking deployment to be ready")
-			simulateDeploymentReady(unleash)
+			simulateDeploymentReady(unleash.NamespacedName())
 
 			By("Waiting for initial setup")
 			waitForImageResolution(unleash, "starttime-test:v1")

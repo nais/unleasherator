@@ -191,23 +191,23 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			defer cancel()
 
 			By("By starting the subscriber")
-			started := make(chan bool)
-			mockSubscriber.On("Subscribe", ctx, mock.AnythingOfType("Handler")).After(10 * time.Second).Return(nil)
+			handlerCh := make(chan federation.Handler, 1)
+			blockSubscribe := make(chan time.Time)
+			DeferCleanup(func() { close(blockSubscribe) })
+			mockSubscriber.On("Subscribe", mock.Anything, mock.MatchedBy(func(h federation.Handler) bool {
+				select {
+				case handlerCh <- h:
+				default:
+				}
+				return true
+			})).Once().WaitUntil(blockSubscribe).Return(nil)
 
-			go func(ctx context.Context) {
-				started <- true
+			go func() {
+				remoteUnleashReconciler.FederationSubscribe(ctx) //nolint:errcheck
+			}()
 
-				err := remoteUnleashReconciler.FederationSubscribe(ctx)
-				Expect(err).ToNot(HaveOccurred(), "failed to subscribe to federation")
-			}(ctx)
-
-			<-started
-
-			Eventually(func() int {
-				return len(mockSubscriber.Calls)
-			}, timeout, interval).Should(Equal(1))
-
-			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
+			var handler federation.Handler
+			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
 
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
@@ -265,23 +265,23 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			defer cancel()
 
 			By("By starting the subscriber")
-			started := make(chan bool)
-			mockSubscriber.On("Subscribe", ctx, mock.AnythingOfType("Handler")).After(10 * time.Second).Return(nil)
+			handlerCh := make(chan federation.Handler, 1)
+			blockSubscribe := make(chan time.Time)
+			DeferCleanup(func() { close(blockSubscribe) })
+			mockSubscriber.On("Subscribe", mock.Anything, mock.MatchedBy(func(h federation.Handler) bool {
+				select {
+				case handlerCh <- h:
+				default:
+				}
+				return true
+			})).Once().WaitUntil(blockSubscribe).Return(nil)
 
-			go func(ctx context.Context) {
-				started <- true
+			go func() {
+				remoteUnleashReconciler.FederationSubscribe(ctx) //nolint:errcheck
+			}()
 
-				err := remoteUnleashReconciler.FederationSubscribe(ctx)
-				Expect(err).ToNot(HaveOccurred(), "failed to subscribe to federation")
-			}(ctx)
-
-			<-started
-
-			Eventually(func() int {
-				return len(mockSubscriber.Calls)
-			}, timeout, interval).Should(Not(Equal(0)))
-
-			handler := mockSubscriber.Calls[0].Arguments.Get(1).(federation.Handler)
+			var handler federation.Handler
+			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
 
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 

@@ -48,6 +48,10 @@ Follow [tiger style](https://tigerstyle.dev/): safety, performance, developer ex
 - Error handling validated via httpmock responses
 - Schema tests prevent API drift on Unleash upgrades
 
+**Flaky tests:**
+
+Controller tests share a single in-memory etcd and 4 continuously running controllers. This makes some tests sensitive to ordering and timing. If tests fail during feature work, **rerun before debugging** — intermittent failures are expected. Only investigate if a test fails consistently.
+
 ### httpmock Isolation
 
 All 4 controllers run continuously via shared `k8sManager` and reconcile resources from ALL tests concurrently. Global responder reset doesn't work—use unique URLs per test instead:

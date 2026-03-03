@@ -105,13 +105,19 @@ var _ = Describe("Unleash Controller", func() {
 
 		promCounterVecFlush(unleashPublished)
 
-		// Reset federation publisher mocks between tests to avoid leakage
-		mockPublisher.Mock = mock.Mock{}
+		// Register catch-all Maybe expectations so in-flight controller calls
+		// from previous tests don't panic on unexpected method calls.
+		mockPublisher.ExpectedCalls = []*mock.Call{
+			mockPublisher.On("Publish", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil),
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything).Maybe().Return(nil),
+		}
+		mockPublisher.Calls = nil
 
-		httpmock.DeactivateAndReset() // Fully reset including call counts
-		httpmock.Activate()
-		// Re-register the global NoResponder to catch requests from concurrent tests
-		// This is critical because controllers run continuously and may reconcile resources from other tests
+		// Use Reset+ZeroCallCounters instead of DeactivateAndReset+Activate.
+		// DeactivateAndReset briefly restores http.DefaultTransport, causing races
+		// with concurrent controller reconciliations that are still in-flight.
+		httpmock.Reset()
+		httpmock.ZeroCallCounters()
 		httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
 		httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
 			httpmock.NewStringResponder(200, `{"health": "OK"}`))
@@ -248,14 +254,8 @@ var _ = Describe("Unleash Controller", func() {
 		It("Should succeed when it can connect to Unleash", func() {
 			ctx := context.Background()
 
-			By("By resetting httpmock to isolate this test")
-			httpmock.Reset()
-			// Re-register NoResponder and necessary responders for connection testing
-			httpmock.RegisterNoResponder(httpmock.NewStringResponder(200, `{"health":"OK","versionOSS":"v5.1.2"}`))
-			httpmock.RegisterResponder("GET", unleashclient.HealthEndpoint,
-				httpmock.NewStringResponder(200, `{"health": "OK"}`))
-			httpmock.RegisterResponder("GET", unleashclient.InstanceAdminStatsEndpoint,
-				httpmock.NewStringResponder(200, fmt.Sprintf(`{"versionOSS": "%s"}`, UnleashVersion)))
+			By("By resetting httpmock call counters to isolate this test")
+			httpmock.ZeroCallCounters()
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-success", UnleashNamespace, unleashv1.UnleashSpec{
@@ -595,17 +595,19 @@ var _ = Describe("Unleash Controller", func() {
 			}))
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
-			Eventually(func() int {
-				return len(mockPublisher.Calls)
-			}, federationTimeout, interval).Should(Equal(1), "federation publisher should be invoked exactly once")
+			Eventually(func() bool {
+				return mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)
+			}, federationTimeout, interval).Should(BeTrue(), "federation publisher should be invoked exactly once")
 
-			val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
-			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1)))
+			Eventually(func(g Gomega) {
+				val, err := promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSending)
+				g.Expect(err).To(BeNil())
+				g.Expect(val).To(Equal(float64(1)))
 
-			val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
-			Expect(err).To(BeNil())
-			Expect(val).To(Equal(float64(1)))
+				val, err = promCounterVecVal(unleashPublished, "provisioned", unleashPublishMetricStatusSuccess)
+				g.Expect(err).To(BeNil())
+				g.Expect(val).To(Equal(float64(1)))
+			}, federationTimeout, interval).Should(Succeed())
 
 			By("By cleaning up the Unleash")
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
