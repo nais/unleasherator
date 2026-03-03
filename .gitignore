@@ -29,3 +29,6 @@ Dockerfile.cross
 # env files
 .env*
 job-logs.txt
+
+# Stress test output
+hack/stress-test-logs/

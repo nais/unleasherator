@@ -1170,24 +1170,38 @@ func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 		"targetImage", string(targetImage),
 		"existingPreviousImage", releaseChannel.Status.PreviousImage)
 
-	// If deployed image differs from target and isn't already tracked, capture it
+	// If deployed image differs from target and isn't already tracked, capture it.
+	// Use retry to prevent losing PreviousImage on conflict — once instances are updated
+	// to the target image, the window to capture PreviousImage closes permanently.
 	if currentDeployedImage != "" &&
 		currentDeployedImage != string(targetImage) &&
 		releaseChannel.Status.PreviousImage != currentDeployedImage {
 
-		now := metav1.Now()
-		releaseChannel.Status.PreviousImage = currentDeployedImage
-		releaseChannel.Status.LastImageChangeTime = &now
-		log.Info("Captured previous image for rollback and set LastImageChangeTime",
-			"previousImage", currentDeployedImage,
-			"newTarget", string(targetImage),
-			"lastImageChangeTime", now.Time)
-
-		if err := r.Status().Update(ctx, releaseChannel); err != nil {
+		captured := currentDeployedImage
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			key := types.NamespacedName{Name: releaseChannel.Name, Namespace: releaseChannel.Namespace}
+			if err := r.Get(ctx, key, releaseChannel); err != nil {
+				return err
+			}
+			if releaseChannel.Status.PreviousImage == captured {
+				return nil
+			}
+			if captured == string(releaseChannel.Spec.Image) {
+				return nil
+			}
+			now := metav1.Now()
+			releaseChannel.Status.PreviousImage = captured
+			releaseChannel.Status.LastImageChangeTime = &now
+			return r.Status().Update(ctx, releaseChannel)
+		})
+		if err != nil {
 			log.Error(err, "Failed to update ReleaseChannel status with previous image")
 			return false, err
 		}
-		return true, nil // Status was updated
+		log.Info("Captured previous image for rollback",
+			"previousImage", captured,
+			"newTarget", string(targetImage))
+		return true, nil
 	}
 
 	return false, nil

@@ -64,7 +64,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: envtest ## Run tests. Use FOCUS="test name" to run specific tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(if $(FOCUS),./internal/controller -run TestAPIs --ginkgo.focus="$(FOCUS)",./...) -timeout 120s -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(if $(FOCUS),./internal/controller -run TestAPIs --ginkgo.focus="$(FOCUS)",./...) -race -count=1 -timeout 180s -coverprofile cover.out
 
 .PHONY: test-schemas
 test-schemas: ## Run schema validation tests to verify types match official Unleash API.

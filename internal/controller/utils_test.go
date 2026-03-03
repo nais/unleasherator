@@ -149,7 +149,7 @@ func promCounterVecVal(cv *prometheus.CounterVec, lvs ...string) (float64, error
 	var m = &dto.Metric{}
 
 	if err := cv.WithLabelValues(lvs...).Write(m); err != nil {
-		return 0, nil
+		return 0, err
 	}
 
 	return m.GetCounter().GetValue(), nil
