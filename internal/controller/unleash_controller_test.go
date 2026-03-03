@@ -29,9 +29,9 @@ import (
 // allowing AssertNumberOfCalls to be used inside Eventually.
 type silentT struct{}
 
-func (silentT) Logf(string, ...interface{})  {}
+func (silentT) Logf(string, ...interface{})   {}
 func (silentT) Errorf(string, ...interface{}) {}
-func (silentT) FailNow()                     {}
+func (silentT) FailNow()                      {}
 
 func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1.Unleash) ([]metav1.Condition, error) {
 	if err := k8sClient.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
@@ -628,7 +628,9 @@ var _ = Describe("Unleash Controller", func() {
 				return apierrors.IsNotFound(err)
 			}, federationTimeout, interval).Should(BeTrue())
 
-			Expect(mockPublisher.AssertExpectations(GinkgoT())).To(BeTrue())
+			Eventually(func() bool {
+				return mockPublisher.AssertNumberOfCalls(&silentT{}, "PublishRemoved", 1)
+			}, federationTimeout, interval).Should(BeTrue(), "federation publisher should call PublishRemoved exactly once")
 		})
 
 		It("Should wait for ReleaseChannel to become available instead of using default image", func() {
