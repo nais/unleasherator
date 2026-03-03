@@ -136,6 +136,13 @@ type ReleaseChannelStatus struct {
 	// FailureReason contains the reason for rollout failure
 	FailureReason string `json:"failureReason,omitempty"`
 
+	// RetryCount tracks consecutive retry attempts for transient failures
+	// +kubebuilder:default=0
+	RetryCount int `json:"retryCount,omitempty"`
+
+	// LastFailureTime records when the current failure first occurred
+	LastFailureTime *metav1.Time `json:"lastFailureTime,omitempty"`
+
 	// PreviousImage stores the previous image for rollback purposes
 	PreviousImage string `json:"previousImage,omitempty"`
 

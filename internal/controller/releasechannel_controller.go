@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -58,6 +59,8 @@ var (
 	releaseChannelHealthCheckInitialDelay = 30 * time.Second
 	releaseChannelDefaultMaxUpgradeTime   = 10 * time.Minute
 	releaseChannelHealthCheckTimeout      = 5 * time.Second
+	releaseChannelTransientRetryBase      = 30 * time.Second
+	releaseChannelMaxTransientRetries     = 5
 )
 
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
@@ -119,6 +122,14 @@ var (
 		[]string{"namespace", "name"},
 	)
 
+	releaseChannelTransientRetries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "unleasherator_releasechannel_transient_retries_total",
+			Help: "Total number of automatic retries for transient failures",
+		},
+		[]string{"namespace", "name"},
+	)
+
 	releaseChannelPhaseTransitions = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "unleasherator_releasechannel_phase_transitions_total",
@@ -144,6 +155,7 @@ func init() {
 		releaseChannelRollouts,
 		releaseChannelRolloutDuration,
 		releaseChannelConflicts,
+		releaseChannelTransientRetries,
 		releaseChannelPhaseTransitions,
 		releaseChannelHealthChecks,
 	)
@@ -600,6 +612,8 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
 	releaseChannel.Status.StartTime = nil
 	releaseChannel.Status.FailureReason = ""
+	releaseChannel.Status.RetryCount = 0
+	releaseChannel.Status.LastFailureTime = nil
 	// Note: PreviousImage is kept for potential future rollback reference
 
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -607,6 +621,44 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 
 func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Handling failed rollout", "reason", releaseChannel.Status.FailureReason)
+	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
+
+	// Auto-retry transient errors before considering rollback
+	if isTransientError(releaseChannel.Status.FailureReason) {
+		if releaseChannel.Status.RetryCount < releaseChannelMaxTransientRetries {
+			// Ensure LastFailureTime is set for backoff calculation
+			if releaseChannel.Status.LastFailureTime == nil {
+				now := metav1.Now()
+				releaseChannel.Status.LastFailureTime = &now
+				return r.updateReleaseChannelStatus(ctx, releaseChannel)
+			}
+
+			backoff := calculateTransientBackoff(releaseChannel.Status.RetryCount)
+			timeSinceFailure := time.Since(releaseChannel.Status.LastFailureTime.Time)
+
+			if timeSinceFailure >= backoff {
+				log.Info("Auto-retrying transient failure",
+					"attempt", releaseChannel.Status.RetryCount+1,
+					"maxAttempts", releaseChannelMaxTransientRetries,
+					"reason", releaseChannel.Status.FailureReason)
+				releaseChannel.Status.RetryCount++
+				releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+				releaseChannel.Status.FailureReason = ""
+				releaseChannel.Status.LastFailureTime = nil
+				releaseChannelTransientRetries.WithLabelValues(labels[0], labels[1]).Inc()
+				r.Recorder.Event(releaseChannel, "Normal", "TransientRetry",
+					fmt.Sprintf("Auto-retrying after transient failure (attempt %d/%d)", releaseChannel.Status.RetryCount, releaseChannelMaxTransientRetries))
+				return r.updateReleaseChannelStatus(ctx, releaseChannel)
+			}
+			// Not enough time has passed, requeue after remaining backoff
+			remainingBackoff := backoff - timeSinceFailure
+			log.V(1).Info("Waiting for backoff before transient retry",
+				"remainingBackoff", remainingBackoff,
+				"attempt", releaseChannel.Status.RetryCount+1)
+			return ctrl.Result{RequeueAfter: remainingBackoff}, nil
+		}
+		log.Info("Max transient retries exceeded", "retries", releaseChannel.Status.RetryCount)
+	}
 
 	// Automatic rollback when enabled and onFailure is set (or defaults to true)
 	if releaseChannel.Spec.Rollback.Enabled && releaseChannel.Spec.Rollback.OnFailure {
@@ -629,9 +681,52 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	return ctrl.Result{RequeueAfter: releaseChannelFailedRetryDelay}, nil
 }
 
+// isTransientError returns true if the error reason indicates a transient failure
+// that may succeed on retry (conflicts, timeouts, connection issues).
+func isTransientError(reason string) bool {
+	reason = strings.ToLower(reason)
+	transientPatterns := []string{
+		"conflict",
+		"the object has been modified",
+		"timeout",
+		"context deadline exceeded",
+		"connection refused",
+		"connection reset",
+		"no such host",
+		"i/o timeout",
+		"temporary failure",
+	}
+	for _, pattern := range transientPatterns {
+		if strings.Contains(reason, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// calculateTransientBackoff returns exponential backoff duration for retry attempt.
+// Backoff sequence: 30s, 1m, 2m, 4m, 8m
+func calculateTransientBackoff(retryCount int) time.Duration {
+	backoff := releaseChannelTransientRetryBase
+	for i := 0; i < retryCount; i++ {
+		backoff *= 2
+	}
+	// Cap at 8 minutes
+	if backoff > 8*time.Minute {
+		backoff = 8 * time.Minute
+	}
+	return backoff
+}
+
 func (r *ReleaseChannelReconciler) recordError(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, err error) {
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 	releaseChannel.Status.FailureReason = err.Error()
+
+	// Set LastFailureTime on first failure (preserve for backoff calculation)
+	if releaseChannel.Status.LastFailureTime == nil {
+		now := metav1.Now()
+		releaseChannel.Status.LastFailureTime = &now
+	}
 
 	meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
 		Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
@@ -1035,6 +1130,9 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	// Clear PreviousImage since rollback is complete
 	releaseChannel.Status.PreviousImage = ""
 	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+	// Reset transient retry state for future rollouts
+	releaseChannel.Status.RetryCount = 0
+	releaseChannel.Status.LastFailureTime = nil
 	// Record metrics for successful rollback completion
 	r.recordMetrics(releaseChannel, labels)
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -1790,6 +1888,18 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	}
 	if a.FailureReason != b.FailureReason {
 		return false
+	}
+	if a.RetryCount != b.RetryCount {
+		return false
+	}
+	// Compare LastFailureTime: detect if one is nil and the other is not
+	if (a.LastFailureTime == nil) != (b.LastFailureTime == nil) {
+		return false
+	}
+	if a.LastFailureTime != nil && b.LastFailureTime != nil {
+		if !a.LastFailureTime.Equal(b.LastFailureTime) {
+			return false
+		}
 	}
 	if a.PreviousImage != b.PreviousImage {
 		return false

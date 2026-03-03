@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -1033,6 +1034,56 @@ func TestReleaseChannelStatusEqual(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "different RetryCount",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:      unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount: 1,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:      unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount: 2,
+			},
+			expected: false,
+		},
+		{
+			name: "nil vs non-nil LastFailureTime",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: nil,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &now,
+			},
+			expected: false,
+		},
+		{
+			name: "different LastFailureTime values",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &now,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				LastFailureTime: &metav1.Time{Time: now.Add(-5 * time.Minute)},
+			},
+			expected: false,
+		},
+		{
+			name: "same RetryCount and LastFailureTime",
+			a: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount:      3,
+				LastFailureTime: &now,
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				Phase:           unleashv1.ReleaseChannelPhaseFailed,
+				RetryCount:      3,
+				LastFailureTime: &now,
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1326,6 +1377,161 @@ func TestReconcile_ConflictRequeuesWithoutFailing(t *testing.T) {
 			require.NoError(t, fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-rc", Namespace: "default"}, freshRC))
 			assert.NotEqual(t, unleashv1.ReleaseChannelPhaseFailed, freshRC.Status.Phase, "phase should not be Failed after conflict")
 			assert.NotEqual(t, unleashv1.ReleaseChannelPhaseRollingBack, freshRC.Status.Phase, "phase should not be RollingBack after conflict")
+		})
+	}
+}
+
+func TestIsTransientError(t *testing.T) {
+	tests := []struct {
+		name     string
+		reason   string
+		expected bool
+	}{
+		// Transient errors - should return true
+		{name: "conflict error", reason: "Operation cannot be fulfilled on releasechannels.unleash.nais.io \"test\": the object has been modified", expected: true},
+		{name: "conflict keyword", reason: "resource conflict during update", expected: true},
+		{name: "timeout error", reason: "context deadline exceeded", expected: true},
+		{name: "connection refused", reason: "dial tcp 10.0.0.1:443: connection refused", expected: true},
+		{name: "connection reset", reason: "read tcp: connection reset by peer", expected: true},
+		{name: "i/o timeout", reason: "dial tcp: i/o timeout", expected: true},
+		{name: "no such host", reason: "dial tcp: lookup example.com: no such host", expected: true},
+		{name: "generic timeout", reason: "request timeout after 30s", expected: true},
+		{name: "temporary failure", reason: "temporary failure in name resolution", expected: true},
+		{name: "case insensitive", reason: "CONFLICT during status update", expected: true},
+
+		// Permanent errors - should return false
+		{name: "health check failed", reason: "health check failed: HTTP 500", expected: false},
+		{name: "image pull error", reason: "failed to pull image: ImagePullBackOff", expected: false},
+		{name: "invalid configuration", reason: "invalid release channel configuration", expected: false},
+		{name: "permission denied", reason: "forbidden: User cannot update resource", expected: false},
+		{name: "not found", reason: "Unleash instance not found", expected: false},
+		{name: "empty reason", reason: "", expected: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isTransientError(tt.reason)
+			assert.Equal(t, tt.expected, result, "isTransientError(%q) should be %v", tt.reason, tt.expected)
+		})
+	}
+}
+
+func TestCalculateTransientBackoff(t *testing.T) {
+	tests := []struct {
+		retryCount int
+		expected   time.Duration
+	}{
+		{retryCount: 0, expected: 30 * time.Second},
+		{retryCount: 1, expected: 60 * time.Second},
+		{retryCount: 2, expected: 2 * time.Minute},
+		{retryCount: 3, expected: 4 * time.Minute},
+		{retryCount: 4, expected: 8 * time.Minute},
+		{retryCount: 5, expected: 8 * time.Minute},  // capped
+		{retryCount: 10, expected: 8 * time.Minute}, // capped
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("retry_%d", tt.retryCount), func(t *testing.T) {
+			result := calculateTransientBackoff(tt.retryCount)
+			assert.Equal(t, tt.expected, result, "calculateTransientBackoff(%d) should be %v", tt.retryCount, tt.expected)
+		})
+	}
+}
+
+func TestExecuteFailedPhaseTransientRetry(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	tests := []struct {
+		name                 string
+		failureReason        string
+		retryCount           int
+		lastFailureTime      *metav1.Time
+		expectPhase          string
+		expectRetryCount     int
+		expectLastFailureNil bool
+	}{
+		{
+			name:                 "transient error with nil LastFailureTime sets timestamp",
+			failureReason:        "the object has been modified",
+			retryCount:           0,
+			lastFailureTime:      nil,
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     0,
+			expectLastFailureNil: false,
+		},
+		{
+			name:                 "transient error with old LastFailureTime triggers retry",
+			failureReason:        "context deadline exceeded",
+			retryCount:           0,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseIdle),
+			expectRetryCount:     1,
+			expectLastFailureNil: true,
+		},
+		{
+			name:                 "transient error at max retries does not retry",
+			failureReason:        "connection refused",
+			retryCount:           5,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-10 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     5,
+			expectLastFailureNil: false,
+		},
+		{
+			name:                 "non-transient error does not trigger retry",
+			failureReason:        "health check failed: HTTP 500",
+			retryCount:           0,
+			lastFailureTime:      &metav1.Time{Time: time.Now().Add(-1 * time.Minute)},
+			expectPhase:          string(unleashv1.ReleaseChannelPhaseFailed),
+			expectRetryCount:     0,
+			expectLastFailureNil: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rc := &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rc",
+					Namespace: "default",
+				},
+				Status: unleashv1.ReleaseChannelStatus{
+					Phase:           unleashv1.ReleaseChannelPhaseFailed,
+					FailureReason:   tt.failureReason,
+					RetryCount:      tt.retryCount,
+					LastFailureTime: tt.lastFailureTime,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(rc).
+				WithStatusSubresource(rc).
+				Build()
+
+			reconciler := &ReleaseChannelReconciler{
+				Client:   fakeClient,
+				Scheme:   scheme,
+				Recorder: record.NewFakeRecorder(10),
+				Tracer:   otel.Tracer("test"),
+			}
+
+			log := ctrl.Log.WithName("test")
+			_, err := reconciler.executeFailedPhase(context.Background(), rc, log)
+			assert.NoError(t, err)
+
+			// Fetch updated resource
+			updated := &unleashv1.ReleaseChannel{}
+			require.NoError(t, fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-rc", Namespace: "default"}, updated))
+
+			assert.Equal(t, tt.expectPhase, string(updated.Status.Phase), "phase mismatch")
+			assert.Equal(t, tt.expectRetryCount, updated.Status.RetryCount, "retry count mismatch")
+			if tt.expectLastFailureNil {
+				assert.Nil(t, updated.Status.LastFailureTime, "LastFailureTime should be nil")
+			} else {
+				assert.NotNil(t, updated.Status.LastFailureTime, "LastFailureTime should not be nil")
+			}
 		})
 	}
 }

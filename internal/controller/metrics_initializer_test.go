@@ -18,7 +18,7 @@ import (
 // getMetricValue extracts the gauge value for a specific label set from unleashStatus
 // by collecting from the registry. This avoids creating series when checking existence.
 func getMetricValue(name, status, version, releaseChannel string) (float64, bool) {
-	ch := make(chan prometheus.Metric, 16)
+	ch := make(chan prometheus.Metric, 1024)
 	unleashStatus.Collect(ch)
 	close(ch)
 

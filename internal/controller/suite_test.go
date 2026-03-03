@@ -193,6 +193,10 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	cancel()
 	httpmock.DeactivateAndReset()
+	// Give the manager goroutines time to shut down after context cancellation.
+	// Without this, HTTP2 watch streams from informers don't close cleanly,
+	// leaving goroutines stuck in sync.Cond.Wait that can cause test timeouts.
+	time.Sleep(100 * time.Millisecond)
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
