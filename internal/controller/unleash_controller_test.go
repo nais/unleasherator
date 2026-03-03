@@ -25,6 +25,14 @@ import (
 	"github.com/nais/unleasherator/internal/unleashclient"
 )
 
+// silentT implements mock.TestingT without triggering Ginkgo failures,
+// allowing AssertNumberOfCalls to be used inside Eventually.
+type silentT struct{}
+
+func (silentT) Logf(string, ...interface{})  {}
+func (silentT) Errorf(string, ...interface{}) {}
+func (silentT) FailNow()                     {}
+
 func getUnleash(k8sClient client.Client, ctx context.Context, unleash *unleashv1.Unleash) ([]metav1.Condition, error) {
 	if err := k8sClient.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
 		return nil, err
@@ -596,7 +604,9 @@ var _ = Describe("Unleash Controller", func() {
 
 			Expect(createdUnleash.IsReady()).To(BeTrue())
 			Eventually(func() bool {
-				return mockPublisher.AssertNumberOfCalls(GinkgoT(), "Publish", 1)
+				// Use silentT instead of GinkgoT — AssertNumberOfCalls calls t.Errorf on
+				// mismatch, and GinkgoT().Errorf triggers Fail()/panic, preventing Eventually from retrying.
+				return mockPublisher.AssertNumberOfCalls(&silentT{}, "Publish", 1)
 			}, federationTimeout, interval).Should(BeTrue(), "federation publisher should be invoked exactly once")
 
 			Eventually(func(g Gomega) {

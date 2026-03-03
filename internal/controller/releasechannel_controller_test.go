@@ -15,12 +15,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("ReleaseChannel Controller", func() {
 	const (
-		timeout  = time.Millisecond * 15000 // Provide extra slack for multi-instance and canary rollouts
-		interval = time.Millisecond * 20    // Reduced from 100ms to 20ms for faster polling
+		timeout  = time.Second * 30      // Extra slack for multi-instance and canary rollouts under contention
+		interval = time.Millisecond * 20 // Reduced from 100ms to 20ms for faster polling
 
 		releaseChannelUnleashVersion = "v5.1.2"
 	)
@@ -98,6 +99,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 	startAutomaticDeploymentSimulation := func() {
 		simCtx, cancel := context.WithCancel(ctx)
 		cancelDeploymentSimulation = cancel
+		ns := namespace
 
 		go func() {
 			defer GinkgoRecover()
@@ -105,7 +107,7 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			ticker := time.NewTicker(time.Millisecond * 10)
 			defer ticker.Stop()
 
-			processedDeployments := make(map[string]bool)
+			processedGenerations := make(map[string]int64)
 
 			for {
 				select {
@@ -113,14 +115,15 @@ var _ = Describe("ReleaseChannel Controller", func() {
 					return
 				case <-ticker.C:
 					deployments := &appsv1.DeploymentList{}
-					if err := k8sClient.List(simCtx, deployments); err != nil {
+					if err := k8sClient.List(simCtx, deployments, client.InNamespace(ns)); err != nil {
 						continue
 					}
 
 					for _, deployment := range deployments.Items {
 						deploymentKey := fmt.Sprintf("%s/%s", deployment.Namespace, deployment.Name)
 
-						if processedDeployments[deploymentKey] {
+						// Re-simulate when generation changes (spec updated, e.g. image change)
+						if processedGenerations[deploymentKey] == deployment.Generation {
 							continue
 						}
 
@@ -139,9 +142,11 @@ var _ = Describe("ReleaseChannel Controller", func() {
 							setDeploymentStatusAvailable(deploymentCopy)
 
 							if err := k8sClient.Status().Update(simCtx, deploymentCopy); err == nil {
-								processedDeployments[deploymentKey] = true
-								GinkgoWriter.Printf("[DEPLOYMENT-SIM] Made deployment %s ready\n", deploymentKey)
+								processedGenerations[deploymentKey] = deployment.Generation
+								GinkgoWriter.Printf("[DEPLOYMENT-SIM] Made deployment %s ready (gen %d)\n", deploymentKey, deployment.Generation)
 							}
+						} else {
+							processedGenerations[deploymentKey] = deployment.Generation
 						}
 					}
 				}

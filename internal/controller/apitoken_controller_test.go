@@ -594,6 +594,9 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			// Generate unique URL for this test's RemoteUnleash
 			serverURL := mockRemoteUnleashURL(apiTokenName, ApiTokenNamespace)
 
+			// Use local token list to prevent cross-test contamination
+			localTokens := unleashclient.ApiTokenResult{Tokens: []unleashclient.ApiToken{}}
+
 			By("By overriding health endpoint to return v7 version")
 			httpmock.RegisterResponder("GET", serverURL+unleashclient.HealthEndpoint,
 				httpmock.NewStringResponder(200, `{"health": "OK"}`))
@@ -602,7 +605,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			httpmock.RegisterResponder("GET", fmt.Sprintf("=~^%s%s/.+\\z", serverURL, unleashclient.ApiTokensEndpoint),
 				func(req *http.Request) (*http.Response, error) {
 					defer GinkgoRecover()
-					resp, err := httpmock.NewJsonResponse(200, existingTokens)
+					resp, err := httpmock.NewJsonResponse(200, localTokens)
 					if err != nil {
 						return httpmock.NewStringResponse(500, ""), nil
 					}
@@ -634,7 +637,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 						CreatedAt:   time.Now().Format(time.RFC3339),
 					}
 
-					existingTokens.Tokens = append(existingTokens.Tokens, tokenResp)
+					localTokens.Tokens = append(localTokens.Tokens, tokenResp)
 					return httpmock.NewJsonResponse(201, tokenResp)
 				})
 
