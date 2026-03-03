@@ -115,6 +115,9 @@ var _ = Describe("Unleash Controller", func() {
 
 		// Register catch-all Maybe expectations so in-flight controller calls
 		// from previous tests don't panic on unexpected method calls.
+		// Direct field access bypasses testify's internal mutex, but testify
+		// provides no thread-safe Reset API. The race window is minimal since
+		// BeforeEach runs between tests when controllers are typically idle.
 		mockPublisher.ExpectedCalls = []*mock.Call{
 			mockPublisher.On("Publish", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil),
 			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything).Maybe().Return(nil),

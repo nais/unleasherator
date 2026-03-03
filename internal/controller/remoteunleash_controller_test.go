@@ -202,12 +202,14 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				return true
 			})).Once().WaitUntil(blockSubscribe).Return(nil)
 
+			errCh := make(chan error, 1)
 			go func() {
-				remoteUnleashReconciler.FederationSubscribe(ctx) //nolint:errcheck
+				errCh <- remoteUnleashReconciler.FederationSubscribe(ctx)
 			}()
 
 			var handler federation.Handler
 			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
+			Consistently(errCh).ShouldNot(Receive(), "FederationSubscribe should not return early")
 
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
@@ -276,12 +278,14 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				return true
 			})).Once().WaitUntil(blockSubscribe).Return(nil)
 
+			errCh := make(chan error, 1)
 			go func() {
-				remoteUnleashReconciler.FederationSubscribe(ctx) //nolint:errcheck
+				errCh <- remoteUnleashReconciler.FederationSubscribe(ctx)
 			}()
 
 			var handler federation.Handler
 			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
+			Consistently(errCh).ShouldNot(Receive(), "FederationSubscribe should not return early")
 
 			var remoteUnleashes []*unleashv1.RemoteUnleash
 
