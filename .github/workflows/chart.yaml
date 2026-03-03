@@ -133,7 +133,7 @@ jobs:
         run: |
           tmp=$(mktemp -d)
           cp manager "${tmp}/"
-          docker build -t "${IMAGE}" "${tmp}" <<'EOF'
+          docker build -t "${IMAGE}" -f - "${tmp}" <<'EOF'
           FROM gcr.io/distroless/static:nonroot
           WORKDIR /
           COPY manager .
