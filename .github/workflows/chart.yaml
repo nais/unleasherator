@@ -115,29 +115,29 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # ratchet:helm/kind-action@v1.13.0
 
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # ratchet:docker/setup-buildx-action@v3
-      - uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # ratchet:docker/metadata-action@v5
-        id: metadata
+      - name: Set up Go
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # ratchet:actions/setup-go@v6
         with:
-          images: |
-            ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
-          tags: |
-            type=raw,value=main
-      - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # ratchet:docker/build-push-action@v6
-        with:
-          context: .
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
+          go-version: "1.26"
 
-      - name: Load image to kind
+      - name: Build controller binary
+        if: steps.list-changed.outputs.changed == 'true'
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o manager cmd/main.go
+
+      - name: Build and load image to kind
+        if: steps.list-changed.outputs.changed == 'true'
+        env:
+          IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main
         run: |
-          kind load docker-image ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main --name chart-testing
-
-          # Hack imagePullPolicy to never to avoid pulling during test install
+          docker build -t "${IMAGE}" -f - . <<'EOF'
+          FROM gcr.io/distroless/static:nonroot
+          WORKDIR /
+          COPY manager .
+          USER 65532:65532
+          ENTRYPOINT ["/manager"]
+          EOF
+          kind load docker-image "${IMAGE}" --name chart-testing
           sed -i "s/imagePullPolicy: Always/imagePullPolicy: Never/g" ./charts/${{ needs.meta.outputs.name }}/values.yaml
 
       - name: Run chart-testing (install)
