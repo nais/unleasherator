@@ -2,6 +2,10 @@
 set -uo pipefail
 
 RUNS="${1:-100}"
+if ! [[ "$RUNS" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: RUNS must be a positive integer, got: $RUNS"
+    exit 1
+fi
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOGDIR="$DIR/hack/stress-test-logs"
 SUMMARY="$LOGDIR/summary.csv"
@@ -77,6 +81,6 @@ done
 echo ""
 echo "========================================="
 echo "Results: $pass passed, $fail failed out of $RUNS runs"
-echo "Failure rate: $(awk "BEGIN {printf \"%.1f\", ($fail/$RUNS)*100}")%"
+echo "Failure rate: $(awk -v f="$fail" -v r="$RUNS" 'BEGIN {printf "%.1f", (f/r)*100}')%"
 echo "Summary: $SUMMARY"
 echo "========================================="

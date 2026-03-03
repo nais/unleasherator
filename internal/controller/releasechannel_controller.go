@@ -1186,6 +1186,9 @@ func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 			if releaseChannel.Status.PreviousImage == captured {
 				return nil
 			}
+			if captured == string(releaseChannel.Spec.Image) {
+				return nil
+			}
 			now := metav1.Now()
 			releaseChannel.Status.PreviousImage = captured
 			releaseChannel.Status.LastImageChangeTime = &now
