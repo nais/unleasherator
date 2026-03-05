@@ -266,7 +266,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Secrets")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -277,7 +277,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -288,7 +288,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Deployment")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -299,7 +299,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Service")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -310,7 +310,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Ingresses")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -321,7 +321,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile ServiceMonitor")
-		err := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
