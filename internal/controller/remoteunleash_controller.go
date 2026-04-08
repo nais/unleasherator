@@ -43,7 +43,7 @@ var (
 			Name: "unleasherator_remoteunleash_status",
 			Help: "Status of RemoteUnleash instances",
 		},
-		[]string{"namespace", "name", "status"},
+		[]string{"resource_namespace", "name", "status"},
 	)
 
 	remoteUnleashReceived = prometheus.NewCounterVec(
