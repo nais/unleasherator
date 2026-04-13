@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.26.0
 
 require (
-	cloud.google.com/go/pubsub v1.50.1
+	cloud.google.com/go/pubsub v1.50.2
 	github.com/go-logr/logr v1.4.3
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
@@ -34,7 +34,7 @@ require (
 require (
 	cloud.google.com/go/auth v0.18.2 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
-	cloud.google.com/go/pubsub/v2 v2.3.0 // indirect
+	cloud.google.com/go/pubsub/v2 v2.4.0 // indirect
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/Antonboom/testifylint v1.5.2 // indirect
 	github.com/Crocmagnon/fatcontext v0.7.1 // indirect
@@ -90,7 +90,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go-simpler.org/musttag v0.13.0 // indirect
 	go-simpler.org/sloglint v0.9.0 // indirect
-	go.einride.tech/aip v0.73.0 // indirect
+	go.einride.tech/aip v0.83.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.64.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.43.0 // indirect
