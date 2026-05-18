@@ -22,12 +22,12 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 	google.golang.org/api v0.278.0
 	google.golang.org/grpc v1.81.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	k8s.io/api v0.35.4
-	k8s.io/apimachinery v0.35.5
+	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.35.4
 	sigs.k8s.io/controller-runtime v0.22.5
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240820183333-e6c3d139d2b6
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.0
 	sigs.k8s.io/controller-tools v0.18.0
 )
 
@@ -103,7 +103,7 @@ require (
 	k8s.io/code-generator v0.35.0 // indirect
 	k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
 
 require (
@@ -285,9 +285,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.6.1 // indirect
 	k8s.io/apiextensions-apiserver v0.35.0 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
-	k8s.io/utils v0.0.0-20260106112306-0fe9cd71b2f8 // indirect
+	k8s.io/klog/v2 v2.140.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
+	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
