@@ -56,13 +56,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # ratchet:actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # ratchet:actions/setup-go@v6
         with:
           go-version: "1.26"
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/init@v3
+        uses: github/codeql-action/init@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # ratchet:github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -78,7 +78,7 @@ jobs:
         # queries: security-extended,security-and-quality
 
 
-        uses: github/codeql-action/autobuild@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # ratchet:github/codeql-action/autobuild@v3
       #   If the Autobuild fails above, remove it and uncomment the following three lines.
 
       #   modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
@@ -95,7 +95,7 @@ jobs:
 
         # ℹ️ Command-line programs to run using the OS shell.
 
-        uses: github/codeql-action/analyze@f47c8e6a9bd05ef3ee422fc8d8663be7fe4bdc61 # ratchet:github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # ratchet:github/codeql-action/analyze@v3
 
         with:
           category: "/language:${{matrix.language}}"
