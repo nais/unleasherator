@@ -9,8 +9,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jarcoal/httpmock v1.4.1
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/onsi/ginkgo/v2 v2.28.2
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/ginkgo/v2 v2.29.0
+	github.com/onsi/gomega v1.41.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.87.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
@@ -20,14 +20,14 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
-	google.golang.org/api v0.276.0
-	google.golang.org/grpc v1.80.0
-	google.golang.org/protobuf v1.36.11
-	k8s.io/api v0.35.4
-	k8s.io/apimachinery v0.35.4
-	k8s.io/client-go v0.35.4
+	google.golang.org/api v0.278.0
+	google.golang.org/grpc v1.81.1
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
+	k8s.io/api v0.35.5
+	k8s.io/apimachinery v0.36.1
+	k8s.io/client-go v0.35.5
 	sigs.k8s.io/controller-runtime v0.22.5
-	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20240820183333-e6c3d139d2b6
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1
 	sigs.k8s.io/controller-tools v0.18.0
 )
 
@@ -103,7 +103,7 @@ require (
 	k8s.io/code-generator v0.35.0 // indirect
 	k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
 
 require (
@@ -171,10 +171,10 @@ require (
 	github.com/golangci/unconvert v0.0.0-20240309020433-c5143eacb3ed // indirect
 	github.com/google/gnostic v0.7.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
-	github.com/googleapis/gax-go/v2 v2.21.0 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
+	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
 	github.com/gostaticanalysis/comment v1.5.0 // indirect
@@ -263,31 +263,31 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.43.0
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260427160629-7cedc36a6bc4 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.6.1 // indirect
 	k8s.io/apiextensions-apiserver v0.35.0 // indirect
-	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
-	k8s.io/utils v0.0.0-20260106112306-0fe9cd71b2f8 // indirect
+	k8s.io/klog/v2 v2.140.0 // indirect
+	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
+	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2 // indirect
 	mvdan.cc/gofumpt v0.7.0 // indirect
 	mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect

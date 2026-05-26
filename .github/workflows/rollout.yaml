@@ -1,4 +1,4 @@
-name: Fasit Rollout
+name: Fasit Deploy
 on:
   workflow_run:
     workflows: ["Helm Chart", "Container Image"]
@@ -35,8 +35,8 @@ jobs:
     needs: meta
     steps:
       - uses: ahmadnassri/action-workflow-run-wait@2aa3d9e1a12ecaaa9908e368eaf2123bb084323e
-  rollout-crds:
-    name: Rollout CRDs to Fasit
+  deploy-crds:
+    name: Deploy CRDs to Fasit
     runs-on: fasit-deploy
 
     permissions:
@@ -44,28 +44,46 @@ jobs:
     needs: [meta, wait]
     steps:
       - name: Deploy CRDs
-        uses: nais/fasit-deploy@8727ed1c7a5a465e837873e6016a9a692a6b874a # ratchet:nais/fasit-deploy@v2
+        uses: nais/fasit-deploy@58a70a338b16dc646373c91724fc7e7522d085a4 # ratchet:nais/fasit-deploy@v4.0.1
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}-crds
           version: ${{ needs.meta.outputs.version }}
-  rollout-controller:
-    name: Rollout Controller to Fasit
+          targets: |
+            [
+              { "target": { "kind": "management", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "tenant", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "onprem", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "management" } },
+              { "target": { "kind": "tenant" } },
+              { "target": { "kind": "onprem" } }
+            ]
+  deploy-controller:
+    name: Deploy Controller to Fasit
     runs-on: fasit-deploy
 
     permissions:
       id-token: write
-    needs: [meta, rollout-crds]
+    needs: [meta, deploy-crds]
     steps:
       - name: Deploy Operator
-        uses: nais/fasit-deploy@8727ed1c7a5a465e837873e6016a9a692a6b874a # ratchet:nais/fasit-deploy@v2
+        uses: nais/fasit-deploy@58a70a338b16dc646373c91724fc7e7522d085a4 # ratchet:nais/fasit-deploy@v4.0.1
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
           version: ${{ needs.meta.outputs.version }}
+          targets: |
+            [
+              { "target": { "kind": "management", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "tenant", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "onprem", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "management" } },
+              { "target": { "kind": "tenant" } },
+              { "target": { "kind": "onprem" } }
+            ]
   git-tag:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [meta, rollout-controller]
+    needs: [meta, deploy-controller]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v4
       - name: git tag and push
