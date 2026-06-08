@@ -1,6 +1,7 @@
 dependencies:
   - allOf:
       - unleasherator-crds
+      - bifrost
 environmentKinds:
   - management
   - tenant
