@@ -19,7 +19,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       name: ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
       - id: version
@@ -44,7 +44,7 @@ jobs:
     needs: [meta, wait]
     steps:
       - name: Deploy CRDs
-        uses: nais/fasit-deploy@58a70a338b16dc646373c91724fc7e7522d085a4 # ratchet:nais/fasit-deploy@v4.0.1
+        uses: nais/fasit-deploy@53e433b1bdd08fc622e03a78584c0832c9083bd3 # ratchet:nais/fasit-deploy@v4.1.1
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}-crds
           version: ${{ needs.meta.outputs.version }}
@@ -66,7 +66,7 @@ jobs:
     needs: [meta, deploy-crds]
     steps:
       - name: Deploy Operator
-        uses: nais/fasit-deploy@58a70a338b16dc646373c91724fc7e7522d085a4 # ratchet:nais/fasit-deploy@v4.0.1
+        uses: nais/fasit-deploy@53e433b1bdd08fc622e03a78584c0832c9083bd3 # ratchet:nais/fasit-deploy@v4.1.1
         with:
           chart: oci://${{ env.ARTIFACT_REGISTRY }}/${{ env.ARTIFACT_REPO }}/${{ needs.meta.outputs.name }}
           version: ${{ needs.meta.outputs.version }}
@@ -85,7 +85,7 @@ jobs:
       contents: write
     needs: [meta, deploy-controller]
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v4
       - name: git tag and push
         run: |-
           git tag ${{ needs.meta.outputs.version }}
