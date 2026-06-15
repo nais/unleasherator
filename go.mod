@@ -20,7 +20,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.44.0
 	go.opentelemetry.io/otel/sdk v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
-	google.golang.org/api v0.280.0
+	google.golang.org/api v0.283.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 	k8s.io/api v0.35.5
@@ -173,7 +173,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gordonklaus/ineffassign v0.1.0 // indirect
 	github.com/gostaticanalysis/analysisutil v0.7.1 // indirect
