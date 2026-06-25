@@ -17,16 +17,17 @@ import (
 
 // getMetricValue extracts the gauge value for a specific label set from unleashStatus
 // by collecting from the registry. This avoids creating series when checking existence.
-func getMetricValue(name, status, version, releaseChannel string) (float64, bool) {
+func getMetricValue(resourceNamespace, name, status, version, releaseChannel string) (float64, bool) {
 	ch := make(chan prometheus.Metric, 1024)
 	unleashStatus.Collect(ch)
 	close(ch)
 
 	targetLabels := map[string]string{
-		"name":            name,
-		"status":          status,
-		"version":         version,
-		"release_channel": releaseChannel,
+		"resource_namespace": resourceNamespace,
+		"name":               name,
+		"status":             status,
+		"version":            version,
+		"release_channel":    releaseChannel,
 	}
 
 	for metric := range ch {
@@ -186,6 +187,7 @@ var _ = Describe("MetricsInitializer", func() {
 		It("Should delete stale metrics when version changes to prevent alert matching", func() {
 			testCounter++
 			// Use unique name to avoid metric collisions with other tests - regression test for stale metric alerts
+			namespace := fmt.Sprintf("stale-ns-%d-%d", time.Now().UnixNano(), testCounter)
 			unleashName := fmt.Sprintf("stale-metric-test-%d-%d", time.Now().UnixNano(), testCounter)
 			oldVersion := "5.0.0"
 			newVersion := "6.0.0"
@@ -193,34 +195,34 @@ var _ = Describe("MetricsInitializer", func() {
 			statusType := unleashv1.UnleashStatusConditionTypeConnected
 
 			By("Setting up an initial metric with the old version")
-			unleashStatus.WithLabelValues(unleashName, statusType, oldVersion, releaseChannel).Set(0)
+			unleashStatus.WithLabelValues(namespace, unleashName, statusType, oldVersion, releaseChannel).Set(0)
 			DeferCleanup(func() {
 				// Clean up metrics after test
 				unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleashName})
 			})
 
 			By("Verifying the old version metric exists")
-			val, found := getMetricValue(unleashName, statusType, oldVersion, releaseChannel)
+			val, found := getMetricValue(namespace, unleashName, statusType, oldVersion, releaseChannel)
 			Expect(found).To(BeTrue(), "old version metric should exist")
 			Expect(val).To(Equal(0.0), "old version metric should be 0 (disconnected)")
 
 			By("Simulating updateStatus behavior: delete partial match then set new metric")
 			// This mirrors what updateStatus does - delete old metrics before setting new ones
 			unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleashName, "status": statusType})
-			unleashStatus.WithLabelValues(unleashName, statusType, newVersion, releaseChannel).Set(1)
+			unleashStatus.WithLabelValues(namespace, unleashName, statusType, newVersion, releaseChannel).Set(1)
 
 			By("Verifying the new version metric exists with correct value")
-			val, found = getMetricValue(unleashName, statusType, newVersion, releaseChannel)
+			val, found = getMetricValue(namespace, unleashName, statusType, newVersion, releaseChannel)
 			Expect(found).To(BeTrue(), "new version metric should exist")
 			Expect(val).To(Equal(1.0), "new version metric should be 1 (connected)")
 
 			By("Verifying the old version metric was deleted")
 			// DeleteLabelValues returns false if the series doesn't exist
-			deleted := unleashStatus.DeleteLabelValues(unleashName, statusType, oldVersion, releaseChannel)
+			deleted := unleashStatus.DeleteLabelValues(namespace, unleashName, statusType, oldVersion, releaseChannel)
 			Expect(deleted).To(BeFalse(), "old version metric series should no longer exist after DeletePartialMatch")
 
 			By("Ensuring the new version metric still exists with correct value")
-			newVal, found := getMetricValue(unleashName, statusType, newVersion, releaseChannel)
+			newVal, found := getMetricValue(namespace, unleashName, statusType, newVersion, releaseChannel)
 			Expect(found).To(BeTrue(), "new version metric should still exist")
 			Expect(newVal).To(Equal(1.0), "new version metric should be 1 (connected)")
 		})

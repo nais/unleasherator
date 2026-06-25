@@ -42,7 +42,7 @@ var (
 			Name: "unleasherator_apitoken_status",
 			Help: "Status of ApiToken instances",
 		},
-		[]string{"namespace", "name", "status"},
+		[]string{"resource_namespace", "name", "status"},
 	)
 
 	apiTokenExistingTokens = prometheus.NewGaugeVec(
@@ -50,7 +50,7 @@ var (
 			Name: "unleasherator_apitoken_existing_tokens",
 			Help: "Number of existing tokens in Unleash for ApiToken",
 		},
-		[]string{"namespace", "name", "environment"},
+		[]string{"resource_namespace", "name", "environment"},
 	)
 
 	apiTokenDeletedCounter = prometheus.NewCounterVec(
@@ -58,7 +58,7 @@ var (
 			Name: "unleasherator_apitoken_deleted_total",
 			Help: "Number of ApiTokens deleted from Unleash",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	apiTokenCreatedCounter = prometheus.NewCounterVec(
@@ -66,7 +66,7 @@ var (
 			Name: "unleasherator_apitoken_created_total",
 			Help: "Number of ApiTokens created in Unleash",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 )
 

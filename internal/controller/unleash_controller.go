@@ -66,7 +66,7 @@ var (
 			Name: "unleasherator_unleash_status",
 			Help: "Status of Unleash instances",
 		},
-		[]string{"name", "status", "version", "release_channel"},
+		[]string{"resource_namespace", "name", "status", "version", "release_channel"},
 	)
 
 	unleashPublished = prometheus.NewCounterVec(
@@ -1010,7 +1010,7 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	// before setting new ones to prevent alerts from matching outdated time series
 	val := promGaugeValueForStatus(status.Status)
 	unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleash.Name, "status": status.Type})
-	unleashStatus.WithLabelValues(unleash.Name, status.Type, version, releaseChannel).Set(val)
+	unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, status.Type, version, releaseChannel).Set(val)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); err != nil {

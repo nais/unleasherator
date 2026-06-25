@@ -58,16 +58,16 @@ func (m *MetricsInitializer) initUnleashMetrics(ctx context.Context) error {
 
 		reconciledCond := meta.FindStatusCondition(unleash.Status.Conditions, unleashv1.UnleashStatusConditionTypeReconciled)
 		if reconciledCond != nil {
-			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(promGaugeValueForStatus(reconciledCond.Status))
+			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(promGaugeValueForStatus(reconciledCond.Status))
 		} else {
-			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(0)
+			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, version, releaseChannel).Set(0)
 		}
 
 		connectedCond := meta.FindStatusCondition(unleash.Status.Conditions, unleashv1.UnleashStatusConditionTypeConnected)
 		if connectedCond != nil {
-			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(promGaugeValueForStatus(connectedCond.Status))
+			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(promGaugeValueForStatus(connectedCond.Status))
 		} else {
-			unleashStatus.WithLabelValues(unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(0)
+			unleashStatus.WithLabelValues(unleash.Namespace, unleash.Name, unleashv1.UnleashStatusConditionTypeConnected, version, releaseChannel).Set(0)
 		}
 	}
 
@@ -157,6 +157,30 @@ func (m *MetricsInitializer) initReleaseChannelMetrics(ctx context.Context) erro
 		releaseChannelStatus.WithLabelValues(labels...).Set(status)
 		releaseChannelInstances.WithLabelValues(labels...).Set(float64(releaseChannel.Status.Instances))
 		releaseChannelInstancesUpToDate.WithLabelValues(labels...).Set(float64(releaseChannel.Status.InstancesUpToDate))
+
+		// Initialize counters with zero to ensure time series exist in Prometheus.
+		// Without this, rate() and increase() queries return no data until the first event.
+		releaseChannelRollouts.WithLabelValues(labels[0], labels[1], "success").Add(0)
+		releaseChannelRollouts.WithLabelValues(labels[0], labels[1], "failed").Add(0)
+		releaseChannelConflicts.WithLabelValues(labels...).Add(0)
+		releaseChannelHealthChecks.WithLabelValues(labels[0], labels[1], "success").Add(0)
+		releaseChannelHealthChecks.WithLabelValues(labels[0], labels[1], "failed").Add(0)
+
+		// Initialize phase transition counters for all phases
+		for _, phase := range []unleashv1.ReleaseChannelPhase{
+			unleashv1.ReleaseChannelPhaseIdle,
+			unleashv1.ReleaseChannelPhaseValidating,
+			unleashv1.ReleaseChannelPhaseCanary,
+			unleashv1.ReleaseChannelPhaseRolling,
+			unleashv1.ReleaseChannelPhaseCompleted,
+			unleashv1.ReleaseChannelPhaseFailed,
+			unleashv1.ReleaseChannelPhaseRollingBack,
+		} {
+			releaseChannelPhaseTransitions.WithLabelValues(labels[0], labels[1], string(phase)).Add(0)
+		}
+
+		// Initialize histogram by observing zero - creates the time series with all buckets
+		releaseChannelRolloutDuration.WithLabelValues(labels...).Observe(0)
 	}
 
 	return nil
