@@ -200,6 +200,16 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Validate AdminSecret namespace
+	if remoteUnleash.Spec.AdminSecret.Namespace != "" && remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace {
+		err := fmt.Errorf("cross-namespace secret references are no longer supported for security reasons; adminSecret.namespace must be empty or match the RemoteUnleash namespace")
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+		// Do not requeue, as this is a terminal configuration error until the user fixes it
+		return ctrl.Result{}, nil
+	}
+
 	// Get admin token from RemoteUnleash secret
 	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
 	if err != nil {

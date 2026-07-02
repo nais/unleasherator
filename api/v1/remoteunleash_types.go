@@ -61,6 +61,7 @@ type RemoteUnleashSecret struct {
 	Key string `json:"key,omitempty"`
 
 	// Namespace is the namespace of the secret containing the Unleash instance's API token.
+	// Deprecated: This field is ignored and cross-namespace secret references are no longer supported. The secret must be in the same namespace as the RemoteUnleash.
 	// +kubebuilder:validation:Optional
 	Namespace string `json:"namespace,omitempty"`
 }
