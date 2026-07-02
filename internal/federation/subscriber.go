@@ -27,10 +27,10 @@ type Subscriber interface {
 type Handler func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
-	client             *pubsub.Client
-	subscription       *pubsub.Subscription
-	namespace          string
-	inNamespaceSecrets bool
+	client                *pubsub.Client
+	subscription          *pubsub.Subscription
+	namespace             string
+	namespaceBoundSecrets bool
 }
 
 // Close the pubsub client.
@@ -112,38 +112,49 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		log.Info("secret nonce not set, using default")
 	}
 
-	secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-
 	var adminSecrets []*corev1.Secret
-	var secretNamespace string
 
-	if s.inNamespaceSecrets {
-		// New behavior: Generate secrets directly in tenant namespaces
+	if s.namespaceBoundSecrets {
+		// New behavior: Generate secrets in the operator namespace, but with NAMESPACE-BOUND names.
+		// Example: unleasherator-tenant1-admin-key
+		// This protects the secret from being read by tenants (operator namespace)
+		// while preventing confused deputy (name includes tenant namespace).
 		for _, namespace := range instance.GetNamespaces() {
-			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken)
+			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
+			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
 			adminSecrets = append(adminSecrets, adminSecret)
 		}
-		secretNamespace = "" // "" tells RemoteUnleash to look in its own namespace
+		
+		// Resources need to be matched to their respective namespace-bound secret names
+		remoteUnleashes := make([]*unleashv1.RemoteUnleash, 0, len(instance.GetNamespaces()))
+		for _, namespace := range instance.GetNamespaces() {
+			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
+			ru := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), []string{namespace}, secretName, s.namespace)
+			remoteUnleashes = append(remoteUnleashes, ru...)
+		}
+
+		ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
+		defer subspan.End()
+		return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 	} else {
-		// Legacy behavior: Generate one secret in the operator namespace
+		// Legacy behavior: Generate one secret in the operator namespace, bound to instance name
+		secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
 		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
 		adminSecrets = append(adminSecrets, adminSecret)
-		secretNamespace = s.namespace
+		
+		remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, s.namespace)
+		
+		ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
+		defer subspan.End()
+		return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 	}
-
-	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, secretNamespace)
-
-	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
-	defer subspan.End()
-
-	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 }
 
-func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string, inNamespaceSecrets bool) Subscriber {
+func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string, namespaceBoundSecrets bool) Subscriber {
 	return &subscriber{
-		client:             client,
-		subscription:       subscription,
-		namespace:          namespace,
-		inNamespaceSecrets: inNamespaceSecrets,
+		client:                client,
+		subscription:          subscription,
+		namespace:             namespace,
+		namespaceBoundSecrets: namespaceBoundSecrets,
 	}
 }

@@ -2,7 +2,6 @@ package federation
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -69,9 +68,10 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	go func() {
 		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, 2, len(adminSecrets))
-			assert.Equal(t, "namespace-1", adminSecrets[0].GetNamespace())
-			assert.Equal(t, "namespace-2", adminSecrets[1].GetNamespace())
-			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, namespace, adminSecrets[0].GetNamespace())
+			assert.Equal(t, namespace, adminSecrets[1].GetNamespace())
+			assert.Equal(t, "unleasherator-test-namespace-1-admin-key-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, "unleasherator-test-namespace-2-admin-key-not-a-real-nonce", adminSecrets[1].GetName())
 			assert.Equal(t, apiToken, adminSecrets[0].StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
@@ -130,7 +130,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{namespace: namespace, inNamespaceSecrets: true}
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: true}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
@@ -147,8 +147,8 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecrets)
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-"+instance.Name+"-"))
-	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	assert.Equal(t, "unleasherator-test-instance-namespace-a-admin-key-default", capturedAdminSecrets[0].Name)
+	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
 	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
@@ -183,7 +183,7 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{namespace: namespace, inNamespaceSecrets: false}
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: false}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
