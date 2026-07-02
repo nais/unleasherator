@@ -213,7 +213,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		
 		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks (e.g. exfiltrating GCP credentials or other tenants' secrets)
-		expectedBaseName := fmt.Sprintf("%s-%s-admin-key", unleashv1.UnleashSecretNamePrefix, remoteUnleash.Namespace)
+		expectedBaseName := fmt.Sprintf("%s-%s-admin-key", unleashv1.UnleashSecretNamePrefix, remoteUnleash.Name)
 		if remoteUnleash.Spec.AdminSecret.Name != expectedBaseName && !strings.HasPrefix(remoteUnleash.Spec.AdminSecret.Name, expectedBaseName+"-") {
 			err := fmt.Errorf("cross-namespace secret name must be %s or start with %s- to prevent unauthorized access", expectedBaseName, expectedBaseName)
 			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
