@@ -29,3 +29,8 @@ spec:
 ```
 
 `adminSecret.name` must start with `unleasherator-`.
+
+### Cross-Namespace Secrets
+For security reasons, `RemoteUnleash` strictly limits cross-namespace secret references to prevent privilege escalation:
+- Cross-namespace references are **only permitted** if the secret is located in the operator's namespace (e.g. `unleasherator-system`).
+- To prevent confused deputy SSRF attacks, cross-namespace secrets must strictly follow this naming prefix format: `unleasherator-<namespace>-admin-key-`. For example, a `RemoteUnleash` in the `my-tenant` namespace can only access secrets in the operator namespace if their name starts with `unleasherator-my-tenant-admin-key-`.
