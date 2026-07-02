@@ -149,7 +149,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.Equal(t, 1, len(capturedAdminSecrets))
 	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-"+instance.Name+"-"))
 	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
-	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData["admin"])
+	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
 }
