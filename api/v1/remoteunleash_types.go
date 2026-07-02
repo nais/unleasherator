@@ -61,7 +61,6 @@ type RemoteUnleashSecret struct {
 	Key string `json:"key,omitempty"`
 
 	// Namespace is the namespace of the secret containing the Unleash instance's API token.
-	// Deprecated: This field is ignored and cross-namespace secret references are no longer supported. The secret must be in the same namespace as the RemoteUnleash.
 	// +kubebuilder:validation:Optional
 	Namespace string `json:"namespace,omitempty"`
 }
@@ -120,10 +119,16 @@ func (u *RemoteUnleash) NamespacedName() types.NamespacedName {
 
 // AdminSecretNamespacedName returns the namespaced name of the secret containing the Unleash instance's API token.
 func (u *RemoteUnleash) AdminSecretNamespacedName() types.NamespacedName {
-	return types.NamespacedName{
+	namespacedName := types.NamespacedName{
 		Name:      u.Spec.AdminSecret.Name,
-		Namespace: u.Namespace,
+		Namespace: u.Spec.AdminSecret.Namespace,
 	}
+
+	if namespacedName.Namespace == "" {
+		namespacedName.Namespace = u.Namespace
+	}
+
+	return namespacedName
 }
 
 // AdminToken returns the admin API token for the Unleash instance.

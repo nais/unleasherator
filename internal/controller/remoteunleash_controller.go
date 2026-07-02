@@ -201,8 +201,10 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Validate AdminSecret namespace
-	if remoteUnleash.Spec.AdminSecret.Namespace != "" && remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace {
-		err := fmt.Errorf("cross-namespace secret references are no longer supported for security reasons; adminSecret.namespace must be empty or match the RemoteUnleash namespace")
+	if remoteUnleash.Spec.AdminSecret.Namespace != "" &&
+		remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace &&
+		remoteUnleash.Spec.AdminSecret.Namespace != r.OperatorNamespace {
+		err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
 		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
 			return ctrl.Result{}, updateErr
 		}
