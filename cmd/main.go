@@ -105,8 +105,9 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
 		Federation: controller.UnleashFederation{
-			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
-			Publisher: publisher,
+			Enabled:            cfg.Federation.IsEnabled() && publisher != nil,
+			Publisher:          publisher,
+			InNamespaceSecrets: cfg.Features.FederationInNamespaceSecrets,
 		},
 		Tracer: tp.Tracer("unleash-controller"),
 	}).SetupWithManager(mgr); err != nil {

@@ -67,6 +67,9 @@ type Features struct {
 	// UnleashTokenUpdate enables updating tokens in Unleash.
 	ApiTokenUpdateEnabled        bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
 	ApiTokenDeduplicationEnabled bool `envconfig:"FEATURE_API_TOKEN_DEDUPLICATION_ENABLED" default:"false"`
+	
+	// FederationInNamespaceSecrets generates federation secrets strictly in the tenant namespace, eliminating cross-namespace references.
+	FederationInNamespaceSecrets bool `envconfig:"FEATURE_FEDERATION_IN_NAMESPACE_SECRETS" default:"false"`
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
@@ -124,8 +127,8 @@ func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, e
 	}
 
 	subscription := c.pubsubSubscription(ctx, client)
-
-	return federation.NewSubscriber(client, subscription, c.PodNamespace), nil
+	
+	return federation.NewSubscriber(client, subscription, c.PodNamespace, c.Features.FederationInNamespaceSecrets), nil
 }
 
 func (c *Config) PubsubPublisher(ctx context.Context) (federation.Publisher, error) {

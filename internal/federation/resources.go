@@ -34,13 +34,17 @@ func unleashFederationInstanceWithStatus(unleash *unleashv1.Unleash, token strin
 // This is used to detect changes and avoid redundant publishes.
 // The hash includes all fields that affect the published message.
 // Returns int64 for Kubernetes CRD compatibility (OpenAPI 3.0 doesn't support uint64).
-func ComputeInstanceHash(instance *pb.Instance) int64 {
+func ComputeInstanceHash(instance *pb.Instance, inNamespaceSecrets bool) int64 {
 	h := fnv.New64a()
 	
 	// Write a hash version prefix.
 	// Bumping this version gracefully forces Unleasherator to republish all instances
 	// (useful when migrating federation formats, like moving to in-namespace secrets).
-	h.Write([]byte("v2"))
+	if inNamespaceSecrets {
+		h.Write([]byte("v2-local"))
+	} else {
+		h.Write([]byte("v2-legacy"))
+	}
 	h.Write([]byte{0})
 
 	// Write deterministic representation of instance fields
