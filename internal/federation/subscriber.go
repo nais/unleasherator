@@ -121,7 +121,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		// while preventing confused deputy (name includes tenant namespace).
 		for _, namespace := range instance.GetNamespaces() {
 			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
-			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
+			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
 			adminSecrets = append(adminSecrets, adminSecret)
 		}
 		
@@ -139,7 +139,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	} else {
 		// Legacy behavior: Generate one secret in the operator namespace, bound to instance name
 		secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
+		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
 		adminSecrets = append(adminSecrets, adminSecret)
 		
 		remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, s.namespace)
