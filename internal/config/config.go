@@ -67,10 +67,10 @@ type Features struct {
 	// UnleashTokenUpdate enables updating tokens in Unleash.
 	ApiTokenUpdateEnabled        bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
 	ApiTokenDeduplicationEnabled bool `envconfig:"FEATURE_API_TOKEN_DEDUPLICATION_ENABLED" default:"false"`
-	
+
 	// FederationNamespaceBoundSecrets generates federation secrets in the operator namespace with names bound to the tenant namespace, eliminating the Confused Deputy vulnerability.
 	FederationNamespaceBoundSecrets bool `envconfig:"FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS" default:"false"`
-	
+
 	// AllowLegacyNameBoundSecrets enables temporary backward compatibility for legacy name-bound cross-namespace secrets.
 	// Once the migration to in-namespace secrets is complete, this MUST be set to false to enforce namespace boundaries.
 	AllowLegacyNameBoundSecrets bool `envconfig:"FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS" default:"true"`
@@ -131,7 +131,7 @@ func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, e
 	}
 
 	subscription := c.pubsubSubscription(ctx, client)
-	
+
 	return federation.NewSubscriber(client, subscription, c.PodNamespace, c.Features.FederationNamespaceBoundSecrets), nil
 }
 

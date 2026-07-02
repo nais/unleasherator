@@ -64,9 +64,9 @@ func init() {
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	OperatorNamespace string
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	OperatorNamespace           string
 	Timeout                     config.TimeoutConfig
 	Federation                  RemoteUnleashFederation
 	AllowLegacyNameBoundSecrets bool
@@ -238,7 +238,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking (Confused Deputy).
 			// TODO(Migration): TEMPORARY FIX. Remove this entirely once all tenants are migrated to in-namespace secrets.
 			isValidNameBoundFed = strings.HasPrefix(secretName, expectedNameBaseFed+"-") && len(secretName) > len(expectedNameBaseFed+"-")
-			
+
 			// CRITICAL: Since expectedNameBaseFed is a prefix of expectedNameBaseBash, isValidNameBoundFed will accidentally
 			// match the exact, predictable string expectedNameBaseBash (e.g. "unleasherator-name-admin-key").
 			// We MUST explicitly reject this predictable string to maintain Confused Deputy protection.
@@ -278,7 +278,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Validate Server URL against the secret to prevent exfiltration (Server URL Spoofing)
 	if expectedUrl, ok := adminSecret.Data["url"]; ok && len(expectedUrl) > 0 {
 		if remoteUnleash.Spec.Server.URL != string(expectedUrl) {
-			err := fmt.Errorf("Validation failed: RemoteUnleash Server URL (%s) does not match the authorized URL in the admin secret", remoteUnleash.Spec.Server.URL)
+			err := fmt.Errorf("validation failed: RemoteUnleash Server URL (%s) does not match the authorized URL in the admin secret", remoteUnleash.Spec.Server.URL)
 			if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); err != nil {
 				return ctrl.Result{}, err
 			}
