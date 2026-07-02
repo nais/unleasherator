@@ -97,10 +97,12 @@ The **nonce** acted as a shared password/secret distributed out-of-band to autho
 However, scripts like `unleash-sync-to-tenant.sh` bypassed the nonce system entirely, generating predictable names (`unleasherator-<namespace>-admin-key`), which left those instances highly vulnerable to Confused Deputy attacks because the name was easily guessable by malicious tenants.
 
 ### Migration to Namespace-Bound Secrets
-With the introduction of **Namespace-Bound Secret Names** (enabled via `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS`), the nonce is completely obsolete. The controller no longer relies on an unguessable string; it mathematically validates that the requesting tenant's namespace is explicitly embedded in the secret name.
+With the introduction of **Namespace-Bound Secret Names** (enabled via `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS`), the primary security control shifts to mathematical validation: the controller verifies that the requesting tenant's namespace is explicitly embedded in the secret name.
+
+However, the **nonce** is still preserved and appended to the new namespace-bound secret names as an additional layer of **defense-in-depth**. While the system no longer relies exclusively on the nonce's unguessability for security, retaining it ensures backward compatibility during migration and provides robust protection against potential future misconfigurations.
 
 During the migration to strict namespace-bound secrets, temporary backward-compatibility logic (`FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS`) is enabled.
 
 This logic allows old, strictly name-bound formats (e.g., `unleasherator-<name>-<nonce>`). To mitigate vulnerabilities during the transition, the controller strictly enforces the presence of a randomly generated `<nonce>` for these legacy formats, making it impossible for an attacker to guess the target secret name.
 
-Once the migration is complete, this feature gate must be disabled, permanently locking the operator into the namespace-bound security model and rendering the nonce entirely defunct.
+Once the migration is complete, this feature gate must be disabled, permanently locking the operator into the namespace-bound security model while preserving the nonce as a secondary layer of defense.
