@@ -223,7 +223,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())
@@ -239,7 +239,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err = handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
@@ -255,11 +255,82 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			Eventually(func() error {
-				return handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+				return handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
 			}, timeout, interval).ShouldNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
 			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "success")).To(Equal(2.0))
+		})
+
+		It("Should refuse to overwrite RemoteUnleash with different URL", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			By("By starting the subscriber")
+			handlerCh := make(chan federation.Handler, 1)
+			blockSubscribe := make(chan time.Time)
+			DeferCleanup(func() { close(blockSubscribe) })
+			mockSubscriber.On("Subscribe", mock.Anything, mock.MatchedBy(func(h federation.Handler) bool {
+				select {
+				case handlerCh <- h:
+				default:
+				}
+				return true
+			})).Once().WaitUntil(blockSubscribe).Return(nil)
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- remoteUnleashReconciler.FederationSubscribe(ctx)
+			}()
+
+			var handler federation.Handler
+			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
+			Consistently(errCh).ShouldNot(Receive(), "FederationSubscribe should not return early")
+
+			By("By creating an initial legitimate RemoteUnleash")
+			name := "test-unleash-hijack"
+			namespaces := []string{"default"}
+			clusters := []string{"test-cluster"}
+			legitimateURL := mockRemoteUnleashURL(name, "tenant-b")
+			secret := remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
+
+			// Tenant B explicitly creates the RemoteUnleash first (or it was federated from tenant-b earlier)
+			_, legitimateRU := remoteUnleashResource(name, namespaces[0], legitimateURL, secret)
+			Expect(k8sClient.Create(ctx, legitimateRU)).Should(Succeed())
+
+			// Wait for the object to be fully reconciled so it is present in the informer cache
+			// and has a stable ResourceVersion (finalizers added, etc.)
+			createdLegitimateRU := &unleashv1.RemoteUnleash{ObjectMeta: legitimateRU.ObjectMeta}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, legitimateRU.NamespacedName(), createdLegitimateRU)
+			}, timeout, interval).Should(Succeed())
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, legitimateRU.NamespacedName(), createdLegitimateRU)
+				if err != nil {
+					return false
+				}
+				return len(createdLegitimateRU.Finalizers) > 0
+			}, timeout, interval).Should(BeTrue())
+
+			By("By simulating a malicious federation from another namespace with same name but different URL")
+			maliciousURL := mockRemoteUnleashURL(name, "tenant-a")
+			_, maliciousRU := remoteUnleashResource(name, namespaces[0], maliciousURL, secret)
+			remoteUnleashes := []*unleashv1.RemoteUnleash{maliciousRU}
+
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("By verifying that the original RemoteUnleash URL is unchanged")
+			fetchedRU := &unleashv1.RemoteUnleash{}
+			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed())
+			Expect(fetchedRU.Spec.Server.URL).To(Equal(legitimateURL), "URL should not be overwritten by malicious tenant")
+			Expect(fetchedRU.Spec.Server.URL).ToNot(Equal(maliciousURL))
+
+			By("By verifying that a malicious deletion is also blocked")
+			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Removed)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed(), "Legitimate RemoteUnleash should not be deleted by malicious tenant")
 		})
 
 		It("Should handle RemoteUnleash namespace not existing", func() {
@@ -299,7 +370,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err := handler(ctx, remoteUnleashes, secret, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())

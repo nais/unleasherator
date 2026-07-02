@@ -24,7 +24,7 @@ type Subscriber interface {
 	Close() error
 }
 
-type Handler func(ctx context.Context, remoteUnleash []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error
+type Handler func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
 	client       *pubsub.Client
@@ -112,13 +112,19 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	}
 
 	secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-	adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
-	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), adminSecret.GetName(), adminSecret.GetNamespace())
+
+	var adminSecrets []*corev1.Secret
+	for _, namespace := range instance.GetNamespaces() {
+		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken)
+		adminSecrets = append(adminSecrets, adminSecret)
+	}
+
+	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, "")
 
 	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
 	defer subspan.End()
 
-	return handler(ctx, remoteUnleashes, adminSecret, instance.Clusters, instance.Status)
+	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 }
 
 func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string) Subscriber {

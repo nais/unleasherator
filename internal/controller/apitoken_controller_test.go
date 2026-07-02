@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -42,8 +43,51 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 		testCounter       int
 	)
 
-	var existingTokens = unleashclient.ApiTokenResult{
-		Tokens: []unleashclient.ApiToken{},
+	var (
+		existingTokensMutex sync.Mutex
+		existingTokens = unleashclient.ApiTokenResult{
+			Tokens: []unleashclient.ApiToken{},
+		}
+	)
+
+	getTokens := func() []unleashclient.ApiToken {
+		existingTokensMutex.Lock()
+		defer existingTokensMutex.Unlock()
+		res := make([]unleashclient.ApiToken, len(existingTokens.Tokens))
+		copy(res, existingTokens.Tokens)
+		return res
+	}
+
+	getTokensResult := func() unleashclient.ApiTokenResult {
+		existingTokensMutex.Lock()
+		defer existingTokensMutex.Unlock()
+		res := unleashclient.ApiTokenResult{Tokens: make([]unleashclient.ApiToken, len(existingTokens.Tokens))}
+		copy(res.Tokens, existingTokens.Tokens)
+		return res
+	}
+
+	setTokens := func(tokens []unleashclient.ApiToken) {
+		existingTokensMutex.Lock()
+		defer existingTokensMutex.Unlock()
+		existingTokens.Tokens = tokens
+	}
+
+	addToken := func(token unleashclient.ApiToken) {
+		existingTokensMutex.Lock()
+		defer existingTokensMutex.Unlock()
+		existingTokens.Tokens = append(existingTokens.Tokens, token)
+	}
+
+	removeToken := func(secret string) bool {
+		existingTokensMutex.Lock()
+		defer existingTokensMutex.Unlock()
+		for i, token := range existingTokens.Tokens {
+			if token.Secret == secret {
+				existingTokens.Tokens = append(existingTokens.Tokens[:i], existingTokens.Tokens[i+1:]...)
+				return true
+			}
+		}
+		return false
 	}
 
 	// registerApiTokenMocks registers httpmock responders for ApiToken tests using the given URL.
@@ -56,7 +100,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 		httpmock.RegisterResponder("GET", fmt.Sprintf("=~^%s%s/.+\\z", serverURL, unleashclient.ApiTokensEndpoint),
 			func(req *http.Request) (*http.Response, error) {
 				defer GinkgoRecover()
-				resp, err := httpmock.NewJsonResponse(200, existingTokens)
+				resp, err := httpmock.NewJsonResponse(200, getTokensResult())
 				if err != nil {
 					return httpmock.NewStringResponse(500, ""), nil
 				}
@@ -78,7 +122,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 					CreatedAt:   time.Now().Format(time.RFC3339),
 				}
 
-				existingTokens.Tokens = append(existingTokens.Tokens, tokenResp)
+				addToken(tokenResp)
 				return httpmock.NewJsonResponse(201, tokenResp)
 			})
 		httpmock.RegisterResponder("DELETE", fmt.Sprintf("=~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint),
@@ -87,11 +131,8 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				urlPath := strings.Split(req.URL.Path, "/")
 				tokenSecret := urlPath[len(urlPath)-1]
 
-				for i, token := range existingTokens.Tokens {
-					if token.Secret == tokenSecret {
-						existingTokens.Tokens = append(existingTokens.Tokens[:i], existingTokens.Tokens[i+1:]...)
-						return httpmock.NewStringResponse(200, ""), nil
-					}
+				if removeToken(tokenSecret) {
+					return httpmock.NewStringResponse(200, ""), nil
 				}
 
 				Fail("Unknown token was attempted to be deleted")
@@ -116,7 +157,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			_ = k8sClient.Delete(ctx, ns)
 		})
 
-		existingTokens.Tokens = []unleashclient.ApiToken{}
+		setTokens([]unleashclient.ApiToken{})
 
 		// Don't register global httpmock responders here - each test registers
 		// mocks for its specific RemoteUnleash URL via registerApiTokenMocks()
@@ -279,11 +320,11 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			}, timeout, interval).Should(Succeed())
 
 			Eventually(func(g Gomega) {
-				g.Expect(existingTokens.Tokens).To(HaveLen(1))
-				g.Expect(existingTokens.Tokens[0].TokenName).To(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
-				g.Expect(existingTokens.Tokens[0].Type).To(Equal("client"))
-				g.Expect(existingTokens.Tokens[0].Environment).To(Equal("development"))
-				g.Expect(existingTokens.Tokens[0].Projects).To(Equal([]string{"default"}))
+				g.Expect(getTokens()).To(HaveLen(1))
+				g.Expect(getTokens()[0].TokenName).To(Equal(apiTokenCreated.ApiTokenName("unleasherator")))
+				g.Expect(getTokens()[0].Type).To(Equal("client"))
+				g.Expect(getTokens()[0].Environment).To(Equal("development"))
+				g.Expect(getTokens()[0].Projects).To(Equal([]string{"default"}))
 			}, timeout, interval).Should(Succeed())
 
 			By("By checking that the ApiToken secret has been created")
@@ -308,7 +349,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				info := httpmock.GetCallCountInfo()
 				return info[fmt.Sprintf("DELETE =~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint)]
 			}, timeout, interval).ShouldNot(BeZero())
-			Expect(existingTokens.Tokens).Should(BeEmpty())
+			Expect(getTokens()).Should(BeEmpty())
 		})
 
 		It("Should create token with custom environment and project", func() {
@@ -349,10 +390,10 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			}, timeout, interval).Should(Succeed())
 
 			Eventually(func(g Gomega) {
-				g.Expect(existingTokens.Tokens).To(HaveLen(1))
-				g.Expect(existingTokens.Tokens[0].Type).To(Equal("frontend"))
-				g.Expect(existingTokens.Tokens[0].Environment).To(Equal("production"))
-				g.Expect(existingTokens.Tokens[0].Projects).To(Equal([]string{"project1", "project2", "project3"}))
+				g.Expect(getTokens()).To(HaveLen(1))
+				g.Expect(getTokens()[0].Type).To(Equal("frontend"))
+				g.Expect(getTokens()[0].Environment).To(Equal("production"))
+				g.Expect(getTokens()[0].Projects).To(Equal([]string{"project1", "project2", "project3"}))
 			}, timeout, interval).Should(Succeed())
 
 			By("By checking that the ApiToken secret has been created")
@@ -387,7 +428,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 
 			By("By creating a new ApiToken")
 			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
-			existingTokens.Tokens = []unleashclient.ApiToken{
+			setTokens([]unleashclient.ApiToken{
 				{
 					Secret:      ApiTokenSecret,
 					TokenName:   apiTokenCreated.ApiTokenName("unleasherator"),
@@ -397,14 +438,14 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 					Projects:    []string{"default"},
 					CreatedAt:   time.Now().Format(time.RFC3339),
 				},
-			}
+			})
 			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
 
 			By("By resetting call counts to isolate token creation verification")
 			httpmock.ZeroCallCounters()
 
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
-			Expect(existingTokens.Tokens).Should(HaveLen(1))
+			Expect(getTokens()).Should(HaveLen(1))
 
 			By("By verifying no duplicate token creation calls were made")
 			// Since the token already exists (was pre-populated), no POST should occur
@@ -467,7 +508,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 
 			Eventually(apiTokenSecretEventually(ctx, apiTokenLookup, apiTokenSecret), timeout, interval).Should(ContainElement([]byte("production")))
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
-			Expect(existingTokens.Tokens[0].Environment).Should(Equal("production"))
+			Expect(getTokens()[0].Environment).Should(Equal("production"))
 
 			By("By verifying token update API calls")
 			// Should have called POST once to create the new token with updated environment
@@ -493,7 +534,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 
 			Eventually(apiTokenSecretEventually(ctx, apiTokenLookup, apiTokenSecret), timeout, interval).Should(ContainElement([]byte("project1,project2,project3")))
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
-			Expect(existingTokens.Tokens[0].Projects).Should(Equal([]string{"project1", "project2", "project3"}))
+			Expect(getTokens()[0].Projects).Should(Equal([]string{"project1", "project2", "project3"}))
 
 			By("By verifying project update API calls")
 			// Should have called POST once more to create the new token with updated projects
@@ -529,7 +570,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
 			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
 
-			existingTokens.Tokens = []unleashclient.ApiToken{
+			setTokens([]unleashclient.ApiToken{
 				{
 					Secret:      ApiTokenSecret + "-1",
 					TokenName:   "test-apitoken-duplicate-unleasherator",
@@ -543,10 +584,10 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 					Secret:      ApiTokenSecret + "-2",
 					TokenName:   "test-apitoken-duplicate-unleasherator",
 					Type:        "CLIENT",
-					Environment: "production",
+					Environment: "development",
 					Project:     "default",
 					Projects:    []string{"default"},
-					CreatedAt:   time.Date(2021, 1, 1, 1, 0, 0, 0, time.UTC).Format(time.RFC3339),
+					CreatedAt:   time.Date(2022, 1, 1, 2, 0, 0, 0, time.UTC).Format(time.RFC3339),
 				},
 				{
 					Secret:      ApiTokenSecret + "-3",
@@ -555,9 +596,9 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 					Environment: "development",
 					Project:     "default",
 					Projects:    []string{"default"},
-					CreatedAt:   time.Date(2021, 1, 1, 3, 0, 0, 0, time.UTC).Format(time.RFC3339),
+					CreatedAt:   time.Now().Format(time.RFC3339),
 				},
-			}
+			})
 
 			By("By creating a new ApiToken")
 			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
@@ -576,14 +617,14 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE =~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint)]).Should(Equal(2))
 
 			// Verify that the older tokens were deleted
-			for _, token := range existingTokens.Tokens {
+			for _, token := range getTokens() {
 				Expect(token.Secret).ShouldNot(Equal(ApiTokenSecret + "-1"))
 				Expect(token.Secret).ShouldNot(Equal(ApiTokenSecret + "-2"))
 			}
 
 			// Verify that we kept the newest duplicate token
-			Expect(existingTokens.Tokens).Should(HaveLen(1))
-			Expect(existingTokens.Tokens[0].Secret).Should(Equal(ApiTokenSecret + "-3"))
+			Expect(getTokens()).Should(HaveLen(1))
+			Expect(getTokens()[0].Secret).Should(Equal(ApiTokenSecret + "-3"))
 		})
 	})
 

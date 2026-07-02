@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -197,6 +198,28 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Get(ctx, req.NamespacedName, remoteUnleash); err != nil {
 			log.Error(err, "Failed to get RemoteUnleash")
 			return ctrl.Result{}, err
+		}
+	}
+
+	// Validate AdminSecret namespace
+	if remoteUnleash.Spec.AdminSecret.Namespace != "" && remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace {
+		if remoteUnleash.Spec.AdminSecret.Namespace != r.OperatorNamespace {
+			err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
+			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			// Do not requeue, as this is a terminal configuration error until the user fixes it
+			return ctrl.Result{}, nil
+		}
+		
+		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks (e.g. exfiltrating GCP credentials or other tenants' secrets)
+		expectedBaseName := fmt.Sprintf("%s-%s-admin-key", unleashv1.UnleashSecretNamePrefix, remoteUnleash.Namespace)
+		if remoteUnleash.Spec.AdminSecret.Name != expectedBaseName && !strings.HasPrefix(remoteUnleash.Spec.AdminSecret.Name, expectedBaseName+"-") {
+			err := fmt.Errorf("cross-namespace secret name must be %s or start with %s- to prevent unauthorized access", expectedBaseName, expectedBaseName)
+			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			return ctrl.Result{}, nil
 		}
 	}
 
@@ -419,7 +442,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 	for ctx.Err() == nil && permanentError == nil {
 		log.Info("Waiting for pubsub messages")
-		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+		err := r.Federation.Subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 			if len(remoteUnleashes) == 0 {
 				log.Info("Received pubsub message with no namespaces, ignoring", "status", status, "clusters", clusters)
 				return nil
@@ -436,11 +459,35 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, deleting RemoteUnleash resources and secret")
 
+				// Filter safe objects to prevent cross-namespace deletion hijacking
+				var safeSecrets []*corev1.Secret
+				var safeRUs []*unleashv1.RemoteUnleash
+
+				for i, ru := range remoteUnleashes {
+					existingRU := &unleashv1.RemoteUnleash{}
+					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
+					if err == nil {
+						if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
+							log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
+								"name", ru.Name, "namespace", ru.Namespace,
+								"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
+							continue
+						}
+					} else if !apierrors.IsNotFound(err) {
+						if !retriableError(err) {
+							permanentError = err
+						}
+						return err
+					}
+					safeRUs = append(safeRUs, ru)
+					safeSecrets = append(safeSecrets, adminSecrets[i])
+				}
+
 				// Delete RemoteUnleash resources
 				objectsCtx, objectsCancel := r.Timeout.WriteContext(ctx)
 				defer objectsCancel()
 
-				if errs := utils.DeleteAllObjects(objectsCtx, r.Client, remoteUnleashes); len(errs) > 0 {
+				if errs := utils.DeleteAllObjects(objectsCtx, r.Client, safeRUs); len(errs) > 0 {
 					for _, err := range errs {
 						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
 						log.Error(err, "Failed to delete RemoteUnleash")
@@ -455,18 +502,23 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return errs[0]
 				}
 
-				// Delete the admin secret
+				// Delete the admin secrets
 				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
 				defer secretCancel()
 
-				if err := utils.DeleteObject(secretCtx, r.Client, adminSecret); err != nil {
-					remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
-					log.Error(err, "Failed to delete admin secret")
+				if errs := utils.DeleteAllObjects(secretCtx, r.Client, safeSecrets); len(errs) > 0 {
+					for _, err := range errs {
+						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						log.Error(err, "Failed to delete admin secret")
 
-					if !retriableError(err) {
-						permanentError = err
+						if !retriableError(err) {
+							permanentError = err
+						}
 					}
-					return err
+					if permanentError != nil {
+						return permanentError
+					}
+					return errs[0]
 				}
 
 				remoteUnleashReceived.WithLabelValues("removed", "success").Inc()
@@ -476,22 +528,51 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			case pb.Status_Provisioned:
 				log.Info("Received Status_Provisioned")
 
+				// Filter safe objects to prevent cross-namespace overwrite hijacking
+				var safeSecrets []*corev1.Secret
+				var safeRUs []*unleashv1.RemoteUnleash
+
+				for i, ru := range remoteUnleashes {
+					existingRU := &unleashv1.RemoteUnleash{}
+					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
+					if err == nil {
+						if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
+							log.Info("Refusing to overwrite RemoteUnleash due to URL mismatch - possible hijack attempt",
+								"name", ru.Name, "namespace", ru.Namespace,
+								"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
+							continue
+						}
+					} else if !apierrors.IsNotFound(err) {
+						if !retriableError(err) {
+							permanentError = err
+						}
+						return err
+					}
+					safeRUs = append(safeRUs, ru)
+					safeSecrets = append(safeSecrets, adminSecrets[i])
+				}
+
 				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
 				defer secretCancel()
 
-				if err := utils.UpsertObject(secretCtx, r.Client, adminSecret); err != nil {
-					remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
+				if errs := utils.UpsertAllObjects(secretCtx, r.Client, safeSecrets); len(errs) > 0 {
+					for _, err := range errs {
+						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
-					if !retriableError(err) {
-						permanentError = err
+						if !retriableError(err) {
+							permanentError = err
+						}
 					}
-					return err
+					if permanentError != nil {
+						return permanentError
+					}
+					return errs[0]
 				}
 
 				objectsCtx, objectsCancel := r.Timeout.WriteContext(ctx)
 				defer objectsCancel()
 
-				if err := utils.UpsertAllObjects(objectsCtx, r.Client, remoteUnleashes); len(err) > 0 {
+				if err := utils.UpsertAllObjects(objectsCtx, r.Client, safeRUs); len(err) > 0 {
 					for _, err := range err {
 						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 
