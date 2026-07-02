@@ -220,15 +220,25 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		expectedNameBaseBash := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Name)
 		expectedNameBaseFed := fmt.Sprintf("%s-%s", prefix, remoteUnleash.Name)
 
-		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix
+		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix.
+		// This is the only check that will remain after the migration to in-namespace secrets is complete.
 		isValidNamespaceBound := secretName == expectedNamespaceBase || strings.HasPrefix(secretName, expectedNamespaceBase+"-")
 
-		// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-)
-		isValidNameBoundBash := strings.HasPrefix(secretName, expectedNameBaseBash+"-")
+		// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-).
+		// TODO(Migration): TEMPORARY FIX. Remove this entirely once all tenants are migrated to in-namespace secrets.
+		isValidNameBoundBash := strings.HasPrefix(secretName, expectedNameBaseBash+"-") && len(secretName) > len(expectedNameBaseBash+"-")
 
-		// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-)
-		// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking.
-		isValidNameBoundFed := strings.HasPrefix(secretName, expectedNameBaseFed+"-")
+		// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-).
+		// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking (Confused Deputy).
+		// TODO(Migration): TEMPORARY FIX. Remove this entirely once all tenants are migrated to in-namespace secrets.
+		isValidNameBoundFed := strings.HasPrefix(secretName, expectedNameBaseFed+"-") && len(secretName) > len(expectedNameBaseFed+"-")
+		
+		// CRITICAL: Since expectedNameBaseFed is a prefix of expectedNameBaseBash, isValidNameBoundFed will accidentally
+		// match the exact, predictable string expectedNameBaseBash (e.g. "unleasherator-name-admin-key").
+		// We MUST explicitly reject this predictable string to maintain Confused Deputy protection.
+		if secretName == expectedNameBaseBash {
+			isValidNameBoundFed = false
+		}
 
 		if !isValidNamespaceBound && !isValidNameBoundBash && !isValidNameBoundFed {
 			err := fmt.Errorf("cross-namespace secret name must securely match a recognized format with a nonce suffix")
