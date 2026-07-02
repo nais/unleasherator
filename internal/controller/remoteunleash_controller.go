@@ -211,11 +211,27 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			// Do not requeue, as this is a terminal configuration error until the user fixes it
 			return ctrl.Result{}, nil
 		}
-		
-		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks (e.g. exfiltrating GCP credentials or other tenants' secrets)
-		expectedBaseName := fmt.Sprintf("%s-%s-admin-key", unleashv1.UnleashSecretNamePrefix, remoteUnleash.Name)
-		if remoteUnleash.Spec.AdminSecret.Name != expectedBaseName && !strings.HasPrefix(remoteUnleash.Spec.AdminSecret.Name, expectedBaseName+"-") {
-			err := fmt.Errorf("cross-namespace secret name must be %s or start with %s- to prevent unauthorized access", expectedBaseName, expectedBaseName)
+
+		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks.
+		secretName := remoteUnleash.Spec.AdminSecret.Name
+		prefix := unleashv1.UnleashSecretNamePrefix
+
+		expectedNamespaceBase := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Namespace)
+		expectedNameBaseBash := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Name)
+		expectedNameBaseFed := fmt.Sprintf("%s-%s", prefix, remoteUnleash.Name)
+
+		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix
+		isValidNamespaceBound := secretName == expectedNamespaceBase || strings.HasPrefix(secretName, expectedNamespaceBase+"-")
+
+		// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-)
+		isValidNameBoundBash := strings.HasPrefix(secretName, expectedNameBaseBash+"-")
+
+		// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-)
+		// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking.
+		isValidNameBoundFed := strings.HasPrefix(secretName, expectedNameBaseFed+"-")
+
+		if !isValidNamespaceBound && !isValidNameBoundBash && !isValidNameBoundFed {
+			err := fmt.Errorf("cross-namespace secret name must securely match a recognized format with a nonce suffix")
 			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
