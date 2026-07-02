@@ -27,9 +27,10 @@ type Subscriber interface {
 type Handler func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error
 
 type subscriber struct {
-	client       *pubsub.Client
-	subscription *pubsub.Subscription
-	namespace    string
+	client             *pubsub.Client
+	subscription       *pubsub.Subscription
+	namespace          string
+	inNamespaceSecrets bool
 }
 
 // Close the pubsub client.
@@ -114,12 +115,23 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
 
 	var adminSecrets []*corev1.Secret
-	for _, namespace := range instance.GetNamespaces() {
-		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken)
+	var secretNamespace string
+
+	if s.inNamespaceSecrets {
+		// New behavior: Generate secrets directly in tenant namespaces
+		for _, namespace := range instance.GetNamespaces() {
+			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken)
+			adminSecrets = append(adminSecrets, adminSecret)
+		}
+		secretNamespace = "" // "" tells RemoteUnleash to look in its own namespace
+	} else {
+		// Legacy behavior: Generate one secret in the operator namespace
+		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken)
 		adminSecrets = append(adminSecrets, adminSecret)
+		secretNamespace = s.namespace
 	}
 
-	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, "")
+	remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, secretNamespace)
 
 	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
 	defer subspan.End()
@@ -127,10 +139,11 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 }
 
-func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string) Subscriber {
+func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string, inNamespaceSecrets bool) Subscriber {
 	return &subscriber{
-		client:       client,
-		subscription: subscription,
-		namespace:    namespace,
+		client:             client,
+		subscription:       subscription,
+		namespace:          namespace,
+		inNamespaceSecrets: inNamespaceSecrets,
 	}
 }

@@ -93,8 +93,9 @@ type UnleashReconciler struct {
 }
 
 type UnleashFederation struct {
-	Enabled   bool
-	Publisher federation.Publisher
+	Enabled            bool
+	Publisher          federation.Publisher
+	InNamespaceSecrets bool
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -411,7 +412,7 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 	// Compute hash of the data we're about to publish
 	instance := federation.UnleashFederationInstance(unleash, string(token))
-	currentHash := federation.ComputeInstanceHash(instance)
+	currentHash := federation.ComputeInstanceHash(instance, r.Federation.InNamespaceSecrets)
 
 	// Skip if nothing has changed since last publish
 	if unleash.Status.LastPublishedHash == currentHash {

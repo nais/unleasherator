@@ -31,7 +31,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	defer c.Close()
 
 	// Create a new subscriber.
-	subscriber := NewSubscriber(c, subscription, namespace)
+	subscriber := NewSubscriber(c, subscription, namespace, true)
 
 	received := make(chan bool)
 	finished := false
@@ -130,7 +130,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{namespace: namespace}
+	subscriber := &subscriber{namespace: namespace, inNamespaceSecrets: true}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
@@ -152,4 +152,47 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
+}
+
+func TestSubscriber_handleMessage_Legacy(t *testing.T) {
+	var namespace = "unleasherator-system"
+
+	instance := &pb.Instance{
+		Name:       "test-instance-legacy",
+		Url:        "https://test-instance.example.com",
+		Namespaces: []string{"namespace-a"},
+		Clusters:   []string{"cluster-a"},
+		Status:     pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+
+	msg := &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: pubsubOrderingKey,
+	}
+
+	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
+	var capturedAdminSecrets []*corev1.Secret
+
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		capturedRemoteUnleashes = remoteUnleashes
+		capturedAdminSecrets = adminSecrets
+		return nil
+	}
+
+	subscriber := &subscriber{namespace: namespace, inNamespaceSecrets: false}
+	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(capturedRemoteUnleashes))
+	
+	// Legacy mode expects the secret to be created in the operator namespace
+	assert.Equal(t, 1, len(capturedAdminSecrets))
+	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
+	
+	// Legacy mode expects RemoteUnleash to explicitly point to the operator namespace
+	assert.Equal(t, "unleasherator-system", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
 }
