@@ -36,7 +36,7 @@ func unleashFederationInstanceWithStatus(unleash *unleashv1.Unleash, token strin
 // Returns int64 for Kubernetes CRD compatibility (OpenAPI 3.0 doesn't support uint64).
 func ComputeInstanceHash(instance *pb.Instance, namespaceBoundSecrets bool) int64 {
 	h := fnv.New64a()
-	
+
 	// Write a hash version prefix.
 	// Bumping this version gracefully forces Unleasherator to republish all instances
 	// (useful when migrating federation formats).

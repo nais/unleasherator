@@ -93,7 +93,7 @@ type UnleashReconciler struct {
 }
 
 type UnleashFederation struct {
-	Enabled            bool
+	Enabled               bool
 	Publisher             federation.Publisher
 	NamespaceBoundSecrets bool
 }

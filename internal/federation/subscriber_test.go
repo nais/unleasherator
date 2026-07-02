@@ -188,11 +188,11 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(capturedRemoteUnleashes))
-	
+
 	// Legacy mode expects the secret to be created in the operator namespace
 	assert.Equal(t, 1, len(capturedAdminSecrets))
 	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
-	
+
 	// Legacy mode expects RemoteUnleash to explicitly point to the operator namespace
 	assert.Equal(t, "unleasherator-system", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
 }

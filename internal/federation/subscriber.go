@@ -124,7 +124,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
 			adminSecrets = append(adminSecrets, adminSecret)
 		}
-		
+
 		// Resources need to be matched to their respective namespace-bound secret names
 		remoteUnleashes := make([]*unleashv1.RemoteUnleash, 0, len(instance.GetNamespaces()))
 		for _, namespace := range instance.GetNamespaces() {
@@ -141,9 +141,9 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
 		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
 		adminSecrets = append(adminSecrets, adminSecret)
-		
+
 		remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, s.namespace)
-		
+
 		ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
 		defer subspan.End()
 		return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
