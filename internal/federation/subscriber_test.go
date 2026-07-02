@@ -67,10 +67,12 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
-			assert.Equal(t, namespace, adminSecret.GetNamespace())
-			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecret.GetName())
-			assert.Equal(t, apiToken, adminSecret.StringData["token"])
+		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+			assert.Equal(t, 2, len(adminSecrets))
+			assert.Equal(t, "namespace-1", adminSecrets[0].GetNamespace())
+			assert.Equal(t, "namespace-2", adminSecrets[1].GetNamespace())
+			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, apiToken, adminSecrets[0].StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
 			assert.Equal(t, 2, len(remoteUnleashes))
@@ -116,13 +118,13 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	}
 
 	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
-	var capturedAdminSecret *corev1.Secret
+	var capturedAdminSecrets []*corev1.Secret
 	var capturedClusters []string
 	var capturedStatus pb.Status
 
-	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecret *corev1.Secret, clusters []string, status pb.Status) error {
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 		capturedRemoteUnleashes = remoteUnleashes
-		capturedAdminSecret = adminSecret
+		capturedAdminSecrets = adminSecrets
 		capturedClusters = clusters
 		capturedStatus = status
 		return nil
@@ -143,10 +145,11 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	assert.Equal(t, instance.Url, capturedRemoteUnleash.URL())
 	assert.Equal(t, instance.Namespaces[0], capturedRemoteUnleash.GetNamespace())
 
-	assert.NotNil(t, capturedAdminSecret)
-	assert.True(t, strings.HasPrefix(capturedAdminSecret.Name, "unleasherator-"+instance.Name+"-"))
-	assert.Equal(t, namespace, capturedAdminSecret.Namespace)
-	assert.Equal(t, instance.SecretToken, capturedAdminSecret.StringData["admin"])
+	assert.NotNil(t, capturedAdminSecrets)
+	assert.Equal(t, 1, len(capturedAdminSecrets))
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-"+instance.Name+"-"))
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData["admin"])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
 }

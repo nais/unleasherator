@@ -119,16 +119,10 @@ func (u *RemoteUnleash) NamespacedName() types.NamespacedName {
 
 // AdminSecretNamespacedName returns the namespaced name of the secret containing the Unleash instance's API token.
 func (u *RemoteUnleash) AdminSecretNamespacedName() types.NamespacedName {
-	namespacedName := types.NamespacedName{
+	return types.NamespacedName{
 		Name:      u.Spec.AdminSecret.Name,
-		Namespace: u.Spec.AdminSecret.Namespace,
+		Namespace: u.Namespace,
 	}
-
-	if namespacedName.Namespace == "" {
-		namespacedName.Namespace = u.Namespace
-	}
-
-	return namespacedName
 }
 
 // AdminToken returns the admin API token for the Unleash instance.
