@@ -11,8 +11,6 @@ controllerManager:
       apiTokenNameSuffix: unleasherator
       clusterName: ""
       featureApiTokenUpdateEnabled: "false"
-      featureFederationNamespaceBoundSecrets: "false"
-      featureAllowLegacyNameBoundSecrets: "true"
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""
       federationPubsubSubscription: ""
