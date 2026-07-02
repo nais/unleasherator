@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -201,15 +202,25 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Validate AdminSecret namespace
-	if remoteUnleash.Spec.AdminSecret.Namespace != "" &&
-		remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace &&
-		remoteUnleash.Spec.AdminSecret.Namespace != r.OperatorNamespace {
-		err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
-		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-			return ctrl.Result{}, updateErr
+	if remoteUnleash.Spec.AdminSecret.Namespace != "" && remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace {
+		if remoteUnleash.Spec.AdminSecret.Namespace != r.OperatorNamespace {
+			err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
+			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			// Do not requeue, as this is a terminal configuration error until the user fixes it
+			return ctrl.Result{}, nil
 		}
-		// Do not requeue, as this is a terminal configuration error until the user fixes it
-		return ctrl.Result{}, nil
+		
+		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks (e.g. exfiltrating GCP credentials or other tenants' secrets)
+		expectedPrefix := fmt.Sprintf("%s-%s-", unleashv1.UnleashSecretNamePrefix, remoteUnleash.Namespace)
+		if !strings.HasPrefix(remoteUnleash.Spec.AdminSecret.Name, expectedPrefix) || !strings.Contains(remoteUnleash.Spec.AdminSecret.Name, "-admin-key") {
+			err := fmt.Errorf("cross-namespace secret name must start with %s and contain -admin-key to prevent unauthorized access", expectedPrefix)
+			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// Get admin token from RemoteUnleash secret
