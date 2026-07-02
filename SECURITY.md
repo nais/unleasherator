@@ -97,7 +97,7 @@ The **nonce** acted as a shared password/secret distributed out-of-band to autho
 However, scripts like `unleash-sync-to-tenant.sh` bypassed the nonce system entirely, generating predictable names (`unleasherator-<namespace>-admin-key`), which left those instances highly vulnerable to Confused Deputy attacks because the name was easily guessable by malicious tenants.
 
 ### Migration to Namespace-Bound Secrets
-With the introduction of **Namespace-Bound Secret Names**, the nonce is completely obsolete. The controller no longer relies on an unguessable string; it mathematically validates that the requesting tenant's namespace is explicitly embedded in the secret name.
+With the introduction of **Namespace-Bound Secret Names** (enabled via `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS`), the nonce is completely obsolete. The controller no longer relies on an unguessable string; it mathematically validates that the requesting tenant's namespace is explicitly embedded in the secret name.
 
 During the migration to strict namespace-bound secrets, temporary backward-compatibility logic (`FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS`) is enabled.
 
