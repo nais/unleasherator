@@ -45,7 +45,7 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 
 	var (
 		existingTokensMutex sync.Mutex
-		existingTokens = unleashclient.ApiTokenResult{
+		existingTokens      = unleashclient.ApiTokenResult{
 			Tokens: []unleashclient.ApiToken{},
 		}
 	)
