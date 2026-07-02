@@ -192,7 +192,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
 			
 			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
-			secret.Name = fmt.Sprintf("%s-%s-admin-key", unleashv1.UnleashSecretNamePrefix, RemoteUnleashNamespace)
+			secret.Name = fmt.Sprintf("%s-%s-%s-admin-key-abc123", unleashv1.UnleashSecretNamePrefix, name, RemoteUnleashNamespace)
 			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 
 			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
