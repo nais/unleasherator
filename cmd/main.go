@@ -105,8 +105,9 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
 		Federation: controller.UnleashFederation{
-			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
-			Publisher: publisher,
+			Enabled:               cfg.Federation.IsEnabled() && publisher != nil,
+			Publisher:             publisher,
+			NamespaceBoundSecrets: cfg.Features.FederationNamespaceBoundSecrets,
 		},
 		Tracer: tp.Tracer("unleash-controller"),
 	}).SetupWithManager(mgr); err != nil {
@@ -124,7 +125,8 @@ func main() {
 			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
 		},
-		Tracer: tp.Tracer("remoteunleash-controller"),
+		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		Tracer:                      tp.Tracer("remoteunleash-controller"),
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")

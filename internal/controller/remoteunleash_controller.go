@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -63,12 +64,13 @@ func init() {
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	OperatorNamespace string
-	Timeout           config.TimeoutConfig
-	Federation        RemoteUnleashFederation
-	Tracer            trace.Tracer
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	OperatorNamespace           string
+	Timeout                     config.TimeoutConfig
+	Federation                  RemoteUnleashFederation
+	AllowLegacyNameBoundSecrets bool
+	Tracer                      trace.Tracer
 }
 
 type RemoteUnleashFederation struct {
@@ -216,25 +218,71 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		secretName := remoteUnleash.Spec.AdminSecret.Name
 		prefix := unleashv1.UnleashSecretNamePrefix
 
-		expectedNamespaceBase := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Namespace)
+		expectedNamespaceBase := fmt.Sprintf("%s-%s-%s-admin-key", prefix, remoteUnleash.Name, remoteUnleash.Namespace)
 		expectedNameBaseBash := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Name)
 		expectedNameBaseFed := fmt.Sprintf("%s-%s", prefix, remoteUnleash.Name)
 
-		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix
+		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix.
+		// This is the only check that will remain after the migration to in-namespace secrets is complete.
 		isValidNamespaceBound := secretName == expectedNamespaceBase || strings.HasPrefix(secretName, expectedNamespaceBase+"-")
 
-		// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-)
-		isValidNameBoundBash := strings.HasPrefix(secretName, expectedNameBaseBash+"-")
+		isValidNameBoundBash := false
+		isValidNameBoundFed := false
 
-		// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-)
-		// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking.
-		isValidNameBoundFed := strings.HasPrefix(secretName, expectedNameBaseFed+"-")
+		if r.AllowLegacyNameBoundSecrets {
+			// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-).
+			// TODO(Migration): TEMPORARY FIX. Remove this entirely once all tenants are migrated to in-namespace secrets.
+			isValidNameBoundBash = strings.HasPrefix(secretName, expectedNameBaseBash+"-") && len(secretName) > len(expectedNameBaseBash+"-")
+
+			// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-).
+			// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking (Confused Deputy).
+			// TODO(Migration): TEMPORARY FIX. Remove this entirely once all tenants are migrated to in-namespace secrets.
+			isValidNameBoundFed = strings.HasPrefix(secretName, expectedNameBaseFed+"-") && len(secretName) > len(expectedNameBaseFed+"-")
+
+			// CRITICAL: Since expectedNameBaseFed is a prefix of expectedNameBaseBash, isValidNameBoundFed will accidentally
+			// match the exact, predictable string expectedNameBaseBash (e.g. "unleasherator-name-admin-key").
+			// We MUST explicitly reject this predictable string to maintain Confused Deputy protection.
+			if secretName == expectedNameBaseBash {
+				isValidNameBoundFed = false
+			}
+		}
 
 		if !isValidNamespaceBound && !isValidNameBoundBash && !isValidNameBoundFed {
 			err := fmt.Errorf("cross-namespace secret name must securely match a recognized format with a nonce suffix")
 			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
+			return ctrl.Result{}, nil
+		}
+	}
+
+	// Fetch admin secret for URL validation
+	adminSecret := &corev1.Secret{}
+	secretKey := types.NamespacedName{
+		Name:      remoteUnleash.Spec.AdminSecret.Name,
+		Namespace: remoteUnleash.Spec.AdminSecret.Namespace,
+	}
+	if secretKey.Namespace == "" {
+		secretKey.Namespace = remoteUnleash.Namespace
+	}
+	if err := r.Get(ctx, secretKey, adminSecret); err != nil {
+		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to get admin token secret"); err != nil {
+			return ctrl.Result{}, err
+		}
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Validate Server URL against the secret to prevent exfiltration (Server URL Spoofing)
+	if expectedUrl, ok := adminSecret.Data["url"]; ok && len(expectedUrl) > 0 {
+		if remoteUnleash.Spec.Server.URL != string(expectedUrl) {
+			err := fmt.Errorf("validation failed: RemoteUnleash Server URL (%s) does not match the authorized URL in the admin secret", remoteUnleash.Spec.Server.URL)
+			if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); err != nil {
+				return ctrl.Result{}, err
+			}
+			// Do not requeue, as this is a terminal configuration error until the user fixes it
 			return ctrl.Result{}, nil
 		}
 	}

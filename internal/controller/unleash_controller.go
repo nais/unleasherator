@@ -93,8 +93,9 @@ type UnleashReconciler struct {
 }
 
 type UnleashFederation struct {
-	Enabled   bool
-	Publisher federation.Publisher
+	Enabled               bool
+	Publisher             federation.Publisher
+	NamespaceBoundSecrets bool
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -411,7 +412,7 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 	// Compute hash of the data we're about to publish
 	instance := federation.UnleashFederationInstance(unleash, string(token))
-	currentHash := federation.ComputeInstanceHash(instance)
+	currentHash := federation.ComputeInstanceHash(instance, r.Federation.NamespaceBoundSecrets)
 
 	// Skip if nothing has changed since last publish
 	if unleash.Status.LastPublishedHash == currentHash {
@@ -689,7 +690,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
+		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, unleash.PublicApiURL())
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {
