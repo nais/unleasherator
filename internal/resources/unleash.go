@@ -111,8 +111,8 @@ func OperatorSecretForUnleash(name, secretName, namespace, adminKey, url string)
 			Labels:    ls,
 		},
 		StringData: map[string]string{
-			unleashv1.UnleashSecretTokenKey: adminKey,
-			"url":                           url,
+			unleashv1.UnleashSecretTokenKey:     adminKey,
+			unleashv1.UnleashSecretServerURLKey: url,
 		},
 	}
 

@@ -93,9 +93,8 @@ type UnleashReconciler struct {
 }
 
 type UnleashFederation struct {
-	Enabled               bool
-	Publisher             federation.Publisher
-	NamespaceBoundSecrets bool
+	Enabled   bool
+	Publisher federation.Publisher
 }
 
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes,verbs=get;list;watch;create;update;patch;delete
@@ -412,7 +411,7 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 	// Compute hash of the data we're about to publish
 	instance := federation.UnleashFederationInstance(unleash, string(token))
-	currentHash := federation.ComputeInstanceHash(instance, r.Federation.NamespaceBoundSecrets)
+	currentHash := federation.ComputeInstanceHash(instance)
 
 	// Skip if nothing has changed since last publish
 	if unleash.Status.LastPublishedHash == currentHash {
@@ -698,6 +697,25 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 		}
 	} else if err != nil {
 		return ctrl.Result{}, err
+	} else {
+		// The operator secret already exists. Its url is only written on the
+		// initial create path, so if the API ingress host later changes the
+		// stored url goes stale and permanently fails RemoteUnleash url
+		// validation with a terminal error. Refresh it here.
+		currentURL := unleash.PublicApiURL()
+		// Only refresh when we have a real URL; never write an empty/placeholder url.
+		if currentURL != "" && string(operatorSecret.Data[unleashv1.UnleashSecretServerURLKey]) != currentURL {
+			// Patch only the url key to preserve the admin token.
+			patch := client.MergeFrom(operatorSecret.DeepCopy())
+			if operatorSecret.Data == nil {
+				operatorSecret.Data = map[string][]byte{}
+			}
+			operatorSecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(currentURL)
+			log.Info("Updating stale url in Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
+			if err := r.Patch(ctx, operatorSecret, patch); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])

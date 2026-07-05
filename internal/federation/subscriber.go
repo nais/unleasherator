@@ -2,6 +2,8 @@ package federation
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
@@ -106,48 +108,84 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		return err
 	}
 
+	// The nonce disambiguates and obscures secret names. When the publisher does
+	// not supply one, generate a cryptographically-random nonce ONCE for this
+	// message. A predictable fallback (e.g. "default") would make namespace-bound
+	// secret names fully guessable and undermine the legacy defense-in-depth.
+	// Because this subscriber is the sole generator of both the secret name and the
+	// matching RemoteUnleash reference in a single pass, a fresh random value stays
+	// internally consistent.
 	secretNonce := instance.GetSecretNonce()
 	if secretNonce == "" {
-		secretNonce = "default"
-		log.Info("secret nonce not set, using default")
+		nonce, err := randomNonce()
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			log.Error(err, "generate random secret nonce")
+			return err
+		}
+		secretNonce = nonce
+		log.Info("secret nonce not set, generated random nonce")
 	}
 
-	var adminSecrets []*corev1.Secret
+	var (
+		adminSecrets    []*corev1.Secret
+		remoteUnleashes []*unleashv1.RemoteUnleash
+	)
 
 	if s.namespaceBoundSecrets {
-		// New behavior: Generate secrets in the operator namespace, but with NAMESPACE-BOUND names.
-		// Example: unleasherator-tenant1-admin-key
-		// This protects the secret from being read by tenants (operator namespace)
-		// while preventing confused deputy (name includes tenant namespace).
+		// Namespace-bound behavior: secrets live in the OPERATOR namespace (so tenants
+		// cannot read them) and each is stamped with the authoritative
+		// authorized-namespace annotation. The controller uses that annotation as the
+		// primary confused-deputy defense, so it cannot be bypassed by crafting a
+		// RemoteUnleash name.
 		for _, namespace := range instance.GetNamespaces() {
 			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
 			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
+			setAuthorizedNamespace(adminSecret, namespace)
 			adminSecrets = append(adminSecrets, adminSecret)
-		}
 
-		// Resources need to be matched to their respective namespace-bound secret names
-		remoteUnleashes := make([]*unleashv1.RemoteUnleash, 0, len(instance.GetNamespaces()))
-		for _, namespace := range instance.GetNamespaces() {
-			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
 			ru := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), []string{namespace}, secretName, s.namespace)
 			remoteUnleashes = append(remoteUnleashes, ru...)
 		}
-
-		ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
-		defer subspan.End()
-		return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 	} else {
-		// Legacy behavior: Generate one secret in the operator namespace, bound to instance name
+		// Legacy behavior: create ONE admin secret PER namespace in the TENANT's OWN
+		// namespace (secretNamespace=""), matching the original pre-migration layout.
+		// This keeps N secrets aligned with N RemoteUnleashes (avoiding the
+		// index-out-of-range panic downstream) and avoids relocating/orphaning tenant
+		// secrets in the operator namespace. Same-namespace references do not hit the
+		// cross-namespace authorization path in the controller.
 		secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-		adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
-		adminSecrets = append(adminSecrets, adminSecret)
+		for _, namespace := range instance.GetNamespaces() {
+			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken, instance.GetUrl())
+			setAuthorizedNamespace(adminSecret, namespace)
+			adminSecrets = append(adminSecrets, adminSecret)
+		}
 
-		remoteUnleashes := resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, s.namespace)
-
-		ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
-		defer subspan.End()
-		return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
+		remoteUnleashes = resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, "")
 	}
+
+	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
+	defer subspan.End()
+	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
+}
+
+// randomNonce returns a cryptographically-random hex nonce.
+func randomNonce() (string, error) {
+	b := make([]byte, 6) // 12 hex characters
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("read random bytes for secret nonce: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// setAuthorizedNamespace stamps the authoritative authorized-namespace annotation
+// on an admin secret, recording the single tenant namespace permitted to use it.
+func setAuthorizedNamespace(secret *corev1.Secret, namespace string) {
+	if secret.Annotations == nil {
+		secret.Annotations = map[string]string{}
+	}
+	secret.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation] = namespace
 }
 
 func NewSubscriber(client *pubsub.Client, subscription *pubsub.Subscription, namespace string, namespaceBoundSecrets bool) Subscriber {

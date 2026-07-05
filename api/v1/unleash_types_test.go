@@ -156,6 +156,18 @@ func TestUnleashPublicApiURL(t *testing.T) {
 	assert.Equal(t, expectedURL, actualURL, "Unexpected Public API URL")
 }
 
+func TestUnleashPublicApiURLEmptyHost(t *testing.T) {
+	unleash := Unleash{
+		Spec: UnleashSpec{
+			ApiIngress: UnleashIngressConfig{
+				Host: "",
+			},
+		},
+	}
+
+	assert.Equal(t, "", unleash.PublicApiURL(), "Public API URL should be empty when the ingress host is empty")
+}
+
 func TestUnleashPublicWebURL(t *testing.T) {
 	unleash := Unleash{
 		Spec: UnleashSpec{

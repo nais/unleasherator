@@ -27,11 +27,11 @@ We evaluate the system against the STRIDE threat model to identify potential vul
 | Threat | Description in Unleasherator Context | Mitigation |
 | :--- | :--- | :--- |
 | **Spoofing** | A tenant spoofs a `RemoteUnleash` resource to impersonate another tenant or claim ownership of a shared Unleash instance. | The system relies on Kubernetes RBAC for identity. The operator only trusts the explicit `Namespace` of the requesting `RemoteUnleash` object. |
-| **Tampering** | A tenant alters the `adminSecret` reference in their `RemoteUnleash` to point to a secret they do not own. | **Strict Secret Naming Validation:** The operator strictly enforces that the referenced secret name cryptographically binds to the tenant's namespace. |
+| **Tampering** | A tenant alters the `adminSecret` reference in their `RemoteUnleash` to point to a secret they do not own. | **Authoritative Authorization Annotation:** Managed cross-namespace secrets carry an operator-stamped `unleash.nais.io/authorized-namespace` annotation that the controller requires to equal the requesting tenant's namespace. This is not derivable from the (attacker-controlled) secret name. |
 | **Repudiation** | A tenant denies creating a malicious `RemoteUnleash`. | Kubernetes Audit Logs provide non-repudiation for all API server interactions. |
 | **Information Disclosure** | A tenant reads the raw Unleash Admin API token intended for another tenant (or even their own token, if they shouldn't have raw admin access). | **Operator Namespace Isolation:** Tokens are stored exclusively in the `nais-system` (operator) namespace. Tenants cannot read these secrets. The controller reads them on their behalf. |
 | **Denial of Service** | A tenant provisions thousands of `RemoteUnleash` instances to overwhelm the operator or the Unleash API. | Kubernetes ResourceQuotas and rate-limiting on the Unleash API protect against DoS. |
-| **Elevation of Privilege (Confused Deputy)** | A tenant tricks the operator into using its elevated privileges to read an arbitrary secret (or another tenant's token) from `nais-system` and applying it to their own `RemoteUnleash`. | **Cryptographic/Namespace Binding:** The operator validates that the secret name explicitly contains the tenant's namespace and the Unleash instance name, making it impossible for Tenant A to guess or legally request Tenant B's secret. |
+| **Elevation of Privilege (Confused Deputy)** | A tenant tricks the operator into using its elevated privileges to read an arbitrary secret (or another tenant's token) from `nais-system` and applying it to their own `RemoteUnleash`. | **Authoritative Authorization Annotation:** The operator reads the `unleash.nais.io/authorized-namespace` annotation off the fetched secret and requires it to equal the requesting `RemoteUnleash.Namespace`. Because the annotation is stamped by the operator (not encoded in the attacker-controlled name), Tenant A cannot craft a name that grants access to Tenant B's secret. |
 
 ## The "Confused Deputy" Attack Vector
 
@@ -44,30 +44,35 @@ If the controller blindly accepts any secret name in the `nais-system` namespace
 3. Tenant A creates a `RemoteUnleash` in their own namespace, setting `spec.adminSecret.name = unleasherator-tenant-b-secret` and `spec.adminSecret.namespace = nais-system`.
 4. The controller (running with cluster-admin privileges) fetches the secret and provisions an API token for Tenant A using Tenant B's admin credentials.
 
-### The Solution: Namespace-Bound Secret Names
+### The Solution: An Authoritative Authorization Annotation
 
-To eliminate this vulnerability, the system enforces a strict naming convention for all cross-namespace secrets. 
+The historical mitigation embedded the tenant namespace in the secret *name* and parsed it back out. This is fundamentally fragile: `RemoteUnleash.Name` is attacker-controlled, and because `-` is both a separator and a legal character in names/namespaces, a name like `my-unleash-tenant-b` cannot be securely separated from its namespace by string parsing. A tenant could craft a name that makes the parser "see" a victim namespace.
 
-**The Ideal Secret Name Format:**
-`unleasherator-<unleash-name>-<tenant-namespace>-admin-key`
+The primary control is therefore **not** the name. When the federation subscriber provisions a managed admin secret in the operator namespace, it stamps an authoritative annotation recording the single tenant namespace the secret is authorized for:
 
-**Why this format?**
-1. **`unleasherator-`**: Standard prefix for easy identification.
-2. **`<unleash-name>`**: Prevents collisions if a single tenant consumes multiple different Unleash instances.
-3. **`<tenant-namespace>`**: **The Security Boundary.** By embedding the requesting tenant's namespace into the expected secret name, the controller forces a cryptographic lock. 
-4. **`-admin-key`**: A descriptive suffix.
+```
+metadata:
+  annotations:
+    unleash.nais.io/authorized-namespace: <tenant-namespace>
+```
+
+This annotation is set by the operator from the trusted Pub/Sub payload. Tenants cannot read these operator-namespace secrets and cannot influence the annotation. It is the source of truth for *who may use this secret*.
 
 ### Validation Logic
-When a `RemoteUnleash` (created in namespace `Tenant-A`) requests a cross-namespace secret from `nais-system`, the controller enforces:
+When a `RemoteUnleash` (created in namespace `Tenant-A`) references a cross-namespace secret in the operator namespace, the controller fetches the secret **once** and then authorizes as follows:
+
+1. **Authoritative annotation (primary control).** If the fetched secret carries `unleash.nais.io/authorized-namespace`, the controller requires it to equal `remoteUnleash.Namespace`. If it does not match, the request is rejected with a terminal validation error. This holds even while legacy compatibility is enabled, so it fully closes the confused-deputy vector for all managed secrets.
 
 ```go
-expectedName := fmt.Sprintf("unleasherator-%s-%s-admin-key", remoteUnleash.Name, remoteUnleash.Namespace)
-if requestedSecretName != expectedName {
-    return Error("Validation failed: You can only request secrets bound to your namespace")
+authorizedNS, ok := adminSecret.Annotations["unleash.nais.io/authorized-namespace"]
+if ok && authorizedNS != remoteUnleash.Namespace {
+    return Error("Validation failed: secret is authorized for a different namespace")
 }
 ```
 
-If Tenant A attempts to request `unleasherator-my-unleash-Tenant-B-admin-key`, the controller calculates `expectedName` as `unleasherator-my-unleash-Tenant-A-admin-key`. Since they do not match, the request is violently rejected. Tenant A is mathematically restricted to requesting secrets that contain their own namespace.
+2. **Legacy fallback (defense-in-depth only).** Secrets *without* the annotation (created by pre-existing bash scripts or the old federation subscriber) are only accepted when `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`. For these, the controller performs a relaxed name-binding check (the name must be bound to the `RemoteUnleash` instance name). This is no longer the primary security control — see the Legacy Formats section below. When `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`, only annotation-bearing secrets whose annotation matches the tenant namespace are accepted, and every managed secret must additionally carry a matching `url` key (fail-closed URL validation).
+
+A same-namespace reference (the secret lives in the tenant's own namespace) never crosses a privilege boundary and does not go through the cross-namespace authorization gate.
 
 ## Authorization Flow & Preventing Unauthorized Access
 
@@ -83,26 +88,27 @@ The answer lies in the **Separation of Concerns** between the Management Cluster
    The Subscriber receives the payload and physically provisions secrets in `nais-system`. 
    Because only `Tenant-B` was authorized, it creates **ONLY ONE** secret: `unleasherator-my-unleash-Tenant-B-admin-key-abc123`.
    **Crucially, it DOES NOT create `unleasherator-my-unleash-Tenant-A-admin-key-abc123`.**
-4. **The Attack Fails (404 Not Found):**
-   When malicious Tenant A creates their `RemoteUnleash` and correctly predicts the namespace-bound secret name for their own namespace, the request passes the initial naming validation. However, when the controller attempts to fetch that secret from `nais-system`, the Kubernetes API returns a `404 Not Found`.
+4. **The Attack Fails (annotation mismatch and/or 404 Not Found):**
+   If malicious Tenant A points at a real managed secret (e.g. Tenant B's), the controller reads the secret's `unleash.nais.io/authorized-namespace` annotation, sees `Tenant-B`, and rejects the request because it does not equal `Tenant-A`. If instead Tenant A predicts a namespace-bound name for their *own* namespace, no such secret was ever created (only authorized namespaces get one), so the fetch returns `404 Not Found`.
 
-**Conclusion:** A tenant can only successfully provision API tokens if a Cluster Admin has explicitly authorized their namespace on the central Management Cluster.
+**Conclusion:** A tenant can only successfully provision API tokens if a Cluster Admin has explicitly authorized their namespace on the central Management Cluster. Authorization is enforced by the operator-stamped annotation, not by trusting the requested secret name.
 
 ## Legacy Formats, The "Nonce", and Migration
 
-### The Purpose of the Legacy Nonce
-In the old federation model, the subscriber generated cross-namespace secrets named `unleasherator-<name>-<nonce>` (e.g., `unleasherator-my-unleash-a3f9b2`).
-The **nonce** acted as a shared password/secret distributed out-of-band to authorized tenants. Because a malicious tenant could not guess the random nonce, they could not correctly point their `RemoteUnleash` at the victim's secret in the operator namespace. This provided security through obscurity.
+### Where Legacy Federation Secrets Live
+Legacy (non-namespace-bound) federation secrets are created in the **tenant's own namespace**, one per authorized namespace, and the generated `RemoteUnleash` references them with an empty `spec.adminSecret.namespace` (i.e. same namespace). This matches the original pre-migration layout and has two important properties:
 
-However, scripts like `unleash-sync-to-tenant.sh` bypassed the nonce system entirely, generating predictable names (`unleasherator-<namespace>-admin-key`), which left those instances highly vulnerable to Confused Deputy attacks because the name was easily guessable by malicious tenants.
+1. **N secrets align with N RemoteUnleashes.** The subscriber emits exactly one admin secret per RemoteUnleash, so downstream provisioning/removal never indexes past the end of the slice (previously a panic when more than one namespace was authorized — the default configuration).
+2. **No relocation or orphaning.** Tenant secrets are not moved into the operator namespace, so nothing is left behind.
 
-### Migration to Namespace-Bound Secrets
-With the introduction of **Namespace-Bound Secret Names** (enabled via `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS`), the primary security control shifts to mathematical validation: the controller verifies that the requesting tenant's namespace is explicitly embedded in the secret name.
+Because these references are same-namespace, they do not cross a privilege boundary and never reach the cross-namespace authorization gate.
 
-However, the **nonce** is still preserved and appended to the new namespace-bound secret names as an additional layer of **defense-in-depth**. While the system no longer relies exclusively on the nonce's unguessability for security, retaining it ensures backward compatibility during migration and provides robust protection against potential future misconfigurations.
+### The Nonce Is Now Cryptographically Random
+The subscriber derives a per-message secret nonce. When the publisher supplies one it is used verbatim; when it is **absent**, the subscriber generates a fresh **cryptographically-random** nonce (`crypto/rand`) once per message and uses it for both the secret name and the matching `RemoteUnleash` reference in the same pass, so they stay consistent. The previous behavior fell back to the literal string `default`, which made namespace-bound secret names fully guessable — that fallback has been removed.
 
-During the migration to strict namespace-bound secrets, temporary backward-compatibility logic (`FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS`) is enabled.
+For namespace-bound managed secrets the nonce is defense-in-depth only; the authoritative control is the `unleash.nais.io/authorized-namespace` annotation. For annotation-less legacy secrets, the random nonce (plus RBAC on who may create secrets in the operator namespace) is what keeps a federation-generated name from being guessable.
 
-This logic allows old, strictly name-bound formats (e.g., `unleasherator-<name>-<nonce>`). To mitigate vulnerabilities during the transition, the controller strictly enforces the presence of a randomly generated `<nonce>` for these legacy formats, making it impossible for an attacker to guess the target secret name.
+### Migration
+`FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS` makes the subscriber write managed secrets into the operator namespace carrying the authorized-namespace annotation. `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS` (default `true` during migration) keeps accepting annotation-less cross-namespace secrets via the relaxed name-binding fallback so existing tenants are not hard-broken — including the previously-rejected exact `unleasherator-<name>-admin-key` form.
 
-Once the migration is complete, this feature gate must be disabled, permanently locking the operator into the namespace-bound security model while preserving the nonce as a secondary layer of defense.
+Once migration is complete, set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`. From then on, only annotation-bearing secrets whose annotation matches the requesting namespace are accepted for cross-namespace references, and every such secret must carry a matching `url` key (fail-closed URL validation). Name parsing plays no part in the security decision at that point.
