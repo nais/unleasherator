@@ -35,6 +35,18 @@ const (
 
 	UnleashSecretNamePrefix = "unleasherator"
 	UnleashSecretTokenKey   = "token"
+	// UnleashSecretServerURLKey is the data key in an admin secret holding the
+	// authorized Unleash server URL. A rename here must break the build in both
+	// the writer (resources) and the reader (controller), never silently disable
+	// the URL validation.
+	UnleashSecretServerURLKey = "url"
+
+	// UnleashSecretAuthorizedNamespaceAnnotation records the single tenant
+	// namespace that an operator-managed admin secret is authorized for. It is the
+	// authoritative, non-forgeable authorization control for cross-namespace
+	// (operator namespace) admin secret references, replacing fragile secret-name
+	// parsing as the primary confused-deputy defense.
+	UnleashSecretAuthorizedNamespaceAnnotation = "unleash.nais.io/authorized-namespace"
 
 	ApiTokenSecretTokenEnv    = "UNLEASH_SERVER_API_TOKEN"
 	ApiTokenSecretServerEnv   = "UNLEASH_SERVER_API_URL"

@@ -56,6 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fail fast on contradictory feature-flag combinations.
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "invalid configuration")
+		os.Exit(1)
+	}
+
 	// Global parent context for program
 	signalHandlerContext := ctrl.SetupSignalHandler()
 	ctx, cancel := context.WithCancel(signalHandlerContext)
@@ -105,9 +111,8 @@ func main() {
 		Recorder:          mgr.GetEventRecorderFor("unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
 		Federation: controller.UnleashFederation{
-			Enabled:               cfg.Federation.IsEnabled() && publisher != nil,
-			Publisher:             publisher,
-			NamespaceBoundSecrets: cfg.Features.FederationNamespaceBoundSecrets,
+			Enabled:   cfg.Federation.IsEnabled() && publisher != nil,
+			Publisher: publisher,
 		},
 		Tracer: tp.Tracer("unleash-controller"),
 	}).SetupWithManager(mgr); err != nil {

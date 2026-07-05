@@ -357,6 +357,12 @@ func (u *Unleash) URL() string {
 }
 
 func (u *Unleash) PublicApiURL() string {
+	// Guard against an empty host: without this, we would return the useless
+	// "https://" (non-empty), which activates downstream URL validation that can
+	// never be satisfied. Returning "" lets callers detect "no public URL".
+	if u.Spec.ApiIngress.Host == "" {
+		return ""
+	}
 	return fmt.Sprintf("https://%s", u.Spec.ApiIngress.Host)
 }
 

@@ -70,3 +70,41 @@ func TestUnleashFederationInstanceRemoved(t *testing.T) {
 	assert.Equal(t, []string{"namespace-1", "namespace-2"}, instance.Namespaces, "unexpected namespaces")
 	assert.Equal(t, []string{"cluster-1", "cluster-2"}, instance.Clusters, "unexpected clusters")
 }
+
+func TestComputeInstanceHash(t *testing.T) {
+	instance := &pb.Instance{
+		Name:        "my-unleash",
+		Url:         "https://my-unleash.example.com",
+		SecretToken: "my-token",
+		SecretNonce: "not-a-secret",
+		Namespaces:  []string{"namespace-1", "namespace-2"},
+		Clusters:    []string{"cluster-1", "cluster-2"},
+	}
+
+	hash := ComputeInstanceHash(instance)
+
+	// Hash must be deterministic for identical data, independent of any runtime flag.
+	assert.Equal(t, hash, ComputeInstanceHash(instance), "hash should be deterministic")
+
+	// Namespace ordering must not affect the hash (slices are sorted internally).
+	reordered := &pb.Instance{
+		Name:        instance.Name,
+		Url:         instance.Url,
+		SecretToken: instance.SecretToken,
+		SecretNonce: instance.SecretNonce,
+		Namespaces:  []string{"namespace-2", "namespace-1"},
+		Clusters:    []string{"cluster-2", "cluster-1"},
+	}
+	assert.Equal(t, hash, ComputeInstanceHash(reordered), "hash should be order-independent")
+
+	// A change to a hashed field must change the hash.
+	changed := &pb.Instance{
+		Name:        instance.Name,
+		Url:         instance.Url,
+		SecretToken: "different-token",
+		SecretNonce: instance.SecretNonce,
+		Namespaces:  instance.Namespaces,
+		Clusters:    instance.Clusters,
+	}
+	assert.NotEqual(t, hash, ComputeInstanceHash(changed), "hash should change when data changes")
+}

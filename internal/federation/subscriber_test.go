@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,8 +148,14 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecrets)
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	assert.Equal(t, "unleasherator-test-instance-namespace-a-admin-key-default", capturedAdminSecrets[0].Name)
+	// The empty-nonce path generates a random nonce, so assert on the stable
+	// name prefix/shape rather than an exact (predictable) value.
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-namespace-a-admin-key-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Greater(t, len(capturedAdminSecrets[0].Name), len("unleasherator-test-instance-namespace-a-admin-key-"))
 	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
+	// Namespace-bound secrets carry the authoritative authorized-namespace annotation.
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
 	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
@@ -189,10 +196,14 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(capturedRemoteUnleashes))
 
-	// Legacy mode expects the secret to be created in the operator namespace
+	// Legacy mode creates one admin secret PER namespace in the TENANT's own namespace,
+	// keeping N secrets aligned with N RemoteUnleashes (no orphaning/relocation, no panic).
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-legacy-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
 
-	// Legacy mode expects RemoteUnleash to explicitly point to the operator namespace
-	assert.Equal(t, "unleasherator-system", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
+	// Legacy mode references the secret in the RemoteUnleash's own namespace (empty = same namespace).
+	assert.Equal(t, "", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
 }
