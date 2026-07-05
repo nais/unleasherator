@@ -45,6 +45,12 @@ spec:
         - name: FEATURE_API_TOKEN_UPDATE_ENABLED
           value: {{ quote .Values.controllerManager.manager.env.featureApiTokenUpdateEnabled
             }}
+        - name: FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS
+          value: {{ quote .Values.controllerManager.manager.env.featureFederationNamespaceBoundSecrets
+            }}
+        - name: FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS
+          value: {{ quote .Values.controllerManager.manager.env.featureAllowLegacyNameBoundSecrets
+            }}
         - name: HTTPS_PROXY
           value: {{ quote .Values.controllerManager.manager.env.httpsProxy }}
         - name: NO_PROXY
