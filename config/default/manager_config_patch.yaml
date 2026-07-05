@@ -25,6 +25,10 @@ spec:
           value: ""
         - name: "FEATURE_API_TOKEN_UPDATE_ENABLED"
           value: "false"
+        - name: "FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS"
+          value: "false"
+        - name: "FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS"
+          value: "true"
         - name: HTTPS_PROXY
           value: ""
         - name: NO_PROXY
