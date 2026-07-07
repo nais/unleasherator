@@ -31,7 +31,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	defer c.Close()
 
 	// Create a new subscriber.
-	subscriber := NewSubscriber(c, subscription, namespace)
+	subscriber := NewSubscriber(c, subscription, namespace, true)
 
 	received := make(chan bool)
 	finished := false
@@ -69,9 +69,10 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	go func() {
 		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, 2, len(adminSecrets))
-			assert.Equal(t, "namespace-1", adminSecrets[0].GetNamespace())
-			assert.Equal(t, "namespace-2", adminSecrets[1].GetNamespace())
-			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, namespace, adminSecrets[0].GetNamespace())
+			assert.Equal(t, namespace, adminSecrets[1].GetNamespace())
+			assert.Equal(t, "unleasherator-test-namespace-1-admin-key-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, "unleasherator-test-namespace-2-admin-key-not-a-real-nonce", adminSecrets[1].GetName())
 			assert.Equal(t, apiToken, adminSecrets[0].StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
@@ -130,7 +131,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{namespace: namespace}
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: true}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
@@ -147,9 +148,62 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecrets)
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-"+instance.Name+"-"))
-	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	// The empty-nonce path generates a random nonce, so assert on the stable
+	// name prefix/shape rather than an exact (predictable) value.
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-namespace-a-admin-key-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Greater(t, len(capturedAdminSecrets[0].Name), len("unleasherator-test-instance-namespace-a-admin-key-"))
+	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
+	// Namespace-bound secrets carry the authoritative authorized-namespace annotation.
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
 	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
+}
+
+func TestSubscriber_handleMessage_Legacy(t *testing.T) {
+	var namespace = "unleasherator-system"
+
+	instance := &pb.Instance{
+		Name:       "test-instance-legacy",
+		Url:        "https://test-instance.example.com",
+		Namespaces: []string{"namespace-a"},
+		Clusters:   []string{"cluster-a"},
+		Status:     pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+
+	msg := &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: pubsubOrderingKey,
+	}
+
+	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
+	var capturedAdminSecrets []*corev1.Secret
+
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		capturedRemoteUnleashes = remoteUnleashes
+		capturedAdminSecrets = adminSecrets
+		return nil
+	}
+
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: false}
+	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(capturedRemoteUnleashes))
+
+	// Legacy mode creates one admin secret PER namespace in the TENANT's own namespace,
+	// keeping N secrets aligned with N RemoteUnleashes (no orphaning/relocation, no panic).
+	assert.Equal(t, 1, len(capturedAdminSecrets))
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-legacy-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
+
+	// Legacy mode references the secret in the RemoteUnleash's own namespace (empty = same namespace).
+	assert.Equal(t, "", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
 }

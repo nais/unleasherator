@@ -50,6 +50,17 @@ values:
   controllerManager.manager.env.featureApiTokenUpdateEnabled:
     config:
       type: bool
+  # Federation migration: enable namespace-bound secrets (Confused Deputy hardening).
+  # Roll out per environment; keep the legacy toggle below enabled until every tenant
+  # is migrated, then disable it to enforce the namespace-bound security model.
+  controllerManager.manager.env.featureFederationNamespaceBoundSecrets:
+    displayName: Federation namespace-bound secrets
+    config:
+      type: bool
+  controllerManager.manager.env.featureAllowLegacyNameBoundSecrets:
+    displayName: Allow legacy name-bound federation secrets (migration only)
+    config:
+      type: bool
   # Onprem stuff
   controllerManagerGcp.serviceAccountCredentialsJson:
     computed:

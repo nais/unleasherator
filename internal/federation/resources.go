@@ -30,12 +30,27 @@ func unleashFederationInstanceWithStatus(unleash *unleashv1.Unleash, token strin
 	}
 }
 
+// federationHashVersion is a code-level version prefix mixed into every
+// ComputeInstanceHash result. The published payload is byte-identical
+// regardless of any runtime feature flag, so the hash version must not depend
+// on runtime configuration: two clusters with different flag values must
+// compute the same hash for identical data. Bumping this constant in code
+// forces a republish of all instances on deploy, uniformly across clusters,
+// decoupled from any runtime flag.
+const federationHashVersion = "v2"
+
 // ComputeInstanceHash computes a FNV-1a hash of the federation instance data.
 // This is used to detect changes and avoid redundant publishes.
 // The hash includes all fields that affect the published message.
 // Returns int64 for Kubernetes CRD compatibility (OpenAPI 3.0 doesn't support uint64).
 func ComputeInstanceHash(instance *pb.Instance) int64 {
 	h := fnv.New64a()
+
+	// Write the code-level hash version prefix. Bumping federationHashVersion
+	// forces Unleasherator to republish all instances on deploy (useful when
+	// migrating federation formats).
+	h.Write([]byte(federationHashVersion))
+	h.Write([]byte{0})
 
 	// Write deterministic representation of instance fields
 	h.Write([]byte(instance.Name))

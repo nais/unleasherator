@@ -689,7 +689,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
+		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, unleash.PublicApiURL())
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {
@@ -697,6 +697,25 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 		}
 	} else if err != nil {
 		return ctrl.Result{}, err
+	} else {
+		// The operator secret already exists. Its url is only written on the
+		// initial create path, so if the API ingress host later changes the
+		// stored url goes stale and permanently fails RemoteUnleash url
+		// validation with a terminal error. Refresh it here.
+		currentURL := unleash.PublicApiURL()
+		// Only refresh when we have a real URL; never write an empty/placeholder url.
+		if currentURL != "" && string(operatorSecret.Data[unleashv1.UnleashSecretServerURLKey]) != currentURL {
+			// Patch only the url key to preserve the admin token.
+			patch := client.MergeFrom(operatorSecret.DeepCopy())
+			if operatorSecret.Data == nil {
+				operatorSecret.Data = map[string][]byte{}
+			}
+			operatorSecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(currentURL)
+			log.Info("Updating stale url in Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
+			if err := r.Patch(ctx, operatorSecret, patch); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])

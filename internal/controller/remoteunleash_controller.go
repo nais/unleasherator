@@ -63,12 +63,13 @@ func init() {
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
-	Scheme            *runtime.Scheme
-	Recorder          record.EventRecorder
-	OperatorNamespace string
-	Timeout           config.TimeoutConfig
-	Federation        RemoteUnleashFederation
-	Tracer            trace.Tracer
+	Scheme                      *runtime.Scheme
+	Recorder                    record.EventRecorder
+	OperatorNamespace           string
+	Timeout                     config.TimeoutConfig
+	Federation                  RemoteUnleashFederation
+	AllowLegacyNameBoundSecrets bool
+	Tracer                      trace.Tracer
 }
 
 type RemoteUnleashFederation struct {
@@ -201,65 +202,113 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Validate AdminSecret namespace
-	if remoteUnleash.Spec.AdminSecret.Namespace != "" && remoteUnleash.Spec.AdminSecret.Namespace != remoteUnleash.Namespace {
-		if remoteUnleash.Spec.AdminSecret.Namespace != r.OperatorNamespace {
-			err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
-			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			// Do not requeue, as this is a terminal configuration error until the user fixes it
-			return ctrl.Result{}, nil
+	// Determine whether the admin secret lives in a different namespace than the
+	// RemoteUnleash. Cross-namespace references are the confused-deputy surface:
+	// the controller reads secrets with elevated privileges on the tenant's behalf.
+	adminSecretNamespace := remoteUnleash.Spec.AdminSecret.Namespace
+	isCrossNamespace := adminSecretNamespace != "" && adminSecretNamespace != remoteUnleash.Namespace
+
+	// Cross-namespace references are only ever permitted to the operator namespace.
+	if isCrossNamespace && adminSecretNamespace != r.OperatorNamespace {
+		err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+			return ctrl.Result{}, updateErr
 		}
-
-		// For references to the operator namespace, strictly validate the secret name to prevent confused deputy attacks.
-		secretName := remoteUnleash.Spec.AdminSecret.Name
-		prefix := unleashv1.UnleashSecretNamePrefix
-
-		expectedNamespaceBase := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Namespace)
-		expectedNameBaseBash := fmt.Sprintf("%s-%s-admin-key", prefix, remoteUnleash.Name)
-		expectedNameBaseFed := fmt.Sprintf("%s-%s", prefix, remoteUnleash.Name)
-
-		// 1. Namespace-bound (Bash script with correct namespace argument) - Allow exact or prefix
-		isValidNamespaceBound := secretName == expectedNamespaceBase || strings.HasPrefix(secretName, expectedNamespaceBase+"-")
-
-		// 2. Name-bound (Bash script with name argument) - MUST have nonce suffix (-)
-		isValidNameBoundBash := strings.HasPrefix(secretName, expectedNameBaseBash+"-")
-
-		// 3. Name-bound (Old Federation subscriber) - MUST have nonce suffix (-)
-		// We explicitly do NOT allow exact matches for name-bound formats to prevent predictable secret hijacking.
-		isValidNameBoundFed := strings.HasPrefix(secretName, expectedNameBaseFed+"-")
-
-		if !isValidNamespaceBound && !isValidNameBoundBash && !isValidNameBoundFed {
-			err := fmt.Errorf("cross-namespace secret name must securely match a recognized format with a nonce suffix")
-			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
-		}
+		// Do not requeue, as this is a terminal configuration error until the user fixes it
+		return ctrl.Result{}, nil
 	}
 
-	// Get admin token from RemoteUnleash secret
-	adminToken, err := remoteUnleash.AdminToken(ctx, r.Client, r.OperatorNamespace)
-	if err != nil {
+	// Fetch the referenced admin secret ONCE. Both the URL validation value and the
+	// admin token are derived from this single fetched object to avoid a second live
+	// (uncached) API round-trip and the resulting TOCTOU window.
+	adminSecret := &corev1.Secret{}
+	if err := r.Get(ctx, remoteUnleash.AdminSecretNamespacedName(), adminSecret); err != nil {
 		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to get admin token secret"); err != nil {
 			return ctrl.Result{}, err
 		}
-
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
-		} else {
-			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, err
+	}
+
+	authorizedNamespace, hasAuthorizedNamespace := adminSecret.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation]
+
+	// Authorization gate for cross-namespace (operator namespace) references.
+	// The authorized-namespace annotation is the PRIMARY, authoritative control and
+	// cannot be bypassed by crafting the RemoteUnleash name. Name-based matching
+	// survives only as gated legacy defense-in-depth for annotation-less secrets.
+	if isCrossNamespace {
+		switch {
+		case hasAuthorizedNamespace:
+			if authorizedNamespace != remoteUnleash.Namespace {
+				err := fmt.Errorf("admin secret is authorized for namespace %q, not %q", authorizedNamespace, remoteUnleash.Namespace)
+				if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+					return ctrl.Result{}, updateErr
+				}
+				return ctrl.Result{}, nil
+			}
+		case r.AllowLegacyNameBoundSecrets:
+			// Legacy fallback (defense-in-depth only): annotation-less secrets created by
+			// the old federation subscriber or by bash scripts. Security for these rests
+			// on the random nonce (Fix 3) and on RBAC governing who may create secrets in
+			// the operator namespace. We accept any previously-recognized name bound to the
+			// instance name (including the exact "<prefix>-<name>-admin-key" without a
+			// nonce) so migration does not hard-break existing tenants.
+			if !secretNameBoundToInstance(remoteUnleash.Spec.AdminSecret.Name, remoteUnleash.Name) {
+				err := fmt.Errorf("cross-namespace secret name must be bound to the RemoteUnleash instance name %q", remoteUnleash.Name)
+				if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+					return ctrl.Result{}, updateErr
+				}
+				return ctrl.Result{}, nil
+			}
+		default:
+			// AllowLegacyNameBoundSecrets disabled: only annotation-bearing secrets whose
+			// annotation matches the tenant namespace may be referenced cross-namespace.
+			err := fmt.Errorf("cross-namespace admin secret must carry the %s annotation authorizing namespace %q", unleashv1.UnleashSecretAuthorizedNamespaceAnnotation, remoteUnleash.Namespace)
+			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
+				return ctrl.Result{}, updateErr
+			}
+			return ctrl.Result{}, nil
 		}
 	}
 
+	// Validate the Server URL against the secret to prevent exfiltration (Server URL
+	// spoofing). Secured secrets MUST fail closed: whenever the secret carries the
+	// authorized-namespace annotation (a managed secret) OR the legacy fallback is
+	// disabled, the url key must be present and must match. Only genuinely-legacy
+	// annotation-less secrets under AllowLegacyNameBoundSecrets may omit it.
+	expectedURL := adminSecret.Data[unleashv1.UnleashSecretServerURLKey]
+	urlRequired := hasAuthorizedNamespace || !r.AllowLegacyNameBoundSecrets
+	if urlRequired && len(expectedURL) == 0 {
+		err := fmt.Errorf("admin secret is missing the required %q key for Server URL validation", unleashv1.UnleashSecretServerURLKey)
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+		// Do not requeue, as this is a terminal configuration error until the user fixes it
+		return ctrl.Result{}, nil
+	}
+	if len(expectedURL) > 0 && remoteUnleash.Spec.Server.URL != string(expectedURL) {
+		err := fmt.Errorf("validation failed: RemoteUnleash Server URL (%s) does not match the authorized URL in the admin secret", remoteUnleash.Spec.Server.URL)
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); updateErr != nil {
+			return ctrl.Result{}, updateErr
+		}
+		// Do not requeue, as this is a terminal configuration error until the user fixes it
+		return ctrl.Result{}, nil
+	}
+
+	// Derive the admin token from the already-fetched secret (no second Get),
+	// preserving AdminToken's key/defaulting behavior.
+	adminToken := adminSecret.Data[remoteUnleash.Spec.AdminSecret.Key]
+
 	// Check admin token
 	if len(adminToken) == 0 {
-		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Admin token is empty"); err != nil {
-			return ctrl.Result{}, err
+		err := fmt.Errorf("admin token secret %q does not contain a token under key %q", remoteUnleash.Spec.AdminSecret.Name, remoteUnleash.Spec.AdminSecret.Key)
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Admin token is empty"); updateErr != nil {
+			return ctrl.Result{}, updateErr
 		}
 
-		return ctrl.Result{}, err
+		return ctrl.Result{}, nil
 	}
 
 	// Create Unleash API client
@@ -624,6 +673,17 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// secretNameBoundToInstance reports whether an annotation-less legacy admin secret
+// name is bound to the RemoteUnleash instance name. This is defense-in-depth ONLY,
+// used as a gated legacy fallback; the authoritative confused-deputy control is the
+// authorized-namespace annotation. It accepts the exact "<prefix>-<name>" base as well
+// as any "<prefix>-<name>-..." suffix (namespace-bound, bash, and old-federation
+// formats, with or without a nonce) so migration does not hard-break existing tenants.
+func secretNameBoundToInstance(secretName, instanceName string) bool {
+	base := fmt.Sprintf("%s-%s", unleashv1.UnleashSecretNamePrefix, instanceName)
+	return secretName == base || strings.HasPrefix(secretName, base+"-")
 }
 
 // namespaceNotFoundError returns true if the error is a namespace not found error.

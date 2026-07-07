@@ -56,6 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fail fast on contradictory feature-flag combinations.
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "invalid configuration")
+		os.Exit(1)
+	}
+
 	// Global parent context for program
 	signalHandlerContext := ctrl.SetupSignalHandler()
 	ctx, cancel := context.WithCancel(signalHandlerContext)
@@ -124,7 +130,8 @@ func main() {
 			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
 		},
-		Tracer: tp.Tracer("remoteunleash-controller"),
+		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		Tracer:                      tp.Tracer("remoteunleash-controller"),
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")

@@ -10,7 +10,9 @@ controllerManager:
     env:
       apiTokenNameSuffix: unleasherator
       clusterName: ""
+      featureAllowLegacyNameBoundSecrets: "true"
       featureApiTokenUpdateEnabled: "false"
+      featureFederationNamespaceBoundSecrets: "false"
       federationPubsubGcpProjectId: ""
       federationPubsubMode: ""
       federationPubsubSubscription: ""

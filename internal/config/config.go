@@ -67,6 +67,32 @@ type Features struct {
 	// UnleashTokenUpdate enables updating tokens in Unleash.
 	ApiTokenUpdateEnabled        bool `envconfig:"FEATURE_API_TOKEN_UPDATE_ENABLED" default:"false"`
 	ApiTokenDeduplicationEnabled bool `envconfig:"FEATURE_API_TOKEN_DEDUPLICATION_ENABLED" default:"false"`
+
+	// FederationNamespaceBoundSecrets generates federation secrets in the operator namespace with names bound to the tenant namespace, eliminating the Confused Deputy vulnerability.
+	FederationNamespaceBoundSecrets bool `envconfig:"FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS" default:"false"`
+
+	// AllowLegacyNameBoundSecrets enables temporary backward compatibility for legacy name-bound cross-namespace secrets.
+	// Once the migration to in-namespace secrets is complete, this MUST be set to false to enforce namespace boundaries.
+	AllowLegacyNameBoundSecrets bool `envconfig:"FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS" default:"true"`
+}
+
+// Validate checks for contradictory feature-flag combinations and returns a
+// descriptive, actionable error when the configuration cannot produce a valid
+// federation secret format.
+func (f *Features) Validate() error {
+	// If namespace-bound secrets are disabled AND legacy name-bound secrets are
+	// also disabled, the operator would generate secrets in a format its own
+	// controller rejects, silently breaking all federation. Reject this at
+	// startup so it surfaces immediately.
+	if !f.FederationNamespaceBoundSecrets && !f.AllowLegacyNameBoundSecrets {
+		return fmt.Errorf("invalid feature flag combination: FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false and FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false leaves no valid secret format; set FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=true before disabling legacy name-bound secrets")
+	}
+	return nil
+}
+
+// Validate validates the configuration.
+func (c *Config) Validate() error {
+	return c.Features.Validate()
 }
 
 func (c *Config) ManagerOptions(scheme *runtime.Scheme) manager.Options {
@@ -125,7 +151,7 @@ func (c *Config) PubsubSubscriber(ctx context.Context) (federation.Subscriber, e
 
 	subscription := c.pubsubSubscription(ctx, client)
 
-	return federation.NewSubscriber(client, subscription, c.PodNamespace), nil
+	return federation.NewSubscriber(client, subscription, c.PodNamespace, c.Features.FederationNamespaceBoundSecrets), nil
 }
 
 func (c *Config) PubsubPublisher(ctx context.Context) (federation.Publisher, error) {
