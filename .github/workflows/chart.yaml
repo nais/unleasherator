@@ -30,7 +30,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       name: ${{ steps.name.outputs.name }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: meta
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -87,11 +87,11 @@ jobs:
           path: ./charts
 
       - name: Set up Helm
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # ratchet:azure/setup-helm@v5.0.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # ratchet:azure/setup-helm@v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
 
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # ratchet:actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # ratchet:actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           check-latest: true
@@ -117,7 +117,7 @@ jobs:
 
       - name: Set up Go
         if: steps.list-changed.outputs.changed == 'true'
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # ratchet:actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # ratchet:actions/setup-go@v6
         with:
           go-version: "1.26"
           cache-dependency-path: go.sum
@@ -162,7 +162,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [meta, lint-test]
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # ratchet:actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -206,7 +206,7 @@ jobs:
         run: |
           echo '${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin https://${{ env.ARTIFACT_REGISTRY }}
 
-      - uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # ratchet:azure/setup-helm@v5.0.0
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # ratchet:azure/setup-helm@v5.0.1
         name: Setup Helm
         with:
           version: ${{ env.HELM_VERSION }}
