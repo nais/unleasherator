@@ -23,9 +23,9 @@ require (
 	google.golang.org/api v0.289.0
 	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
-	k8s.io/api v0.35.6
-	k8s.io/apimachinery v0.36.2
-	k8s.io/client-go v0.35.6
+	k8s.io/api v0.35.7
+	k8s.io/apimachinery v0.36.3
+	k8s.io/client-go v0.35.7
 	sigs.k8s.io/controller-runtime v0.22.5
 	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.24.1
 	sigs.k8s.io/controller-tools v0.18.0
@@ -103,7 +103,7 @@ require (
 	k8s.io/code-generator v0.35.0 // indirect
 	k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.3 // indirect
 )
 
 require (
