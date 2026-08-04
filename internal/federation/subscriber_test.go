@@ -233,3 +233,29 @@ func TestStableNonce(t *testing.T) {
 	_, err = stableNonce(instance)
 	assert.Error(t, err)
 }
+
+func TestSubscriberIgnoresUnauthenticatedLegacyRemoval(t *testing.T) {
+	payload, err := proto.Marshal(&pb.Instance{
+		Name:       "test-instance",
+		Url:        "https://test-instance.example.com",
+		Namespaces: []string{"namespace-a"},
+		Status:     pb.Status_Removed,
+	})
+	assert.NoError(t, err)
+
+	handlerCalled := false
+	subscriber := &subscriber{namespace: "unleasherator-system", namespaceBoundSecrets: true}
+	err = subscriber.handleMessage(context.Background(), &pubsub.Message{Data: payload}, func(
+		context.Context,
+		[]*unleashv1.RemoteUnleash,
+		[]*corev1.Secret,
+		[]string,
+		pb.Status,
+	) error {
+		handlerCalled = true
+		return nil
+	})
+
+	assert.NoError(t, err)
+	assert.False(t, handlerCalled)
+}

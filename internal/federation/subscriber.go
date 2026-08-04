@@ -108,6 +108,14 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		return err
 	}
 
+	if instance.GetStatus() == pb.Status_Removed && instance.GetSecretToken() == "" {
+		// Removal requires the credential currently bound to the resource.
+		// Legacy unauthenticated events cannot delete safely, but retrying them
+		// would block every later event sharing the Pub/Sub ordering key.
+		log.Info("ignoring unauthenticated legacy removal message")
+		return nil
+	}
+
 	secretNonce := instance.GetSecretNonce()
 	if secretNonce == "" {
 		nonce, err := stableNonce(instance)

@@ -728,6 +728,11 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 
 	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])
 	if adminKey == "" {
+		// StringData is write-only and is populated on a newly constructed secret
+		// until a subsequent API read returns the normalized Data field.
+		adminKey = operatorSecret.StringData[unleashv1.UnleashSecretTokenKey]
+	}
+	if adminKey == "" {
 		err = fmt.Errorf("operator secret is empty for key %s", unleashv1.UnleashSecretTokenKey)
 		log.Error(err, "Failed to get admin token secret", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name, "Secret.Key", unleashv1.UnleashSecretTokenKey)
 
