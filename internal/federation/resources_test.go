@@ -59,13 +59,13 @@ func TestUnleashFederationInstanceRemoved(t *testing.T) {
 		},
 	}
 
-	instance := UnleashFederationInstanceRemoved(unleash)
+	instance := UnleashFederationInstanceRemoved(unleash, "my-token")
 
 	assert.Equal(t, int32(pb.Version), instance.Version, "unexpected version")
 	assert.Equal(t, pb.Status_Removed, instance.Status, "unexpected status")
 	assert.Equal(t, unleash.GetName(), instance.Name, "unexpected name")
 	assert.Equal(t, unleash.PublicApiURL(), instance.Url, "unexpected URL")
-	assert.Empty(t, instance.SecretToken, "token should be empty for removal")
+	assert.Equal(t, "my-token", instance.SecretToken, "unexpected token")
 	assert.Equal(t, "not-a-secret", instance.SecretNonce, "unexpected secret nonce")
 	assert.Equal(t, []string{"namespace-1", "namespace-2"}, instance.Namespaces, "unexpected namespaces")
 	assert.Equal(t, []string{"cluster-1", "cluster-2"}, instance.Clusters, "unexpected clusters")

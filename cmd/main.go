@@ -138,13 +138,14 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.ApiTokenReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		Recorder:              mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace:     cfg.PodNamespace,
-		ApiTokenNameSuffix:    cfg.ApiTokenNameSuffix,
-		ApiTokenUpdateEnabled: cfg.Features.ApiTokenUpdateEnabled,
-		Tracer:                tp.Tracer("apitoken-controller"),
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("api-token-controller"),
+		OperatorNamespace:           cfg.PodNamespace,
+		ApiTokenNameSuffix:          cfg.ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled:       cfg.Features.ApiTokenUpdateEnabled,
+		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		Tracer:                      tp.Tracer("apitoken-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)

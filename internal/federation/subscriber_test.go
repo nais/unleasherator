@@ -102,11 +102,12 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	var namespace = "unleasherator-system"
 
 	instance := &pb.Instance{
-		Name:       "test-instance",
-		Url:        "https://test-instance.example.com",
-		Namespaces: []string{"namespace-a"},
-		Clusters:   []string{"cluster-a"},
-		Status:     pb.Status_Provisioned,
+		Name:        "test-instance",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
 	}
 	payload, err := proto.Marshal(instance)
 	assert.NoError(t, err)
@@ -165,11 +166,12 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 	var namespace = "unleasherator-system"
 
 	instance := &pb.Instance{
-		Name:       "test-instance-legacy",
-		Url:        "https://test-instance.example.com",
-		Namespaces: []string{"namespace-a"},
-		Clusters:   []string{"cluster-a"},
-		Status:     pb.Status_Provisioned,
+		Name:        "test-instance-legacy",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
 	}
 	payload, err := proto.Marshal(instance)
 	assert.NoError(t, err)
@@ -206,4 +208,28 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 
 	// Legacy mode references the secret in the RemoteUnleash's own namespace (empty = same namespace).
 	assert.Equal(t, "", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
+}
+
+func TestStableNonce(t *testing.T) {
+	instance := &pb.Instance{
+		Name:        "test-instance",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+	}
+
+	first, err := stableNonce(instance)
+	assert.NoError(t, err)
+	second, err := stableNonce(instance)
+	assert.NoError(t, err)
+	assert.Equal(t, first, second, "redelivery must produce the same secret name")
+
+	rotated := proto.Clone(instance).(*pb.Instance)
+	rotated.SecretToken = "different-token"
+	rotatedNonce, err := stableNonce(rotated)
+	assert.NoError(t, err)
+	assert.NotEqual(t, first, rotatedNonce)
+
+	instance.SecretToken = ""
+	_, err = stableNonce(instance)
+	assert.Error(t, err)
 }

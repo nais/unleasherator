@@ -167,12 +167,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&ApiTokenReconciler{
-		Client:                k8sManager.GetClient(),
-		Scheme:                k8sManager.GetScheme(),
-		OperatorNamespace:     namespace,
-		ApiTokenNameSuffix:    ApiTokenNameSuffix,
-		ApiTokenUpdateEnabled: true,
-		Tracer:                otel.Tracer("apitoken-controller"),
+		Client:                      k8sManager.GetClient(),
+		Scheme:                      k8sManager.GetScheme(),
+		OperatorNamespace:           namespace,
+		ApiTokenNameSuffix:          ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled:       true,
+		AllowLegacyNameBoundSecrets: true,
+		Tracer:                      otel.Tracer("apitoken-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

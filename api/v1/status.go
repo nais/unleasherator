@@ -18,3 +18,15 @@ func conditionStatusIsReady(conditions []metav1.Condition) bool {
 
 	return statusAvailable == metav1.ConditionTrue && statusConnection == metav1.ConditionTrue
 }
+
+func conditionStatusIsReadyForGeneration(conditions []metav1.Condition, generation int64) bool {
+	for _, condition := range conditions {
+		if (condition.Type == UnleashStatusConditionTypeReconciled ||
+			condition.Type == UnleashStatusConditionTypeConnected) &&
+			condition.ObservedGeneration != generation {
+			return false
+		}
+	}
+
+	return conditionStatusIsReady(conditions)
+}

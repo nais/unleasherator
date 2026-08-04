@@ -103,10 +103,10 @@ Legacy (non-namespace-bound) federation secrets are created in the **tenant's ow
 
 Because these references are same-namespace, they do not cross a privilege boundary and never reach the cross-namespace authorization gate.
 
-### The Nonce Is Now Cryptographically Random
-The subscriber derives a per-message secret nonce. When the publisher supplies one it is used verbatim; when it is **absent**, the subscriber generates a fresh **cryptographically-random** nonce (`crypto/rand`) once per message and uses it for both the secret name and the matching `RemoteUnleash` reference in the same pass, so they stay consistent. The previous behavior fell back to the literal string `default`, which made namespace-bound secret names fully guessable — that fallback has been removed.
+### The nonce is stable across message delivery
+The subscriber uses the nonce supplied by the publisher. If it is absent, the subscriber derives a stable nonce from the instance name, URL, and admin token. Provisioning, redelivery, and removal therefore resolve to the same secret name. This prevents redelivery from creating orphaned credentials and lets removal delete the active secret.
 
-For namespace-bound managed secrets the nonce is defense-in-depth only; the authoritative control is the `unleash.nais.io/authorized-namespace` annotation. For annotation-less legacy secrets, the random nonce (plus RBAC on who may create secrets in the operator namespace) is what keeps a federation-generated name from being guessable.
+For namespace-bound managed secrets the nonce is defense-in-depth only. The `unleash.nais.io/authorized-namespace` annotation remains the primary authorization control. The subscriber also compares the incoming credential with the credential already bound to an existing `RemoteUnleash` before it updates or deletes anything. A message cannot replace a live token or delete a resource by matching only its public URL.
 
 ### Migration
 `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS` makes the subscriber write managed secrets into the operator namespace carrying the authorized-namespace annotation. `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS` (default `true` during migration) keeps accepting annotation-less cross-namespace secrets via the relaxed name-binding fallback so existing tenants are not hard-broken — including the previously-rejected exact `unleasherator-<name>-admin-key` form.

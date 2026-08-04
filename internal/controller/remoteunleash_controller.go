@@ -2,9 +2,9 @@ package controller
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -202,123 +202,32 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Determine whether the admin secret lives in a different namespace than the
-	// RemoteUnleash. Cross-namespace references are the confused-deputy surface:
-	// the controller reads secrets with elevated privileges on the tenant's behalf.
-	adminSecretNamespace := remoteUnleash.Spec.AdminSecret.Namespace
-	isCrossNamespace := adminSecretNamespace != "" && adminSecretNamespace != remoteUnleash.Namespace
-
-	// Cross-namespace references are only ever permitted to the operator namespace.
-	if isCrossNamespace && adminSecretNamespace != r.OperatorNamespace {
-		err := fmt.Errorf("cross-namespace secret references are only permitted to the operator namespace for security reasons")
-		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-			return ctrl.Result{}, updateErr
+	unleashClient, err := validatedRemoteUnleashAPIClient(
+		ctx,
+		r.Client,
+		remoteUnleash,
+		r.OperatorNamespace,
+		r.AllowLegacyNameBoundSecrets,
+	)
+	if err != nil {
+		message := "Failed to create Unleash client"
+		switch {
+		case apierrors.IsNotFound(err):
+			message = "Failed to get admin token secret"
+		case errors.Is(err, errRemoteUnleashAuthorization):
+			message = "Validation failed"
+		case errors.Is(err, errRemoteUnleashServerURL):
+			message = "Server URL validation failed"
+		case errors.Is(err, errRemoteUnleashEmptyToken):
+			message = "Admin token is empty"
 		}
-		// Do not requeue, as this is a terminal configuration error until the user fixes it
-		return ctrl.Result{}, nil
-	}
-
-	// Fetch the referenced admin secret ONCE. Both the URL validation value and the
-	// admin token are derived from this single fetched object to avoid a second live
-	// (uncached) API round-trip and the resulting TOCTOU window.
-	adminSecret := &corev1.Secret{}
-	if err := r.Get(ctx, remoteUnleash.AdminSecretNamespacedName(), adminSecret); err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to get admin token secret"); err != nil {
-			return ctrl.Result{}, err
+		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, message); updateErr != nil {
+			return ctrl.Result{}, updateErr
 		}
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
 		}
-		return ctrl.Result{}, err
-	}
-
-	authorizedNamespace, hasAuthorizedNamespace := adminSecret.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation]
-
-	// Authorization gate for cross-namespace (operator namespace) references.
-	// The authorized-namespace annotation is the PRIMARY, authoritative control and
-	// cannot be bypassed by crafting the RemoteUnleash name. Name-based matching
-	// survives only as gated legacy defense-in-depth for annotation-less secrets.
-	if isCrossNamespace {
-		switch {
-		case hasAuthorizedNamespace:
-			if authorizedNamespace != remoteUnleash.Namespace {
-				err := fmt.Errorf("admin secret is authorized for namespace %q, not %q", authorizedNamespace, remoteUnleash.Namespace)
-				if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-					return ctrl.Result{}, updateErr
-				}
-				return ctrl.Result{}, nil
-			}
-		case r.AllowLegacyNameBoundSecrets:
-			// Legacy fallback (defense-in-depth only): annotation-less secrets created by
-			// the old federation subscriber or by bash scripts. Security for these rests
-			// on the random nonce (Fix 3) and on RBAC governing who may create secrets in
-			// the operator namespace. We accept any previously-recognized name bound to the
-			// instance name (including the exact "<prefix>-<name>-admin-key" without a
-			// nonce) so migration does not hard-break existing tenants.
-			if !secretNameBoundToInstance(remoteUnleash.Spec.AdminSecret.Name, remoteUnleash.Name) {
-				err := fmt.Errorf("cross-namespace secret name must be bound to the RemoteUnleash instance name %q", remoteUnleash.Name)
-				if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-					return ctrl.Result{}, updateErr
-				}
-				return ctrl.Result{}, nil
-			}
-		default:
-			// AllowLegacyNameBoundSecrets disabled: only annotation-bearing secrets whose
-			// annotation matches the tenant namespace may be referenced cross-namespace.
-			err := fmt.Errorf("cross-namespace admin secret must carry the %s annotation authorizing namespace %q", unleashv1.UnleashSecretAuthorizedNamespaceAnnotation, remoteUnleash.Namespace)
-			if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Validation failed"); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
-		}
-	}
-
-	// Validate the Server URL against the secret to prevent exfiltration (Server URL
-	// spoofing). Secured secrets MUST fail closed: whenever the secret carries the
-	// authorized-namespace annotation (a managed secret) OR the legacy fallback is
-	// disabled, the url key must be present and must match. Only genuinely-legacy
-	// annotation-less secrets under AllowLegacyNameBoundSecrets may omit it.
-	expectedURL := adminSecret.Data[unleashv1.UnleashSecretServerURLKey]
-	urlRequired := hasAuthorizedNamespace || !r.AllowLegacyNameBoundSecrets
-	if urlRequired && len(expectedURL) == 0 {
-		err := fmt.Errorf("admin secret is missing the required %q key for Server URL validation", unleashv1.UnleashSecretServerURLKey)
-		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); updateErr != nil {
-			return ctrl.Result{}, updateErr
-		}
-		// Do not requeue, as this is a terminal configuration error until the user fixes it
 		return ctrl.Result{}, nil
-	}
-	if len(expectedURL) > 0 && remoteUnleash.Spec.Server.URL != string(expectedURL) {
-		err := fmt.Errorf("validation failed: RemoteUnleash Server URL (%s) does not match the authorized URL in the admin secret", remoteUnleash.Spec.Server.URL)
-		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Server URL validation failed"); updateErr != nil {
-			return ctrl.Result{}, updateErr
-		}
-		// Do not requeue, as this is a terminal configuration error until the user fixes it
-		return ctrl.Result{}, nil
-	}
-
-	// Derive the admin token from the already-fetched secret (no second Get),
-	// preserving AdminToken's key/defaulting behavior.
-	adminToken := adminSecret.Data[remoteUnleash.Spec.AdminSecret.Key]
-
-	// Check admin token
-	if len(adminToken) == 0 {
-		err := fmt.Errorf("admin token secret %q does not contain a token under key %q", remoteUnleash.Spec.AdminSecret.Name, remoteUnleash.Spec.AdminSecret.Key)
-		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Admin token is empty"); updateErr != nil {
-			return ctrl.Result{}, updateErr
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	// Create Unleash API client
-	unleashClient, err := unleashclient.NewClient(remoteUnleash.Spec.Server.URL, string(adminToken))
-	if err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, "Failed to create Unleash client"); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{}, err
 	}
 
 	stats, _, err := unleashClient.GetInstanceAdminStats(ctx)
@@ -370,16 +279,18 @@ func (r *RemoteUnleashReconciler) updateStatusSuccess(ctx context.Context, stats
 
 	// Set both conditions
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-		Status:  metav1.ConditionTrue,
-		Reason:  "Reconciling",
-		Message: "Reconciled successfully",
+		Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: remoteUnleash.Generation,
+		Reason:             "Reconciling",
+		Message:            "Reconciled successfully",
 	})
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeConnected,
-		Status:  metav1.ConditionTrue,
-		Reason:  "Reconciling",
-		Message: "Successfully connected to Unleash",
+		Type:               unleashv1.UnleashStatusConditionTypeConnected,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: remoteUnleash.Generation,
+		Reason:             "Reconciling",
+		Message:            "Successfully connected to Unleash",
 	})
 
 	// Single status update
@@ -421,16 +332,18 @@ func (r *RemoteUnleashReconciler) updateStatusConnectionFailed(ctx context.Conte
 
 	// Set both conditions in single update
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-		Status:  metav1.ConditionTrue,
-		Reason:  "Reconciling",
-		Message: "Reconciled successfully",
+		Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: remoteUnleash.Generation,
+		Reason:             "Reconciling",
+		Message:            "Reconciled successfully",
 	})
 	meta.SetStatusCondition(&remoteUnleash.Status.Conditions, metav1.Condition{
-		Type:    unleashv1.UnleashStatusConditionTypeConnected,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Reconciling",
-		Message: message,
+		Type:               unleashv1.UnleashStatusConditionTypeConnected,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: remoteUnleash.Generation,
+		Reason:             "Reconciling",
+		Message:            message,
 	})
 
 	if err := r.Status().Update(ctx, remoteUnleash); err != nil {
@@ -479,6 +392,7 @@ func (r *RemoteUnleashReconciler) updateStatus(ctx context.Context, remoteUnleas
 			remoteUnleash.Status.Connected = status.Status == metav1.ConditionTrue
 		}
 
+		status.ObservedGeneration = remoteUnleash.Generation
 		meta.SetStatusCondition(&remoteUnleash.Status.Conditions, status)
 		return r.Status().Update(ctx, remoteUnleash)
 	})
@@ -512,6 +426,13 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				log.Info("Received pubsub message with no namespaces, ignoring", "status", status, "clusters", clusters)
 				return nil
 			}
+			if len(remoteUnleashes) != len(adminSecrets) {
+				return fmt.Errorf(
+					"federation payload produced %d RemoteUnleash resources and %d admin secrets",
+					len(remoteUnleashes),
+					len(adminSecrets),
+				)
+			}
 
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
@@ -531,21 +452,37 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				for i, ru := range remoteUnleashes {
 					existingRU := &unleashv1.RemoteUnleash{}
 					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
-					if err == nil {
-						if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
-							log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
-								"name", ru.Name, "namespace", ru.Namespace,
-								"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
-							continue
-						}
-					} else if !apierrors.IsNotFound(err) {
+					if apierrors.IsNotFound(err) {
+						continue
+					}
+					if err != nil {
 						if !retriableError(err) {
 							permanentError = err
 						}
 						return err
 					}
-					safeRUs = append(safeRUs, ru)
-					safeSecrets = append(safeSecrets, adminSecrets[i])
+					if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
+						log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
+							"name", ru.Name, "namespace", ru.Namespace,
+							"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
+						continue
+					}
+
+					existingSecret, err := federationAdminSecret(ctx, r.Client, existingRU)
+					if err != nil {
+						if !retriableError(err) {
+							permanentError = err
+						}
+						return err
+					}
+					if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
+						log.Info("Refusing to delete RemoteUnleash due to credential mismatch - possible hijack attempt",
+							"name", ru.Name, "namespace", ru.Namespace)
+						continue
+					}
+
+					safeRUs = append(safeRUs, existingRU)
+					safeSecrets = append(safeSecrets, existingSecret)
 				}
 
 				// Delete RemoteUnleash resources
@@ -596,10 +533,17 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				// Filter safe objects to prevent cross-namespace overwrite hijacking
 				var safeSecrets []*corev1.Secret
 				var safeRUs []*unleashv1.RemoteUnleash
+				var supersededSecrets []*corev1.Secret
 
 				for i, ru := range remoteUnleashes {
 					existingRU := &unleashv1.RemoteUnleash{}
 					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
+					if err != nil && !apierrors.IsNotFound(err) {
+						if !retriableError(err) {
+							permanentError = err
+						}
+						return err
+					}
 					if err == nil {
 						if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
 							log.Info("Refusing to overwrite RemoteUnleash due to URL mismatch - possible hijack attempt",
@@ -607,11 +551,23 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 								"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
 							continue
 						}
-					} else if !apierrors.IsNotFound(err) {
-						if !retriableError(err) {
-							permanentError = err
+
+						existingSecret, err := federationAdminSecret(ctx, r.Client, existingRU)
+						if err != nil {
+							if !retriableError(err) {
+								permanentError = err
+							}
+							return err
 						}
-						return err
+						if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
+							log.Info("Refusing to overwrite RemoteUnleash due to credential mismatch - possible hijack attempt",
+								"name", ru.Name, "namespace", ru.Namespace)
+							continue
+						}
+
+						if client.ObjectKeyFromObject(existingSecret) != client.ObjectKeyFromObject(adminSecrets[i]) {
+							supersededSecrets = append(supersededSecrets, existingSecret)
+						}
 					}
 					safeRUs = append(safeRUs, ru)
 					safeSecrets = append(safeSecrets, adminSecrets[i])
@@ -653,6 +609,15 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					}
 				}
 
+				cleanupCtx, cleanupCancel := r.Timeout.WriteContext(ctx)
+				defer cleanupCancel()
+				if errs := utils.DeleteAllObjects(cleanupCtx, r.Client, supersededSecrets); len(errs) > 0 {
+					for _, err := range errs {
+						log.Error(err, "Failed to delete superseded federation admin secret")
+					}
+					return errs[0]
+				}
+
 				remoteUnleashReceived.WithLabelValues("provisioned", "success").Inc()
 				return nil
 			default:
@@ -675,15 +640,28 @@ func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
 }
 
-// secretNameBoundToInstance reports whether an annotation-less legacy admin secret
-// name is bound to the RemoteUnleash instance name. This is defense-in-depth ONLY,
-// used as a gated legacy fallback; the authoritative confused-deputy control is the
-// authorized-namespace annotation. It accepts the exact "<prefix>-<name>" base as well
-// as any "<prefix>-<name>-..." suffix (namespace-bound, bash, and old-federation
-// formats, with or without a nonce) so migration does not hard-break existing tenants.
-func secretNameBoundToInstance(secretName, instanceName string) bool {
-	base := fmt.Sprintf("%s-%s", unleashv1.UnleashSecretNamePrefix, instanceName)
-	return secretName == base || strings.HasPrefix(secretName, base+"-")
+func federationAdminSecret(ctx context.Context, k8sClient client.Client, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	if err := k8sClient.Get(ctx, remoteUnleash.AdminSecretNamespacedName(), secret); err != nil {
+		return nil, err
+	}
+	return secret, nil
+}
+
+func federationTokensEqual(existingRU *unleashv1.RemoteUnleash, existingSecret, incomingSecret *corev1.Secret) bool {
+	existingToken := secretValue(existingSecret, existingRU.Spec.AdminSecret.Key)
+	incomingToken := secretValue(incomingSecret, unleashv1.UnleashSecretTokenKey)
+	if len(existingToken) == 0 || len(incomingToken) == 0 || len(existingToken) != len(incomingToken) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(existingToken, incomingToken) == 1
+}
+
+func secretValue(secret *corev1.Secret, key string) []byte {
+	if value := secret.Data[key]; len(value) > 0 {
+		return value
+	}
+	return []byte(secret.StringData[key])
 }
 
 // namespaceNotFoundError returns true if the error is a namespace not found error.

@@ -53,3 +53,22 @@ func TestConditionStatusIsReady(t *testing.T) {
 	ready = conditionStatusIsReady(conditions)
 	assert.False(t, ready)
 }
+
+func TestConditionStatusIsReadyForGeneration(t *testing.T) {
+	const generation = int64(2)
+	conditions := []metav1.Condition{
+		{
+			Type:               UnleashStatusConditionTypeReconciled,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: generation,
+		},
+		{
+			Type:               UnleashStatusConditionTypeConnected,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: generation,
+		},
+	}
+
+	assert.True(t, conditionStatusIsReadyForGeneration(conditions, generation))
+	assert.False(t, conditionStatusIsReadyForGeneration(conditions, generation+1))
+}

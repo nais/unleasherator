@@ -127,11 +127,13 @@ func releaseChannelResource(name, namespace, image string) *unleashv1.ReleaseCha
 }
 
 func unsetConditionLastTransitionTime(conditions []metav1.Condition) []metav1.Condition {
-	for i := range conditions {
-		conditions[i].LastTransitionTime = metav1.Time{}
+	normalized := append([]metav1.Condition(nil), conditions...)
+	for i := range normalized {
+		normalized[i].LastTransitionTime = metav1.Time{}
+		normalized[i].ObservedGeneration = 0
 	}
 
-	return conditions
+	return normalized
 }
 
 // promeGaugeVecVal returns the value of a prometheus GaugeVec
@@ -166,9 +168,7 @@ func apiTokenEventually(ctx context.Context, apiTokenLookup types.NamespacedName
 			return nil, err
 		}
 
-		unsetConditionLastTransitionTime(apiTokenCreated.Status.Conditions)
-
-		return apiTokenCreated.Status.Conditions, nil
+		return unsetConditionLastTransitionTime(apiTokenCreated.Status.Conditions), nil
 	}
 }
 
@@ -199,9 +199,7 @@ func remoteUnleashEventually(ctx context.Context, remoteUNleashLookup types.Name
 			return nil, err
 		}
 
-		unsetConditionLastTransitionTime(remoteUnleashCreated.Status.Conditions)
-
-		return remoteUnleashCreated.Status.Conditions, nil
+		return unsetConditionLastTransitionTime(remoteUnleashCreated.Status.Conditions), nil
 	}
 }
 

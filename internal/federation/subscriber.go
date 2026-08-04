@@ -2,7 +2,7 @@ package federation
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 
@@ -108,24 +108,17 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		return err
 	}
 
-	// The nonce disambiguates and obscures secret names. When the publisher does
-	// not supply one, generate a cryptographically-random nonce ONCE for this
-	// message. A predictable fallback (e.g. "default") would make namespace-bound
-	// secret names fully guessable and undermine the legacy defense-in-depth.
-	// Because this subscriber is the sole generator of both the secret name and the
-	// matching RemoteUnleash reference in a single pass, a fresh random value stays
-	// internally consistent.
 	secretNonce := instance.GetSecretNonce()
 	if secretNonce == "" {
-		nonce, err := randomNonce()
+		nonce, err := stableNonce(instance)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			log.Error(err, "generate random secret nonce")
+			log.Error(err, "derive stable secret nonce")
 			return err
 		}
 		secretNonce = nonce
-		log.Info("secret nonce not set, generated random nonce")
+		log.Info("secret nonce not set, derived stable nonce")
 	}
 
 	var (
@@ -170,13 +163,19 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
 }
 
-// randomNonce returns a cryptographically-random hex nonce.
-func randomNonce() (string, error) {
-	b := make([]byte, 6) // 12 hex characters
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("read random bytes for secret nonce: %w", err)
+func stableNonce(instance *pb.Instance) (string, error) {
+	if instance.GetSecretToken() == "" {
+		return "", fmt.Errorf("cannot derive stable nonce without an admin token")
 	}
-	return hex.EncodeToString(b), nil
+
+	hash := sha256.New()
+	hash.Write([]byte(instance.GetName()))
+	hash.Write([]byte{0})
+	hash.Write([]byte(instance.GetUrl()))
+	hash.Write([]byte{0})
+	hash.Write([]byte(instance.GetSecretToken()))
+
+	return hex.EncodeToString(hash.Sum(nil)[:6]), nil
 }
 
 // setAuthorizedNamespace stamps the authoritative authorized-namespace annotation

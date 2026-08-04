@@ -120,7 +120,7 @@ var _ = Describe("Unleash Controller", func() {
 		// BeforeEach runs between tests when controllers are typically idle.
 		mockPublisher.ExpectedCalls = []*mock.Call{
 			mockPublisher.On("Publish", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil),
-			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything).Maybe().Return(nil),
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Maybe().Return(nil),
 		}
 		mockPublisher.Calls = nil
 
@@ -575,7 +575,7 @@ var _ = Describe("Unleash Controller", func() {
 				return unleash.Name == "test-unleash-federate"
 			}
 			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
-			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher)).Return(nil)
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{

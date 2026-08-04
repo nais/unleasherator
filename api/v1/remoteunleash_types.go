@@ -157,5 +157,5 @@ func (u *RemoteUnleash) ApiClient(ctx context.Context, client client.Client, nam
 // IsReady returns true if the Unleash instance is ready.
 // We define ready as having both the Available and Connection conditions set to true.
 func (u *RemoteUnleash) IsReady() bool {
-	return conditionStatusIsReady(u.Status.Conditions)
+	return conditionStatusIsReadyForGeneration(u.Status.Conditions, u.Generation)
 }

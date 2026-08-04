@@ -22,7 +22,7 @@ const pubsubOrderingKey = "order"
 
 type Publisher interface {
 	Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error
-	PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash) error
+	PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error
 	Close() error
 }
 
@@ -55,8 +55,8 @@ func (p *publisher) Publish(ctx context.Context, unleash *unleashv1.Unleash, api
 
 // PublishRemoved publishes a removal message for the given Unleash instance.
 // This notifies federated clusters to delete their RemoteUnleash resources.
-func (p *publisher) PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash) error {
-	instance := UnleashFederationInstanceRemoved(unleash)
+func (p *publisher) PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error {
+	instance := UnleashFederationInstanceRemoved(unleash, apiToken)
 	return p.publish(ctx, instance)
 }
 
