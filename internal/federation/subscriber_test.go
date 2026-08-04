@@ -149,8 +149,8 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecrets)
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	// The empty-nonce path generates a random nonce, so assert on the stable
-	// name prefix/shape rather than an exact (predictable) value.
+	// The empty-nonce path derives a stable nonce, so assert on the generated
+	// name shape here; stableNonce has exact-value coverage separately.
 	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-namespace-a-admin-key-"),
 		"unexpected secret name %q", capturedAdminSecrets[0].Name)
 	assert.Greater(t, len(capturedAdminSecrets[0].Name), len("unleasherator-test-instance-namespace-a-admin-key-"))

@@ -450,17 +450,20 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 
 		token, err := cr.AdminToken(ctx, r.Client, r.OperatorNamespace)
 		if err != nil {
-			return fmt.Errorf("fetch admin token for federation removal: %w", err)
-		}
-
-		if err := r.Federation.Publisher.PublishRemoved(ctx, cr, string(token)); err != nil {
 			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusFailed).Inc()
-			log.Error(err, "Failed to publish removal to federation - remote clusters may have orphaned RemoteUnleash resources")
+			log.Error(err, "Failed to fetch admin token for federation removal - remote clusters may have orphaned RemoteUnleash resources")
 			r.Recorder.Event(cr, "Warning", "FederationPublishFailed",
-				fmt.Sprintf("Failed to publish removal to federation: %v", err))
+				fmt.Sprintf("Failed to fetch admin token for federation removal: %v", err))
 		} else {
-			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSuccess).Inc()
-			log.Info("Successfully published removal message to federation")
+			if err := r.Federation.Publisher.PublishRemoved(ctx, cr, string(token)); err != nil {
+				unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusFailed).Inc()
+				log.Error(err, "Failed to publish removal to federation - remote clusters may have orphaned RemoteUnleash resources")
+				r.Recorder.Event(cr, "Warning", "FederationPublishFailed",
+					fmt.Sprintf("Failed to publish removal to federation: %v", err))
+			} else {
+				unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSuccess).Inc()
+				log.Info("Successfully published removal message to federation")
+			}
 		}
 	}
 
