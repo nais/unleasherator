@@ -224,10 +224,7 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if updateErr := r.updateStatusReconcileFailed(ctx, remoteUnleash, nil, err, message); updateErr != nil {
 			return ctrl.Result{}, updateErr
 		}
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
-		}
-		return ctrl.Result{}, nil
+		return remoteUnleashClientErrorResult(err)
 	}
 
 	stats, _, err := unleashClient.GetInstanceAdminStats(ctx)
@@ -247,6 +244,19 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(remoteUnleashRequeueAfter, remoteUnleashRequeueJitter)}, nil
+}
+
+func remoteUnleashClientErrorResult(err error) (ctrl.Result, error) {
+	switch {
+	case apierrors.IsNotFound(err):
+		return ctrl.Result{RequeueAfter: remoteUnleashErrorRetryDelay}, nil
+	case errors.Is(err, errRemoteUnleashAuthorization),
+		errors.Is(err, errRemoteUnleashServerURL),
+		errors.Is(err, errRemoteUnleashEmptyToken):
+		return ctrl.Result{}, nil
+	default:
+		return ctrl.Result{}, err
+	}
 }
 
 func (r *RemoteUnleashReconciler) updateStatusSuccess(ctx context.Context, stats *unleashclient.InstanceAdminStatsResult, remoteUnleash *unleashv1.RemoteUnleash) error {

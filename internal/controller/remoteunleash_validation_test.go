@@ -8,8 +8,10 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -79,4 +81,35 @@ func TestValidatedRemoteUnleashAdminTokenRejectsURLSubstitution(t *testing.T) {
 		false,
 	)
 	assert.True(t, errors.Is(err, errRemoteUnleashAuthorization))
+}
+
+func TestRemoteUnleashClientErrorResult(t *testing.T) {
+	transientErr := errors.New("temporary Kubernetes API failure")
+	notFoundErr := apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, "admin-secret")
+
+	tests := []struct {
+		name         string
+		err          error
+		wantRequeue  bool
+		wantReturned error
+	}{
+		{name: "missing secret is retried", err: notFoundErr, wantRequeue: true},
+		{name: "authorization failure is terminal", err: errRemoteUnleashAuthorization},
+		{name: "server URL failure is terminal", err: errRemoteUnleashServerURL},
+		{name: "empty token failure is terminal", err: errRemoteUnleashEmptyToken},
+		{name: "transient failure is returned", err: transientErr, wantReturned: transientErr},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := remoteUnleashClientErrorResult(tt.err)
+
+			assert.Equal(t, tt.wantRequeue, result.RequeueAfter > 0)
+			if tt.wantReturned == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, tt.wantReturned)
+			}
+		})
+	}
 }
