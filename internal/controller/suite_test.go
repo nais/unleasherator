@@ -32,6 +32,7 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 const namespace = "default"
+const managerShutdownTimeout = 30 * time.Second
 
 var (
 	cfg                     *rest.Config
@@ -39,6 +40,7 @@ var (
 	testEnv                 *envtest.Environment
 	ctx                     context.Context
 	cancel                  context.CancelFunc
+	managerDone             chan error
 	remoteUnleashReconciler *RemoteUnleashReconciler
 	ApiTokenNameSuffix      = "unleasherator"
 	mockSubscriber          = &mockfederation.MockSubscriber{}
@@ -185,20 +187,23 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	managerDone = make(chan error, 1)
 	go func() {
-		defer GinkgoRecover()
-		err = k8sManager.Start(ctx)
-		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+		managerDone <- k8sManager.Start(ctx)
 	}()
 })
 
 var _ = AfterSuite(func() {
 	cancel()
+	select {
+	case err := <-managerDone:
+		Expect(err).ToNot(HaveOccurred(), "failed to stop manager")
+	case <-time.After(managerShutdownTimeout):
+		Fail("timed out waiting for manager to stop")
+	}
+
+	// Restoring http.DefaultTransport is safe only after every controller has stopped.
 	httpmock.DeactivateAndReset()
-	// Give the manager goroutines time to shut down after context cancellation.
-	// Without this, HTTP2 watch streams from informers don't close cleanly,
-	// leaving goroutines stuck in sync.Cond.Wait that can cause test timeouts.
-	time.Sleep(100 * time.Millisecond)
 	By("tearing down the test environment")
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
