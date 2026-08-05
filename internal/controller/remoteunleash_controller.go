@@ -586,7 +586,18 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						}
 
 						if client.ObjectKeyFromObject(existingSecret) != client.ObjectKeyFromObject(adminSecrets[i]) {
-							supersededSecrets[client.ObjectKeyFromObject(existingSecret)] = existingSecret
+							referencedByOther, err := federationAdminSecretReferencedByOtherRemoteUnleash(
+								ctx,
+								r.APIReader,
+								client.ObjectKeyFromObject(existingSecret),
+								client.ObjectKeyFromObject(existingRU),
+							)
+							if err != nil {
+								return err
+							}
+							if !referencedByOther {
+								supersededSecrets[client.ObjectKeyFromObject(existingSecret)] = existingSecret
+							}
 						}
 					}
 
@@ -775,6 +786,27 @@ func federationAdminSecretReferences(ctx context.Context, k8sClient client.Reade
 		references[remoteUnleashes.Items[i].AdminSecretNamespacedName()] = struct{}{}
 	}
 	return references, nil
+}
+
+func federationAdminSecretReferencedByOtherRemoteUnleash(
+	ctx context.Context,
+	k8sClient client.Reader,
+	secretKey client.ObjectKey,
+	currentRemoteUnleashKey client.ObjectKey,
+) (bool, error) {
+	remoteUnleashes := &unleashv1.RemoteUnleashList{}
+	if err := k8sClient.List(ctx, remoteUnleashes); err != nil {
+		return false, err
+	}
+
+	for i := range remoteUnleashes.Items {
+		remoteUnleash := &remoteUnleashes.Items[i]
+		if client.ObjectKeyFromObject(remoteUnleash) != currentRemoteUnleashKey &&
+			remoteUnleash.AdminSecretNamespacedName() == secretKey {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func secretValue(secret *corev1.Secret, key string) []byte {
