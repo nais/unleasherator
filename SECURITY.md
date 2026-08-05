@@ -120,6 +120,8 @@ Deploying the migration code does not change the federation hash. Existing insta
 1. Deploy with `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false` and `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`.
 2. In Fasit, open **Features → unleasherator → `<tenant>` / `<subscriber environment>`**. Enable namespace-bound generation and keep legacy validation enabled. The breadcrumb must not end in `/ management`.
 3. Select a small canary batch on the management cluster. Run `hack/federation-migration-canary.sh` for each `Unleash`; the script confirms both contexts, resets `.status.lastPublishedHash`, changes a metadata label, and verifies subscriber convergence. A status-only update is filtered by the controller and does not trigger publication.
+   Label each approved source instance with `unleasherator.nais.io/federation-smoke-test=true` before running the script; unlabelled instances are never eligible in any environment. Run `hack/federation-migration-canary.sh --preflight` first to validate contexts, feature flags, namespace, and candidates without mutations. In production, the dedicated canary namespace must already exist through the normal namespace workflow. Production burst testing is disabled by default.
+   Before replay, the script also refuses migration when another `RemoteUnleash` references the same legacy secret. Deploy a version that preserves shared legacy secrets, or retire stale references, before continuing.
 4. Verify before expanding the batch:
    - Every federated `RemoteUnleash` references the operator namespace.
    - The referenced secret has the expected authorized-namespace annotation and URL.

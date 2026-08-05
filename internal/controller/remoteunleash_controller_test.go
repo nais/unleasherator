@@ -601,6 +601,103 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(replacementSecret), &corev1.Secret{})).ShouldNot(Succeed())
 		})
 
+		It("Should preserve a legacy operator secret referenced by another RemoteUnleash during migration", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			handlerCh := make(chan federation.Handler, 1)
+			blockSubscribe := make(chan time.Time)
+			DeferCleanup(func() { close(blockSubscribe) })
+			mockSubscriber.On("Subscribe", mock.Anything, mock.MatchedBy(func(h federation.Handler) bool {
+				select {
+				case handlerCh <- h:
+				default:
+				}
+				return true
+			})).Once().WaitUntil(blockSubscribe).Return(nil)
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- remoteUnleashReconciler.FederationSubscribe(ctx)
+			}()
+
+			var handler federation.Handler
+			Eventually(handlerCh, timeout, interval).Should(Receive(&handler))
+			Consistently(errCh).ShouldNot(Receive(), "FederationSubscribe should not return early")
+
+			name := "test-unleash-shared-secret"
+			clusters := []string{"test-cluster"}
+			otherNamespace := RemoteUnleashNamespace + "-other"
+			Expect(k8sClient.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: otherNamespace},
+			})).Should(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: otherNamespace},
+				})
+			})
+
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+			legacySecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-admin-key",
+				remoteUnleashReconciler.OperatorNamespace,
+				RemoteUnleashToken,
+				remoteUnleashURL,
+			)
+			Expect(k8sClient.Create(ctx, legacySecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, legacySecret) })
+
+			_, migratingRU := remoteUnleashResource(
+				name,
+				RemoteUnleashNamespace,
+				remoteUnleashURL,
+				legacySecret,
+			)
+			migratingRU.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+			Expect(k8sClient.Create(ctx, migratingRU)).Should(Succeed())
+
+			_, otherRU := remoteUnleashResource(name, otherNamespace, remoteUnleashURL, legacySecret)
+			otherRU.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+			Expect(k8sClient.Create(ctx, otherRU)).Should(Succeed())
+
+			replacementSecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-"+RemoteUnleashNamespace+"-admin-key-new",
+				remoteUnleashReconciler.OperatorNamespace,
+				RemoteUnleashToken,
+				remoteUnleashURL,
+			)
+			replacementSecret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: RemoteUnleashNamespace,
+			}
+			_, replacementRU := remoteUnleashResource(
+				name,
+				RemoteUnleashNamespace,
+				remoteUnleashURL,
+				replacementSecret,
+			)
+			replacementRU.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			Expect(handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{replacementRU},
+				[]*corev1.Secret{replacementSecret},
+				clusters,
+				pb.Status_Provisioned,
+			)).To(Succeed())
+
+			Expect(k8sClient.Get(
+				ctx,
+				client.ObjectKeyFromObject(legacySecret),
+				&corev1.Secret{},
+			)).To(Succeed(), "shared legacy secret must remain for the other RemoteUnleash")
+
+			fetchedOtherRU := &unleashv1.RemoteUnleash{}
+			Expect(k8sClient.Get(ctx, otherRU.NamespacedName(), fetchedOtherRU)).To(Succeed())
+			Expect(fetchedOtherRU.AdminSecretNamespacedName()).To(Equal(client.ObjectKeyFromObject(legacySecret)))
+		})
+
 		It("Should handle RemoteUnleash namespace not existing", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
