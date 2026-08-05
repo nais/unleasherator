@@ -118,7 +118,7 @@ Once migration is complete, set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`.
 Deploying the migration code does not change the federation hash. Existing instances are only republished after an explicit operator action:
 
 1. Deploy with `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false` and `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`.
-2. Enable namespace-bound secrets on one subscriber cluster.
+2. In Fasit, enable namespace-bound generation on one subscriber target. Keep legacy validation enabled.
 3. Select a small canary batch on the management cluster. For each `Unleash`, set `.status.lastPublishedHash` to `0`, then change a metadata label. A status-only update is filtered by the controller and does not trigger publication.
 4. Verify before expanding the batch:
    - Every federated `RemoteUnleash` references the operator namespace.
@@ -128,8 +128,24 @@ Deploying the migration code does not change the federation hash. Existing insta
    - Federation publish and receive failure alerts remain clear.
 5. Expand in bounded batches, with a soak period between batches.
 6. Audit all federated resources. There must be no same-namespace admin-secret references and no legacy managed admin secrets before disabling legacy compatibility.
-7. Set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`, soak, and remove the fallback only in a later release.
+7. In Fasit, keep namespace-bound generation enabled and set legacy validation to `false` on audited subscriber targets. Soak before expanding this setting. Remove the fallback only in a later release.
 
-Stop a batch when federation failures or rejections increase, a migrated resource is not ready, the new secret binding is invalid, or cleanup does not converge on redelivery. Disable namespace-bound generation to stop further migration. Do not roll back the binary until migrated `RemoteUnleash` resources have been proven compatible with the target version.
+Use these Fasit values:
+
+| Rollout step | Fasit target | `featureFederationNamespaceBoundSecrets` | `featureAllowLegacyNameBoundSecrets` |
+| --- | --- | --- | --- |
+| 1. Initial deploy | All targets | `false` (chart default) | `true` (chart default) |
+| 2. Subscriber canary | One subscriber target | `true` | `true` |
+| 3–5. Replay and expand | Each subscriber target before its batch | `true` | `true` |
+| 7. Enforce after audit | Audited subscriber targets only | `true` | `false` |
+
+The full Fasit paths are:
+
+- `controllerManager.manager.env.featureFederationNamespaceBoundSecrets`
+- `controllerManager.manager.env.featureAllowLegacyNameBoundSecrets`
+
+Do not toggle either value on management targets to trigger publication. The publisher does not use these flags, and the deploy deliberately keeps the federation hash unchanged. Trigger each canary from the management cluster with the explicit hash-reset and label-change procedure in step 3.
+
+Stop a batch when federation failures or rejections increase, a migrated resource is not ready, the new secret binding is invalid, or cleanup does not converge on redelivery. Before step 7, stop further migration by setting namespace-bound generation back to `false` on the affected subscriber target while leaving legacy validation `true`; do not replay more instances. After step 7, restore legacy validation to `true` before other rollback actions. The application rejects the invalid `false`/`false` combination at startup. Do not roll back the binary until migrated `RemoteUnleash` resources have been proven compatible with the target version.
 
 This migration relocates the existing credential; it does not rotate it. A tenant that could previously read an admin token may retain a copy after the secret is removed. Credential revocation requires a separate authorized rotation protocol because federation updates deliberately reject token substitution.
