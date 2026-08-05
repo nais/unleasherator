@@ -119,7 +119,7 @@ Deploying the migration code does not change the federation hash. Existing insta
 
 1. Deploy with `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false` and `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`.
 2. In Fasit, open **Features → unleasherator → `<tenant>` / `<subscriber environment>`**. Enable namespace-bound generation and keep legacy validation enabled. The breadcrumb must not end in `/ management`.
-3. Select a small canary batch on the management cluster. For each `Unleash`, set `.status.lastPublishedHash` to `0`, then change a metadata label. A status-only update is filtered by the controller and does not trigger publication.
+3. Select a small canary batch on the management cluster. Run `hack/federation-migration-canary.sh` for each `Unleash`; the script confirms both contexts, resets `.status.lastPublishedHash`, changes a metadata label, and verifies subscriber convergence. A status-only update is filtered by the controller and does not trigger publication.
 4. Verify before expanding the batch:
    - Every federated `RemoteUnleash` references the operator namespace.
    - The referenced secret has the expected authorized-namespace annotation and URL.
