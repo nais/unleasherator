@@ -102,7 +102,7 @@ type UnleashFederation struct {
 //+kubebuilder:rbac:groups=unleash.nais.io,resources=unleashes/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;update;delete
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
