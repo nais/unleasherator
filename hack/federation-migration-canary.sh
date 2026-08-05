@@ -4,6 +4,7 @@ set -euo pipefail
 
 UNLEASH_NAMESPACE="${UNLEASH_NAMESPACE:-bifrost-unleash}"
 OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-nais-system}"
+FEDERATION_CLUSTER="${FEDERATION_CLUSTER:-dev}"
 
 for command in kubectl jq; do
   command -v "$command" >/dev/null || {
@@ -24,9 +25,51 @@ read -r -p "Type the management context name to continue: " confirmation
   exit 1
 }
 
-read -r -p "Subscriber context: " subscriber_context
-read -r -p "Canary Unleash name: " unleash_name
-read -r -p "Tenant namespace: " tenant_namespace
+echo
+echo "Choose the subscriber context (the cluster receiving federation events):"
+contexts=()
+while IFS= read -r context; do
+  [[ "$context" == "$management_context" ]] || contexts+=("$context")
+done < <(kubectl config get-contexts -o name)
+[[ "${#contexts[@]}" -gt 0 ]] || {
+  echo "No subscriber contexts found" >&2
+  exit 1
+}
+
+PS3="Subscriber context number: "
+select subscriber_context in "${contexts[@]}"; do
+  [[ -n "$subscriber_context" ]] && break
+  echo "Invalid selection"
+done
+
+canaries="$(kubectl -n "$UNLEASH_NAMESPACE" get unleashes.unleash.nais.io -o json |
+  jq -r --arg cluster "$FEDERATION_CLUSTER" '
+    .items[]
+    | select(.spec.federation.enabled == true)
+    | select((.spec.federation.clusters // []) | index($cluster))
+    | select((.spec.federation.namespaces | length) == 1)
+    | [.metadata.name, .spec.federation.namespaces[0]]
+    | @tsv
+  ')"
+[[ -n "$canaries" ]] || {
+  echo "No one-namespace canaries found for federation cluster $FEDERATION_CLUSTER" >&2
+  exit 1
+}
+
+echo
+echo "Choose one canary (Unleash, tenant namespace):"
+printf '%s\n' "$canaries" | nl -w2 -s'. '
+read -r -p "Canary number: " canary_number
+[[ "$canary_number" =~ ^[0-9]+$ ]] || {
+  echo "Invalid canary number" >&2
+  exit 1
+}
+canary="$(printf '%s\n' "$canaries" | sed -n "${canary_number}p")"
+[[ -n "$canary" ]] || {
+  echo "Canary number is out of range" >&2
+  exit 1
+}
+IFS=$'\t' read -r unleash_name tenant_namespace <<<"$canary"
 
 subscriber_server="$(kubectl config view --context "$subscriber_context" --minify \
   -o jsonpath='{.clusters[0].cluster.server}')"
