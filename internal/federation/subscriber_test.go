@@ -58,7 +58,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: unleashName,
 	}
 
 	res := topic.Publish(ctx, msg)
@@ -116,7 +116,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: instance.Name,
 	}
 
 	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
@@ -180,7 +180,7 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: instance.Name,
 	}
 
 	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash

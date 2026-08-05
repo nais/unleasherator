@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -63,6 +64,7 @@ func init() {
 // RemoteUnleashReconciler reconciles a RemoteUnleash object
 type RemoteUnleashReconciler struct {
 	client.Client
+	APIReader                   client.Reader
 	Scheme                      *runtime.Scheme
 	Recorder                    record.EventRecorder
 	OperatorNamespace           string
@@ -461,7 +463,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 				for i, ru := range remoteUnleashes {
 					existingRU := &unleashv1.RemoteUnleash{}
-					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
+					err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
 					if apierrors.IsNotFound(err) {
 						continue
 					}
@@ -472,13 +474,14 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						return err
 					}
 					if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
+						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace,
 							"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
 						continue
 					}
 
-					existingSecret, err := federationAdminSecret(ctx, r.Client, existingRU)
+					existingSecret, err := federationAdminSecret(ctx, r.APIReader, existingRU)
 					if err != nil {
 						if !retriableError(err) {
 							permanentError = err
@@ -486,6 +489,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						return err
 					}
 					if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
+						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to credential mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace)
 						continue
@@ -493,6 +497,10 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 					safeRUs = append(safeRUs, existingRU)
 					safeSecrets = append(safeSecrets, existingSecret)
+				}
+
+				if len(safeRUs) == 0 {
+					return nil
 				}
 
 				// Delete RemoteUnleash resources
@@ -543,11 +551,11 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				// Filter safe objects to prevent cross-namespace overwrite hijacking
 				var safeSecrets []*corev1.Secret
 				var safeRUs []*unleashv1.RemoteUnleash
-				var supersededSecrets []*corev1.Secret
+				supersededSecrets := make(map[client.ObjectKey]*corev1.Secret)
 
 				for i, ru := range remoteUnleashes {
 					existingRU := &unleashv1.RemoteUnleash{}
-					err := r.Client.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
+					err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
 					if err != nil && !apierrors.IsNotFound(err) {
 						if !retriableError(err) {
 							permanentError = err
@@ -556,13 +564,14 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					}
 					if err == nil {
 						if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
+							remoteUnleashReceived.WithLabelValues("provisioned", "rejected").Inc()
 							log.Info("Refusing to overwrite RemoteUnleash due to URL mismatch - possible hijack attempt",
 								"name", ru.Name, "namespace", ru.Namespace,
 								"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
 							continue
 						}
 
-						existingSecret, err := federationAdminSecret(ctx, r.Client, existingRU)
+						existingSecret, err := federationAdminSecret(ctx, r.APIReader, existingRU)
 						if err != nil {
 							if !retriableError(err) {
 								permanentError = err
@@ -570,17 +579,37 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 							return err
 						}
 						if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
+							remoteUnleashReceived.WithLabelValues("provisioned", "rejected").Inc()
 							log.Info("Refusing to overwrite RemoteUnleash due to credential mismatch - possible hijack attempt",
 								"name", ru.Name, "namespace", ru.Namespace)
 							continue
 						}
 
 						if client.ObjectKeyFromObject(existingSecret) != client.ObjectKeyFromObject(adminSecrets[i]) {
-							supersededSecrets = append(supersededSecrets, existingSecret)
+							supersededSecrets[client.ObjectKeyFromObject(existingSecret)] = existingSecret
 						}
 					}
+
+					discoveredSecrets, err := federationSupersededAdminSecrets(
+						ctx,
+						r.APIReader,
+						ru,
+						adminSecrets[i],
+						r.OperatorNamespace,
+					)
+					if err != nil {
+						return err
+					}
+					for _, secret := range discoveredSecrets {
+						supersededSecrets[client.ObjectKeyFromObject(secret)] = secret
+					}
+
 					safeRUs = append(safeRUs, ru)
 					safeSecrets = append(safeSecrets, adminSecrets[i])
+				}
+
+				if len(safeRUs) == 0 {
+					return nil
 				}
 
 				secretCtx, secretCancel := r.Timeout.WriteContext(ctx)
@@ -621,8 +650,13 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 				cleanupCtx, cleanupCancel := r.Timeout.WriteContext(ctx)
 				defer cleanupCancel()
-				if errs := utils.DeleteAllObjects(cleanupCtx, r.Client, supersededSecrets); len(errs) > 0 {
+				secretsToDelete := make([]*corev1.Secret, 0, len(supersededSecrets))
+				for _, secret := range supersededSecrets {
+					secretsToDelete = append(secretsToDelete, secret)
+				}
+				if errs := utils.DeleteAllObjects(cleanupCtx, r.Client, secretsToDelete); len(errs) > 0 {
 					for _, err := range errs {
+						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 						log.Error(err, "Failed to delete superseded federation admin secret")
 					}
 					return errs[0]
@@ -650,7 +684,7 @@ func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
 }
 
-func federationAdminSecret(ctx context.Context, k8sClient client.Client, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {
+func federationAdminSecret(ctx context.Context, k8sClient client.Reader, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {
 	secret := &corev1.Secret{}
 	if err := k8sClient.Get(ctx, remoteUnleash.AdminSecretNamespacedName(), secret); err != nil {
 		return nil, err
@@ -665,6 +699,82 @@ func federationTokensEqual(existingRU *unleashv1.RemoteUnleash, existingSecret, 
 		return false
 	}
 	return subtle.ConstantTimeCompare(existingToken, incomingToken) == 1
+}
+
+func federationSupersededAdminSecrets(
+	ctx context.Context,
+	k8sClient client.Reader,
+	remoteUnleash *unleashv1.RemoteUnleash,
+	currentSecret *corev1.Secret,
+	operatorNamespace string,
+) ([]*corev1.Secret, error) {
+	namespaces := []string{remoteUnleash.Namespace}
+	if operatorNamespace != remoteUnleash.Namespace {
+		namespaces = append(namespaces, operatorNamespace)
+	}
+
+	currentKey := client.ObjectKeyFromObject(currentSecret)
+	superseded := make([]*corev1.Secret, 0)
+	var referencedSecrets map[client.ObjectKey]struct{}
+	for _, namespace := range namespaces {
+		secrets := &corev1.SecretList{}
+		if err := k8sClient.List(
+			ctx,
+			secrets,
+			client.InNamespace(namespace),
+			client.MatchingLabels{
+				"app.kubernetes.io/instance":   remoteUnleash.Name,
+				"app.kubernetes.io/part-of":    "unleasherator",
+				"app.kubernetes.io/created-by": "controller-manager",
+			},
+		); err != nil {
+			return nil, err
+		}
+
+		for i := range secrets.Items {
+			candidate := &secrets.Items[i]
+			if client.ObjectKeyFromObject(candidate) == currentKey ||
+				!strings.HasPrefix(candidate.Name, unleashv1.UnleashSecretNamePrefix+"-") {
+				continue
+			}
+			if namespace == operatorNamespace {
+				authorizedNamespace, annotated := candidate.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation]
+				if annotated && authorizedNamespace != remoteUnleash.Namespace {
+					continue
+				}
+				if !annotated {
+					if referencedSecrets == nil {
+						var err error
+						referencedSecrets, err = federationAdminSecretReferences(ctx, k8sClient)
+						if err != nil {
+							return nil, err
+						}
+					}
+					if _, referenced := referencedSecrets[client.ObjectKeyFromObject(candidate)]; referenced {
+						continue
+					}
+				}
+			}
+			if federationTokensEqual(remoteUnleash, candidate, currentSecret) {
+				superseded = append(superseded, candidate)
+			}
+		}
+	}
+
+	return superseded, nil
+}
+
+func federationAdminSecretReferences(ctx context.Context, k8sClient client.Reader) (map[client.ObjectKey]struct{}, error) {
+	remoteUnleashes := &unleashv1.RemoteUnleashList{}
+	if err := k8sClient.List(ctx, remoteUnleashes); err != nil {
+		return nil, err
+	}
+
+	references := make(map[client.ObjectKey]struct{}, len(remoteUnleashes.Items))
+	for i := range remoteUnleashes.Items {
+		references[remoteUnleashes.Items[i].AdminSecretNamespacedName()] = struct{}{}
+	}
+	return references, nil
 }
 
 func secretValue(secret *corev1.Secret, key string) []byte {

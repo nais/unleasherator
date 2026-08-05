@@ -112,3 +112,24 @@ For namespace-bound managed secrets the nonce is defense-in-depth only. The `unl
 `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS` makes the subscriber write managed secrets into the operator namespace carrying the authorized-namespace annotation. `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS` (default `true` during migration) keeps accepting annotation-less cross-namespace secrets via the relaxed name-binding fallback so existing tenants are not hard-broken — including the previously-rejected exact `unleasherator-<name>-admin-key` form.
 
 Once migration is complete, set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`. From then on, only annotation-bearing secrets whose annotation matches the requesting namespace are accepted for cross-namespace references, and every such secret must carry a matching `url` key (fail-closed URL validation). Name parsing plays no part in the security decision at that point.
+
+#### Production rollout
+
+Deploying the migration code does not change the federation hash. Existing instances are only republished after an explicit operator action:
+
+1. Deploy with `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false` and `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`.
+2. Enable namespace-bound secrets on one subscriber cluster.
+3. Select a small canary batch on the management cluster. For each `Unleash`, set `.status.lastPublishedHash` to `0`, then change a metadata label. A status-only update is filtered by the controller and does not trigger publication.
+4. Verify before expanding the batch:
+   - Every federated `RemoteUnleash` references the operator namespace.
+   - The referenced secret has the expected authorized-namespace annotation and URL.
+   - `RemoteUnleash` readiness and API token provisioning remain healthy.
+   - The previous tenant-namespace secret has been removed.
+   - Federation publish and receive failure alerts remain clear.
+5. Expand in bounded batches, with a soak period between batches.
+6. Audit all federated resources. There must be no same-namespace admin-secret references and no legacy managed admin secrets before disabling legacy compatibility.
+7. Set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`, soak, and remove the fallback only in a later release.
+
+Stop a batch when federation failures or rejections increase, a migrated resource is not ready, the new secret binding is invalid, or cleanup does not converge on redelivery. Disable namespace-bound generation to stop further migration. Do not roll back the binary until migrated `RemoteUnleash` resources have been proven compatible with the target version.
+
+This migration relocates the existing credential; it does not rotate it. A tenant that could previously read an admin token may retain a copy after the secret is removed. Credential revocation requires a separate authorized rotation protocol because federation updates deliberately reject token substitution.

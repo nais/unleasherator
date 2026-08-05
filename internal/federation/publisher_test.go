@@ -68,6 +68,7 @@ func TestPublisherPublish(t *testing.T) {
 			assert.Equal(t, apiToken, instance.SecretToken)
 			assert.Equal(t, []string{"namespace-1", "namespace-2"}, instance.Namespaces)
 			assert.Equal(t, []string{"cluster-1", "cluster-2"}, instance.Clusters)
+			assert.Equal(t, unleashName, msg.OrderingKey)
 
 			received <- true
 		})

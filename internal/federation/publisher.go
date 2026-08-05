@@ -18,8 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const pubsubOrderingKey = "order"
-
 type Publisher interface {
 	Publish(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error
 	PublishRemoved(ctx context.Context, unleash *unleashv1.Unleash, apiToken string) error
@@ -69,11 +67,14 @@ func (p *publisher) publish(ctx context.Context, instance *pb.Instance) error {
 		return fmt.Errorf("marshal protobuf message: %w", err)
 	}
 
+	orderingKey := instance.GetName()
+	p.topic.ResumePublish(orderingKey)
+
 	msg := &pubsub.Message{
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: orderingKey,
 		Attributes:  make(map[string]string),
 	}
 
@@ -102,8 +103,5 @@ func (p *publisher) publish(ctx context.Context, instance *pb.Instance) error {
 }
 
 func NewPublisher(client *pubsub.Client, topic *pubsub.Topic) Publisher {
-	// Fix for the following pubsub error, this clears the ordering key for the topic when the publisher is created
-	// pubsub: Publishing for ordering key, order, paused due to previous error. Call topic.ResumePublish(orderingKey) before resuming publishing
-	topic.ResumePublish(pubsubOrderingKey)
 	return &publisher{client: client, topic: topic}
 }

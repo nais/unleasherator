@@ -83,6 +83,10 @@ func TestComputeInstanceHash(t *testing.T) {
 
 	hash := ComputeInstanceHash(instance)
 
+	// Keep this compatible with the deployed hash algorithm. Changing this value
+	// causes every instance to republish on the next controller deployment.
+	assert.Equal(t, int64(3433377321819348673), hash)
+
 	// Hash must be deterministic for identical data, independent of any runtime flag.
 	assert.Equal(t, hash, ComputeInstanceHash(instance), "hash should be deterministic")
 

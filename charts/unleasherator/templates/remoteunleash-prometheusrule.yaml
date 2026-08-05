@@ -123,7 +123,7 @@ spec:
         - alert: RemoteUnleashFederationReceiveFailing
           expr: |
             (
-              sum(rate(unleasherator_federation_received_total{status="error"}[15m]))
+              sum(rate(unleasherator_federation_received_total{status=~"failed|rejected"}[15m]))
               /
               (sum(rate(unleasherator_federation_received_total[15m])) > 0)
             ) > {{ $alerts.federationReceiveFailing.threshold }}

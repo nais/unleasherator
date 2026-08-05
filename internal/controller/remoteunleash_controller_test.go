@@ -16,6 +16,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/federation"
 	"github.com/nais/unleasherator/internal/pb"
+	"github.com/nais/unleasherator/internal/resources"
 )
 
 func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
@@ -505,10 +506,16 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			By("By migrating an authorized secret without orphaning the old credential")
 			replacementSecret := secret.DeepCopy()
 			replacementSecret.Name += "-replacement"
+			replacementSecret.Namespace = namespace
 			replacementSecret.ResourceVersion = ""
 			replacementSecret.UID = ""
 			replacementSecret.CreationTimestamp = metav1.Time{}
+			replacementSecret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: namespaces[0],
+			}
+			replacementSecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(legitimateURL)
 			_, replacementRU := remoteUnleashResource(name, namespaces[0], legitimateURL, replacementSecret)
+			replacementRU.Spec.AdminSecret.Namespace = replacementSecret.Namespace
 
 			err = handler(
 				ctx,
@@ -522,7 +529,59 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			Eventually(func() error {
 				return k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &corev1.Secret{})
 			}, timeout, interval).Should(HaveOccurred())
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(replacementSecret), &corev1.Secret{})).Should(Succeed())
+			Eventually(func() error {
+				return remoteUnleashReconciler.APIReader.Get(
+					ctx,
+					client.ObjectKeyFromObject(replacementSecret),
+					&corev1.Secret{},
+				)
+			}, timeout, interval).Should(Succeed())
+
+			By("By converging cleanup after an earlier secret deletion failure")
+			orphanedLegacySecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-orphaned",
+				namespaces[0],
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			Expect(k8sClient.Create(ctx, orphanedLegacySecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, orphanedLegacySecret) })
+
+			orphanedOperatorSecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-orphaned-operator",
+				namespace,
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			Expect(k8sClient.Create(ctx, orphanedOperatorSecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, orphanedOperatorSecret) })
+
+			otherTenantSecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-other-tenant",
+				namespace,
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			otherTenantSecret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: "other-tenant",
+			}
+			Expect(k8sClient.Create(ctx, otherTenantSecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, otherTenantSecret) })
+
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{replacementRU},
+				[]*corev1.Secret{replacementSecret},
+				clusters,
+				pb.Status_Provisioned,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(orphanedLegacySecret), &corev1.Secret{})).ShouldNot(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(orphanedOperatorSecret), &corev1.Secret{})).ShouldNot(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(otherTenantSecret), &corev1.Secret{})).Should(Succeed())
 
 			By("By deleting the currently referenced secret regardless of incoming secret name")
 			removalSecret := replacementSecret.DeepCopy()

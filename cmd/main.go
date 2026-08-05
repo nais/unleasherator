@@ -121,6 +121,7 @@ func main() {
 	}
 	remoteUnleashReconciler := &controller.RemoteUnleashReconciler{
 		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
