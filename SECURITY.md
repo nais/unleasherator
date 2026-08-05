@@ -118,7 +118,7 @@ Once migration is complete, set `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=false`.
 Deploying the migration code does not change the federation hash. Existing instances are only republished after an explicit operator action:
 
 1. Deploy with `FEATURE_FEDERATION_NAMESPACE_BOUND_SECRETS=false` and `FEATURE_ALLOW_LEGACY_NAME_BOUND_SECRETS=true`.
-2. In Fasit, enable namespace-bound generation on one subscriber target. Keep legacy validation enabled.
+2. In Fasit, open **Features → unleasherator → `<tenant>` / `<subscriber environment>`**. Enable namespace-bound generation and keep legacy validation enabled. The breadcrumb must not end in `/ management`.
 3. Select a small canary batch on the management cluster. For each `Unleash`, set `.status.lastPublishedHash` to `0`, then change a metadata label. A status-only update is filtered by the controller and does not trigger publication.
 4. Verify before expanding the batch:
    - Every federated `RemoteUnleash` references the operator namespace.
@@ -139,12 +139,21 @@ Use these Fasit values:
 | 3–5. Replay and expand | Each subscriber target before its batch | `true` | `true` |
 | 7. Enforce after audit | Audited subscriber targets only | `true` | `false` |
 
+Before saving a Fasit override, verify all of the following:
+
+- The target kind is `tenant`, `onprem`, or another subscriber kind.
+- The breadcrumb does **not** end in `/ management`.
+- Namespace-bound generation is `true`.
+- Legacy validation remains `true` until step 7.
+
+The migration toggles are hidden from management targets in `Feature.yaml`. If they appear on a management target from an older chart version, do not set them there; update the deployed chart first.
+
 The full Fasit paths are:
 
 - `controllerManager.manager.env.featureFederationNamespaceBoundSecrets`
 - `controllerManager.manager.env.featureAllowLegacyNameBoundSecrets`
 
-Do not toggle either value on management targets to trigger publication. The publisher does not use these flags, and the deploy deliberately keeps the federation hash unchanged. Trigger each canary from the management cluster with the explicit hash-reset and label-change procedure in step 3.
+Do not toggle either value on management targets to trigger publication. The publisher does not use these flags, and the deploy deliberately keeps the federation hash unchanged. If an override was accidentally set on management, clear it and confirm that the value returns to the chart default before continuing. Trigger each canary from the management cluster with the explicit hash-reset and label-change procedure in step 3.
 
 Stop a batch when federation failures or rejections increase, a migrated resource is not ready, the new secret binding is invalid, or cleanup does not converge on redelivery. Before step 7, stop further migration by setting namespace-bound generation back to `false` on the affected subscriber target while leaving legacy validation `true`; do not replay more instances. After step 7, restore legacy validation to `true` before other rollback actions. The application rejects the invalid `false`/`false` combination at startup. Do not roll back the binary until migrated `RemoteUnleash` resources have been proven compatible with the target version.
 

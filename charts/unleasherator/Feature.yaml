@@ -54,13 +54,17 @@ values:
   # and legacy validation is enabled. Override these per subscriber target in
   # Fasit according to SECURITY.md; management targets do not generate secrets.
   controllerManager.manager.env.featureFederationNamespaceBoundSecrets:
-    displayName: Generate namespace-bound federation secrets
+    displayName: Generate namespace-bound federation secrets (subscriber only)
     config:
       type: bool
+    ignoreKind:
+      - management
   controllerManager.manager.env.featureAllowLegacyNameBoundSecrets:
-    displayName: Allow legacy federation secrets during migration
+    displayName: Allow legacy federation secrets during migration (subscriber only)
     config:
       type: bool
+    ignoreKind:
+      - management
   # Onprem stuff
   controllerManagerGcp.serviceAccountCredentialsJson:
     computed:
