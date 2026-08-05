@@ -50,6 +50,17 @@ values:
   controllerManager.manager.env.featureApiTokenUpdateEnabled:
     config:
       type: bool
+  # Federation migration defaults come from values.yaml: generation is disabled
+  # and legacy validation is enabled. Override these per subscriber target in
+  # Fasit according to SECURITY.md; management targets do not generate secrets.
+  controllerManager.manager.env.featureFederationNamespaceBoundSecrets:
+    displayName: Generate namespace-bound federation secrets
+    config:
+      type: bool
+  controllerManager.manager.env.featureAllowLegacyNameBoundSecrets:
+    displayName: Allow legacy federation secrets during migration
+    config:
+      type: bool
   # Onprem stuff
   controllerManagerGcp.serviceAccountCredentialsJson:
     computed:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/jarcoal/httpmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,9 +19,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
+	mockfederation "github.com/nais/unleasherator/internal/federation/mockfediration"
 	"github.com/nais/unleasherator/internal/resources"
 	"github.com/nais/unleasherator/internal/unleashclient"
 )
@@ -120,7 +123,7 @@ var _ = Describe("Unleash Controller", func() {
 		// BeforeEach runs between tests when controllers are typically idle.
 		mockPublisher.ExpectedCalls = []*mock.Call{
 			mockPublisher.On("Publish", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(nil),
-			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything).Maybe().Return(nil),
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.Anything, mock.AnythingOfType("string")).Maybe().Return(nil),
 		}
 		mockPublisher.Calls = nil
 
@@ -575,7 +578,7 @@ var _ = Describe("Unleash Controller", func() {
 				return unleash.Name == "test-unleash-federate"
 			}
 			mockPublisher.On("Publish", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
-			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher)).Return(nil)
+			mockPublisher.On("PublishRemoved", mock.Anything, mock.MatchedBy(matcher), mock.AnythingOfType("string")).Return(nil)
 
 			By("By creating a new Unleash")
 			unleash := unleashResource("test-unleash-federate", UnleashNamespace, unleashv1.UnleashSpec{
@@ -634,6 +637,25 @@ var _ = Describe("Unleash Controller", func() {
 			Eventually(func() bool {
 				return mockPublisher.AssertNumberOfCalls(&silentT{}, "PublishRemoved", 1)
 			}, federationTimeout, interval).Should(BeTrue(), "federation publisher should call PublishRemoved exactly once")
+		})
+
+		It("Should complete finalization when the federation admin token is missing", func() {
+			localPublisher := &mockfederation.MockPublisher{}
+			reconciler := &UnleashReconciler{
+				Client:            k8sClient,
+				OperatorNamespace: namespace,
+				Recorder:          record.NewFakeRecorder(10),
+				Federation: UnleashFederation{
+					Enabled:   true,
+					Publisher: localPublisher,
+				},
+			}
+			unleash := unleashResource("test-unleash-finalize-without-token", UnleashNamespace, unleashv1.UnleashSpec{
+				Federation: unleashv1.UnleashFederationConfig{Enabled: true},
+			})
+
+			Expect(reconciler.doFinalizerOperationsForUnleash(unleash, ctx, logr.Discard())).To(Succeed())
+			Expect(localPublisher.AssertNumberOfCalls(GinkgoT(), "PublishRemoved", 0)).To(BeTrue())
 		})
 
 		It("Should wait for ReleaseChannel to become available instead of using default image", func() {

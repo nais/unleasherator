@@ -448,14 +448,22 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 		log.Info("Publishing removal message to federation")
 		unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSending).Inc()
 
-		if err := r.Federation.Publisher.PublishRemoved(ctx, cr); err != nil {
+		token, err := cr.AdminToken(ctx, r.Client, r.OperatorNamespace)
+		if err != nil {
 			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusFailed).Inc()
-			log.Error(err, "Failed to publish removal to federation - remote clusters may have orphaned RemoteUnleash resources")
+			log.Error(err, "Failed to fetch admin token for federation removal - remote clusters may have orphaned RemoteUnleash resources")
 			r.Recorder.Event(cr, "Warning", "FederationPublishFailed",
-				fmt.Sprintf("Failed to publish removal to federation: %v", err))
+				fmt.Sprintf("Failed to fetch admin token for federation removal: %v", err))
 		} else {
-			unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSuccess).Inc()
-			log.Info("Successfully published removal message to federation")
+			if err := r.Federation.Publisher.PublishRemoved(ctx, cr, string(token)); err != nil {
+				unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusFailed).Inc()
+				log.Error(err, "Failed to publish removal to federation - remote clusters may have orphaned RemoteUnleash resources")
+				r.Recorder.Event(cr, "Warning", "FederationPublishFailed",
+					fmt.Sprintf("Failed to publish removal to federation: %v", err))
+			} else {
+				unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSuccess).Inc()
+				log.Info("Successfully published removal message to federation")
+			}
 		}
 	}
 
@@ -689,7 +697,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 			return ctrl.Result{}, err
 		}
 
-		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey)
+		operatorSecret = resources.OperatorSecretForUnleash(unleash.GetName(), unleash.GetOperatorSecretName(), r.OperatorNamespace, adminKey, unleash.PublicApiURL())
 		log.Info("Creating Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
 		err = r.Create(ctx, operatorSecret)
 		if err != nil {
@@ -697,9 +705,33 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 		}
 	} else if err != nil {
 		return ctrl.Result{}, err
+	} else {
+		// The operator secret already exists. Its url is only written on the
+		// initial create path, so if the API ingress host later changes the
+		// stored url goes stale and permanently fails RemoteUnleash url
+		// validation with a terminal error. Refresh it here.
+		currentURL := unleash.PublicApiURL()
+		// Only refresh when we have a real URL; never write an empty/placeholder url.
+		if currentURL != "" && string(operatorSecret.Data[unleashv1.UnleashSecretServerURLKey]) != currentURL {
+			// Patch only the url key to preserve the admin token.
+			patch := client.MergeFrom(operatorSecret.DeepCopy())
+			if operatorSecret.Data == nil {
+				operatorSecret.Data = map[string][]byte{}
+			}
+			operatorSecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(currentURL)
+			log.Info("Updating stale url in Operator Secret for Unleash", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name)
+			if err := r.Patch(ctx, operatorSecret, patch); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	adminKey := string(operatorSecret.Data[unleashv1.UnleashSecretTokenKey])
+	if adminKey == "" {
+		// StringData is write-only and is populated on a newly constructed secret
+		// until a subsequent API read returns the normalized Data field.
+		adminKey = operatorSecret.StringData[unleashv1.UnleashSecretTokenKey]
+	}
 	if adminKey == "" {
 		err = fmt.Errorf("operator secret is empty for key %s", unleashv1.UnleashSecretTokenKey)
 		log.Error(err, "Failed to get admin token secret", "Secret.Namespace", operatorSecret.Namespace, "Secret.Name", operatorSecret.Name, "Secret.Key", unleashv1.UnleashSecretTokenKey)

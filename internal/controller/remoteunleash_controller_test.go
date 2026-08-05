@@ -16,6 +16,7 @@ import (
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/federation"
 	"github.com/nais/unleasherator/internal/pb"
+	"github.com/nais/unleasherator/internal/resources"
 )
 
 func getRemoteUnleash(k8sClient client.Client, ctx context.Context, remoteUnleash *unleashv1.RemoteUnleash) ([]metav1.Condition, error) {
@@ -185,6 +186,146 @@ var _ = Describe("RemoteUnleash Controller", func() {
 		})
 	})
 
+	Context("When validating AdminSecret formats", func() {
+		It("Should allow valid namespace-bound secrets", func() {
+			ctx := context.Background()
+			name := "test-valid-namespace"
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+
+			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
+			secret.Name = fmt.Sprintf("%s-%s-%s-admin-key-abc123", unleashv1.UnleashSecretNamePrefix, name, RemoteUnleashNamespace)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
+			remoteUnleash.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			created := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, created).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+		})
+
+		It("Should allow valid bash-script secrets with a nonce suffix", func() {
+			ctx := context.Background()
+			name := "test-valid-bash"
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+
+			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
+			secret.Name = fmt.Sprintf("%s-%s-admin-key-abc123", unleashv1.UnleashSecretNamePrefix, name)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
+			remoteUnleash.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			created := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, created).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+		})
+
+		It("Should allow valid old federation secrets with a nonce suffix", func() {
+			ctx := context.Background()
+			name := "test-valid-fed"
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+
+			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
+			secret.Name = fmt.Sprintf("%s-%s-abc123", unleashv1.UnleashSecretNamePrefix, name)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
+			remoteUnleash.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			created := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, created).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+		})
+
+		It("Should allow annotation-authorized secrets whose annotation matches the namespace", func() {
+			ctx := context.Background()
+			name := "test-annotation-match"
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+
+			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
+			secret.Name = fmt.Sprintf("%s-%s-%s-admin-key-abc123", unleashv1.UnleashSecretNamePrefix, name, RemoteUnleashNamespace)
+			// Authoritative annotation authorizing the requesting tenant namespace.
+			secret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: RemoteUnleashNamespace,
+			}
+			// Annotation-bearing (managed) secrets must fail closed on URL: it must be present and match.
+			secret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleashURL)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
+			remoteUnleash.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			created := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, created).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeConnected,
+				Status:  metav1.ConditionTrue,
+				Reason:  "Reconciling",
+				Message: "Successfully connected to Unleash",
+			}))
+		})
+
+		It("Should reject cross-namespace secrets whose authorized-namespace annotation does not match (Confused Deputy)", func() {
+			ctx := context.Background()
+			name := "test-annotation-mismatch"
+			remoteUnleashURL := mockRemoteUnleashURL(name, RemoteUnleashNamespace)
+
+			secret := remoteUnleashSecretResource(name, remoteUnleashReconciler.OperatorNamespace, RemoteUnleashToken)
+			// Name matches the namespace-bound format, but the AUTHORITATIVE annotation
+			// authorizes a DIFFERENT tenant namespace. The annotation cannot be bypassed
+			// by crafting the RemoteUnleash name, so this must be rejected even though
+			// AllowLegacyNameBoundSecrets is true.
+			secret.Name = fmt.Sprintf("%s-%s-%s-admin-key-abc123", unleashv1.UnleashSecretNamePrefix, name, RemoteUnleashNamespace)
+			secret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: "some-other-namespace",
+			}
+			secret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleashURL)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, secret) })
+
+			_, remoteUnleash := remoteUnleashResource(name, RemoteUnleashNamespace, remoteUnleashURL, secret)
+			remoteUnleash.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
+
+			Expect(k8sClient.Create(ctx, remoteUnleash)).Should(Succeed())
+
+			created := &unleashv1.RemoteUnleash{ObjectMeta: remoteUnleash.ObjectMeta}
+			Eventually(getRemoteUnleash, timeout, interval).WithArguments(k8sClient, ctx, created).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: "Validation failed",
+			}))
+		})
+	})
+
 	Context("When subscribing to federated Unleash", func() {
 		It("Should create RemoteUnleash if cluster matches", func() {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -262,7 +403,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			Expect(promCounterVecVal(remoteUnleashReceived, "provisioned", "success")).To(Equal(2.0))
 		})
 
-		It("Should refuse to overwrite RemoteUnleash with different URL", func() {
+		It("Should refuse URL and credential substitution of an existing RemoteUnleash", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
@@ -289,13 +430,15 @@ var _ = Describe("RemoteUnleash Controller", func() {
 
 			By("By creating an initial legitimate RemoteUnleash")
 			name := "test-unleash-hijack"
-			namespaces := []string{"default"}
+			namespaces := []string{RemoteUnleashNamespace}
 			clusters := []string{"test-cluster"}
 			legitimateURL := mockRemoteUnleashURL(name, "tenant-b")
 			secret := remoteUnleashSecretResource(name, namespaces[0], RemoteUnleashToken)
+			Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 
 			// Tenant B explicitly creates the RemoteUnleash first (or it was federated from tenant-b earlier)
 			_, legitimateRU := remoteUnleashResource(name, namespaces[0], legitimateURL, secret)
+			registerHTTPMocksForRemoteUnleash(legitimateRU, RemoteUnleashVersion)
 			Expect(k8sClient.Create(ctx, legitimateRU)).Should(Succeed())
 
 			// Wait for the object to be fully reconciled so it is present in the informer cache
@@ -331,6 +474,131 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed(), "Legitimate RemoteUnleash should not be deleted by malicious tenant")
+
+			By("By rejecting credential substitution even when the URL matches")
+			maliciousSecret := secret.DeepCopy()
+			maliciousSecret.Data[unleashv1.UnleashSecretTokenKey] = []byte("attacker-controlled-token")
+			_, sameURLMaliciousRU := remoteUnleashResource(name, namespaces[0], legitimateURL, maliciousSecret)
+
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{sameURLMaliciousRU},
+				[]*corev1.Secret{maliciousSecret},
+				clusters,
+				pb.Status_Provisioned,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			fetchedSecret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), fetchedSecret)).Should(Succeed())
+			Expect(fetchedSecret.Data[unleashv1.UnleashSecretTokenKey]).To(Equal([]byte(RemoteUnleashToken)))
+
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{sameURLMaliciousRU},
+				[]*corev1.Secret{maliciousSecret},
+				clusters,
+				pb.Status_Removed,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed(), "Credential mismatch must not authorize deletion")
+
+			By("By migrating an authorized secret without orphaning the old credential")
+			replacementSecret := secret.DeepCopy()
+			replacementSecret.Name += "-replacement"
+			replacementSecret.Namespace = namespace
+			replacementSecret.ResourceVersion = ""
+			replacementSecret.UID = ""
+			replacementSecret.CreationTimestamp = metav1.Time{}
+			replacementSecret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: namespaces[0],
+			}
+			replacementSecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(legitimateURL)
+			_, replacementRU := remoteUnleashResource(name, namespaces[0], legitimateURL, replacementSecret)
+			replacementRU.Spec.AdminSecret.Namespace = replacementSecret.Namespace
+
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{replacementRU},
+				[]*corev1.Secret{replacementSecret},
+				clusters,
+				pb.Status_Provisioned,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), &corev1.Secret{})
+			}, timeout, interval).Should(HaveOccurred())
+			Eventually(func() error {
+				return remoteUnleashReconciler.APIReader.Get(
+					ctx,
+					client.ObjectKeyFromObject(replacementSecret),
+					&corev1.Secret{},
+				)
+			}, timeout, interval).Should(Succeed())
+
+			By("By converging cleanup after an earlier secret deletion failure")
+			orphanedLegacySecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-orphaned",
+				namespaces[0],
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			Expect(k8sClient.Create(ctx, orphanedLegacySecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, orphanedLegacySecret) })
+
+			orphanedOperatorSecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-orphaned-operator",
+				namespace,
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			Expect(k8sClient.Create(ctx, orphanedOperatorSecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, orphanedOperatorSecret) })
+
+			otherTenantSecret := resources.OperatorSecretForUnleash(
+				name,
+				"unleasherator-"+name+"-other-tenant",
+				namespace,
+				RemoteUnleashToken,
+				legitimateURL,
+			)
+			otherTenantSecret.Annotations = map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: "other-tenant",
+			}
+			Expect(k8sClient.Create(ctx, otherTenantSecret)).Should(Succeed())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, otherTenantSecret) })
+
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{replacementRU},
+				[]*corev1.Secret{replacementSecret},
+				clusters,
+				pb.Status_Provisioned,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(orphanedLegacySecret), &corev1.Secret{})).ShouldNot(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(orphanedOperatorSecret), &corev1.Secret{})).ShouldNot(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(otherTenantSecret), &corev1.Secret{})).Should(Succeed())
+
+			By("By deleting the currently referenced secret regardless of incoming secret name")
+			removalSecret := replacementSecret.DeepCopy()
+			removalSecret.Name += "-different-delivery"
+			err = handler(
+				ctx,
+				[]*unleashv1.RemoteUnleash{replacementRU},
+				[]*corev1.Secret{removalSecret},
+				clusters,
+				pb.Status_Removed,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, replacementRU.NamespacedName(), &unleashv1.RemoteUnleash{})
+			}, timeout, interval).Should(HaveOccurred())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(replacementSecret), &corev1.Secret{})).ShouldNot(Succeed())
 		})
 
 		It("Should handle RemoteUnleash namespace not existing", func() {

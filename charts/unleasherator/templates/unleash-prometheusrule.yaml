@@ -140,7 +140,7 @@ spec:
         - alert: UnleashFederationPublishFailing
           expr: |
             (
-              sum(rate(unleasherator_federation_published_total{status="error"}[15m]))
+              sum(rate(unleasherator_federation_published_total{status="failed"}[15m]))
               /
               (sum(rate(unleasherator_federation_published_total[15m])) > 0)
             ) > {{ $alerts.federationPublishFailing.threshold }}

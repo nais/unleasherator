@@ -31,7 +31,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	defer c.Close()
 
 	// Create a new subscriber.
-	subscriber := NewSubscriber(c, subscription, namespace)
+	subscriber := NewSubscriber(c, subscription, namespace, true)
 
 	received := make(chan bool)
 	finished := false
@@ -58,7 +58,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: unleashName,
 	}
 
 	res := topic.Publish(ctx, msg)
@@ -69,9 +69,10 @@ func TestSubscriber_Subscribe(t *testing.T) {
 	go func() {
 		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 			assert.Equal(t, 2, len(adminSecrets))
-			assert.Equal(t, "namespace-1", adminSecrets[0].GetNamespace())
-			assert.Equal(t, "namespace-2", adminSecrets[1].GetNamespace())
-			assert.Equal(t, "unleasherator-test-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, namespace, adminSecrets[0].GetNamespace())
+			assert.Equal(t, namespace, adminSecrets[1].GetNamespace())
+			assert.Equal(t, "unleasherator-test-namespace-1-admin-key-not-a-real-nonce", adminSecrets[0].GetName())
+			assert.Equal(t, "unleasherator-test-namespace-2-admin-key-not-a-real-nonce", adminSecrets[1].GetName())
 			assert.Equal(t, apiToken, adminSecrets[0].StringData["token"])
 			assert.Equal(t, clusters, []string{"cluster-1", "cluster-2"})
 
@@ -101,11 +102,12 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	var namespace = "unleasherator-system"
 
 	instance := &pb.Instance{
-		Name:       "test-instance",
-		Url:        "https://test-instance.example.com",
-		Namespaces: []string{"namespace-a"},
-		Clusters:   []string{"cluster-a"},
-		Status:     pb.Status_Provisioned,
+		Name:        "test-instance",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
 	}
 	payload, err := proto.Marshal(instance)
 	assert.NoError(t, err)
@@ -114,7 +116,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		ID:          uuid.New().String(),
 		Data:        payload,
 		PublishTime: time.Now(),
-		OrderingKey: pubsubOrderingKey,
+		OrderingKey: instance.Name,
 	}
 
 	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
@@ -130,7 +132,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 		return nil
 	}
 
-	subscriber := &subscriber{namespace: namespace}
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: true}
 	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
 
 	assert.NoError(t, err)
@@ -147,9 +149,113 @@ func TestSubscriber_handleMessage(t *testing.T) {
 
 	assert.NotNil(t, capturedAdminSecrets)
 	assert.Equal(t, 1, len(capturedAdminSecrets))
-	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-"+instance.Name+"-"))
-	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	// The empty-nonce path derives a stable nonce, so assert on the generated
+	// name shape here; stableNonce has exact-value coverage separately.
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-namespace-a-admin-key-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Greater(t, len(capturedAdminSecrets[0].Name), len("unleasherator-test-instance-namespace-a-admin-key-"))
+	assert.Equal(t, "unleasherator-system", capturedAdminSecrets[0].Namespace)
+	// Namespace-bound secrets carry the authoritative authorized-namespace annotation.
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
 	assert.Equal(t, instance.SecretToken, capturedAdminSecrets[0].StringData[unleashv1.UnleashSecretTokenKey])
 	assert.Equal(t, instance.Clusters, capturedClusters)
 	assert.Equal(t, instance.Status, capturedStatus)
+}
+
+func TestSubscriber_handleMessage_Legacy(t *testing.T) {
+	var namespace = "unleasherator-system"
+
+	instance := &pb.Instance{
+		Name:        "test-instance-legacy",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+
+	msg := &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: instance.Name,
+	}
+
+	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
+	var capturedAdminSecrets []*corev1.Secret
+
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		capturedRemoteUnleashes = remoteUnleashes
+		capturedAdminSecrets = adminSecrets
+		return nil
+	}
+
+	subscriber := &subscriber{namespace: namespace, namespaceBoundSecrets: false}
+	err = subscriber.handleMessage(context.Background(), msg, mockHandler)
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(capturedRemoteUnleashes))
+
+	// Legacy mode creates one admin secret PER namespace in the TENANT's own namespace,
+	// keeping N secrets aligned with N RemoteUnleashes (no orphaning/relocation, no panic).
+	assert.Equal(t, 1, len(capturedAdminSecrets))
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Namespace)
+	assert.True(t, strings.HasPrefix(capturedAdminSecrets[0].Name, "unleasherator-test-instance-legacy-"),
+		"unexpected secret name %q", capturedAdminSecrets[0].Name)
+	assert.Equal(t, "namespace-a", capturedAdminSecrets[0].Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
+
+	// Legacy mode references the secret in the RemoteUnleash's own namespace (empty = same namespace).
+	assert.Equal(t, "", capturedRemoteUnleashes[0].Spec.AdminSecret.Namespace)
+}
+
+func TestStableNonce(t *testing.T) {
+	instance := &pb.Instance{
+		Name:        "test-instance",
+		Url:         "https://test-instance.example.com",
+		SecretToken: "admin-token",
+	}
+
+	first, err := stableNonce(instance)
+	assert.NoError(t, err)
+	second, err := stableNonce(instance)
+	assert.NoError(t, err)
+	assert.Equal(t, first, second, "redelivery must produce the same secret name")
+
+	rotated := proto.Clone(instance).(*pb.Instance)
+	rotated.SecretToken = "different-token"
+	rotatedNonce, err := stableNonce(rotated)
+	assert.NoError(t, err)
+	assert.NotEqual(t, first, rotatedNonce)
+
+	instance.SecretToken = ""
+	_, err = stableNonce(instance)
+	assert.Error(t, err)
+}
+
+func TestSubscriberIgnoresUnauthenticatedLegacyRemoval(t *testing.T) {
+	payload, err := proto.Marshal(&pb.Instance{
+		Name:       "test-instance",
+		Url:        "https://test-instance.example.com",
+		Namespaces: []string{"namespace-a"},
+		Status:     pb.Status_Removed,
+	})
+	assert.NoError(t, err)
+
+	handlerCalled := false
+	subscriber := &subscriber{namespace: "unleasherator-system", namespaceBoundSecrets: true}
+	err = subscriber.handleMessage(context.Background(), &pubsub.Message{Data: payload}, func(
+		context.Context,
+		[]*unleashv1.RemoteUnleash,
+		[]*corev1.Secret,
+		[]string,
+		pb.Status,
+	) error {
+		handlerCalled = true
+		return nil
+	})
+
+	assert.NoError(t, err)
+	assert.False(t, handlerCalled)
 }

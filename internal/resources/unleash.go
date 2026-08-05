@@ -101,8 +101,7 @@ func InstanceSecretForUnleash(unleash *unleashv1.Unleash, scheme *runtime.Scheme
 	return secret, nil
 }
 
-// Creates a secret that is not managed, i.e. without a controllerReference
-func OperatorSecretForUnleash(name, secretName, namespace, adminKey string) *corev1.Secret {
+func OperatorSecretForUnleash(name, secretName, namespace, adminKey, url string) *corev1.Secret {
 	ls := labelsForUnleash(name)
 
 	secret := &corev1.Secret{
@@ -112,7 +111,8 @@ func OperatorSecretForUnleash(name, secretName, namespace, adminKey string) *cor
 			Labels:    ls,
 		},
 		StringData: map[string]string{
-			unleashv1.UnleashSecretTokenKey: adminKey,
+			unleashv1.UnleashSecretTokenKey:     adminKey,
+			unleashv1.UnleashSecretServerURLKey: url,
 		},
 	}
 

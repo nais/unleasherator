@@ -56,6 +56,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Fail fast on contradictory feature-flag combinations.
+	if err := cfg.Validate(); err != nil {
+		setupLog.Error(err, "invalid configuration")
+		os.Exit(1)
+	}
+
 	// Global parent context for program
 	signalHandlerContext := ctrl.SetupSignalHandler()
 	ctx, cancel := context.WithCancel(signalHandlerContext)
@@ -115,6 +121,7 @@ func main() {
 	}
 	remoteUnleashReconciler := &controller.RemoteUnleashReconciler{
 		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
 		Scheme:            mgr.GetScheme(),
 		Recorder:          mgr.GetEventRecorderFor("remote-unleash-controller"),
 		OperatorNamespace: cfg.PodNamespace,
@@ -124,20 +131,22 @@ func main() {
 			ClusterName: cfg.ClusterName,
 			Subscriber:  subscriber,
 		},
-		Tracer: tp.Tracer("remoteunleash-controller"),
+		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		Tracer:                      tp.Tracer("remoteunleash-controller"),
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemoteUnleash")
 		os.Exit(1)
 	}
 	if err = (&controller.ApiTokenReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		Recorder:              mgr.GetEventRecorderFor("api-token-controller"),
-		OperatorNamespace:     cfg.PodNamespace,
-		ApiTokenNameSuffix:    cfg.ApiTokenNameSuffix,
-		ApiTokenUpdateEnabled: cfg.Features.ApiTokenUpdateEnabled,
-		Tracer:                tp.Tracer("apitoken-controller"),
+		Client:                      mgr.GetClient(),
+		Scheme:                      mgr.GetScheme(),
+		Recorder:                    mgr.GetEventRecorderFor("api-token-controller"),
+		OperatorNamespace:           cfg.PodNamespace,
+		ApiTokenNameSuffix:          cfg.ApiTokenNameSuffix,
+		ApiTokenUpdateEnabled:       cfg.Features.ApiTokenUpdateEnabled,
+		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		Tracer:                      tp.Tracer("apitoken-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ApiToken")
 		os.Exit(1)

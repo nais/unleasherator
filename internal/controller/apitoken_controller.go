@@ -89,7 +89,8 @@ type ApiTokenReconciler struct {
 	// ApiTokenUpdateEnabled enables updating tokens in Unleash since
 	// tokens in Unleash are immutable. This is a feature flag that
 	// can be enabled in the operator config.
-	ApiTokenUpdateEnabled bool
+	ApiTokenUpdateEnabled       bool
+	AllowLegacyNameBoundSecrets bool
 
 	Tracer trace.Tracer
 }
@@ -247,7 +248,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Get Unleash API client
-	apiClient, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
+	apiClient, err := r.apiClient(ctx, unleash)
 	if err != nil {
 		reason := "UnleashClientFailed"
 		message := "Failed to create Unleash client"
@@ -542,7 +543,7 @@ func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *u
 		return fmt.Errorf("unleash instance not ready")
 	}
 
-	apiClient, err := unleash.ApiClient(ctx, r.Client, r.OperatorNamespace)
+	apiClient, err := r.apiClient(ctx, unleash)
 	if err != nil {
 		return fmt.Errorf("failed to create Unleash client: %w", err)
 	}
@@ -550,6 +551,20 @@ func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *u
 	log.Info("Performing Finalizer Operations for ApiToken before deletion")
 	r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
 	return nil
+}
+
+func (r *ApiTokenReconciler) apiClient(ctx context.Context, instance resources.UnleashInstance) (*unleashclient.Client, error) {
+	if remoteUnleash, ok := instance.(*unleashv1.RemoteUnleash); ok {
+		return validatedRemoteUnleashAPIClient(
+			ctx,
+			r.Client,
+			remoteUnleash,
+			r.OperatorNamespace,
+			r.AllowLegacyNameBoundSecrets,
+		)
+	}
+
+	return instance.ApiClient(ctx, r.Client, r.OperatorNamespace)
 }
 
 // SetupWithManager sets up the controller with the Manager.
