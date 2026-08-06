@@ -939,6 +939,14 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		return ctrl.Result{}, err
 	}
 
+	if releaseChannel.Status.ActiveBatch == nil {
+		if recoveredBatch := recoverActiveBatch(targetInstances, releaseChannel); recoveredBatch != nil {
+			log.Info("Recovered active batch from existing image assignments", "batchSize", len(recoveredBatch.InstanceNames))
+			releaseChannel.Status.ActiveBatch = recoveredBatch
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
+	}
+
 	// Update instance counts
 	r.updateInstanceCounts(releaseChannel, targetInstances)
 	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
@@ -1325,6 +1333,37 @@ func activeBatchInstances(instances []unleashv1.Unleash, batch *unleashv1.Releas
 	return active
 }
 
+// recoverActiveBatch preserves rollout safety when upgrading from a controller
+// version that assigned InstanceImages before ActiveBatch existed.
+func recoverActiveBatch(instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) *unleashv1.ReleaseChannelActiveBatch {
+	targetImage := string(releaseChannel.Spec.Image)
+	var instanceNames []string
+
+	for _, instance := range instances {
+		if releaseChannel.Status.InstanceImages[instance.Name] != targetImage {
+			continue
+		}
+		if instance.Status.ResolvedReleaseChannelImage != targetImage ||
+			!instanceReady(&instance) ||
+			!instanceConnected(&instance) {
+			instanceNames = append(instanceNames, instance.Name)
+		}
+	}
+	if len(instanceNames) == 0 {
+		return nil
+	}
+
+	startTime := metav1.Now()
+	if releaseChannel.Status.StartTime != nil {
+		startTime = *releaseChannel.Status.StartTime
+	}
+	return &unleashv1.ReleaseChannelActiveBatch{
+		InstanceNames: instanceNames,
+		TargetImage:   targetImage,
+		StartTime:     startTime,
+	}
+}
+
 // deployToInstances updates InstanceImages map - Unleash controllers pull from this (unidirectional)
 func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Coordinating deployment by updating InstanceImages map", "instances", len(instances), "phase", releaseChannel.Status.Phase)
@@ -1485,6 +1524,10 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 }
 
 func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) bool {
+	return instanceReady(instance)
+}
+
+func instanceReady(instance *unleashv1.Unleash) bool {
 	// Check for Ready condition
 	for _, condition := range instance.Status.Conditions {
 		if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
@@ -1495,6 +1538,10 @@ func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) 
 }
 
 func (r *ReleaseChannelReconciler) isInstanceConnected(instance *unleashv1.Unleash) bool {
+	return instanceConnected(instance)
+}
+
+func instanceConnected(instance *unleashv1.Unleash) bool {
 	for _, condition := range instance.Status.Conditions {
 		if condition.Type == unleashv1.UnleashStatusConditionTypeConnected {
 			return condition.Status == metav1.ConditionTrue

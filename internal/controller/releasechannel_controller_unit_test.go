@@ -565,6 +565,44 @@ func TestDeployToInstancesPersistsActiveBatch(t *testing.T) {
 	assert.Equal(t, "test:v2", updated.Status.InstanceImages[instance.Name])
 }
 
+func TestRecoverActiveBatchFromExistingImageAssignments(t *testing.T) {
+	startTime := metav1.NewTime(time.Now().Add(-time.Minute))
+	releaseChannel := &unleashv1.ReleaseChannel{
+		Spec: unleashv1.ReleaseChannelSpec{Image: "test:v2"},
+		Status: unleashv1.ReleaseChannelStatus{
+			StartTime: &startTime,
+			InstanceImages: map[string]string{
+				"assigned-but-unready": "test:v2",
+				"not-assigned":         "test:v1",
+			},
+		},
+	}
+	instances := []unleashv1.Unleash{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "assigned-but-unready"},
+			Status: unleashv1.UnleashStatus{
+				ResolvedReleaseChannelImage: "test:v2",
+				Conditions: []metav1.Condition{
+					{Type: unleashv1.UnleashStatusConditionTypeReconciled, Status: metav1.ConditionTrue},
+					{Type: unleashv1.UnleashStatusConditionTypeConnected, Status: metav1.ConditionFalse},
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "not-assigned"},
+			Status: unleashv1.UnleashStatus{
+				ResolvedReleaseChannelImage: "test:v1",
+			},
+		},
+	}
+
+	batch := recoverActiveBatch(instances, releaseChannel)
+	require.NotNil(t, batch)
+	assert.Equal(t, []string{"assigned-but-unready"}, batch.InstanceNames)
+	assert.Equal(t, "test:v2", batch.TargetImage)
+	assert.Equal(t, startTime, batch.StartTime)
+}
+
 func TestExecuteRollingPhaseWaitsForActiveBatchConnectivity(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, unleashv1.AddToScheme(scheme))
