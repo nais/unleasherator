@@ -184,6 +184,27 @@ spec:
           status:
             description: ReleaseChannelStatus defines the observed state of ReleaseChannel
             properties:
+              activeBatch:
+                description: |-
+                  ActiveBatch tracks the instances currently being rolled out. A batch remains
+                  active until every instance is ready, connected, and passes health checks.
+                properties:
+                  instanceNames:
+                    description: InstanceNames identifies the instances assigned to
+                      this batch.
+                    items:
+                      type: string
+                    type: array
+                  startTime:
+                    description: StartTime is when this batch was assigned its target
+                      image.
+                    format: date-time
+                    type: string
+                  targetImage:
+                    description: TargetImage is the image assigned to every instance
+                      in this batch.
+                    type: string
+                type: object
               canaryInstances:
                 default: 0
                 description: CanaryInstances is the number of canary instances for the

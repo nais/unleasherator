@@ -331,6 +331,11 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "multi-test:v1",
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 200 * time.Millisecond},
+						Timeout:      &metav1.Duration{Duration: 30 * time.Second},
+					},
 				},
 			}
 

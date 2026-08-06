@@ -162,6 +162,10 @@ type ReleaseChannelStatus struct {
 	// Incremented each time the map is modified, allowing Unleash controller to detect stale reads
 	// +kubebuilder:default=0
 	InstanceImagesGeneration int64 `json:"instanceImagesGeneration,omitempty"`
+
+	// ActiveBatch tracks the instances currently being rolled out. A batch remains
+	// active until every instance is ready, connected, and passes health checks.
+	ActiveBatch *ReleaseChannelActiveBatch `json:"activeBatch,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout
@@ -196,6 +200,19 @@ type InstanceStatus struct {
 
 	// Ready indicates if instance is ready after upgrade
 	Ready bool `json:"ready,omitempty"`
+}
+
+// ReleaseChannelActiveBatch is the persisted state of a rolling deployment batch.
+// InstanceNames are immutable except when an instance is deleted.
+type ReleaseChannelActiveBatch struct {
+	// InstanceNames identifies the instances assigned to this batch.
+	InstanceNames []string `json:"instanceNames,omitempty"`
+
+	// TargetImage is the image assigned to every instance in this batch.
+	TargetImage string `json:"targetImage,omitempty"`
+
+	// StartTime is when this batch was assigned its target image.
+	StartTime metav1.Time `json:"startTime,omitempty"`
 }
 
 type ReleaseChannelCondition struct {

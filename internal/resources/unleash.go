@@ -573,8 +573,22 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 			// If no previous image, this is initial deployment - safe to use target
 		}
 
-		// Safe fallback for non-canary phases or initial deployment:
-		// Use ReleaseChannel's target image if instance not yet in map
+		// During rolling and rollback, instances outside InstanceImages keep the
+		// previous image until their batch explicitly assigns a new one.
+		if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling ||
+			releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack {
+			fallbackImage := releaseChannel.Status.PreviousImage
+			if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack &&
+				releaseChannel.Spec.Rollback.PreviousImage != "" {
+				fallbackImage = releaseChannel.Spec.Rollback.PreviousImage
+			}
+			if fallbackImage != "" {
+				return fallbackImage, false, nil
+			}
+		}
+
+		// Completed rollouts and initial deployment may use the target image when
+		// an instance has no explicit assignment.
 		if releaseChannel.Spec.Image != "" {
 			return string(releaseChannel.Spec.Image), false, nil
 		}
