@@ -550,8 +550,11 @@ func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *u
 
 	apiClient, err := r.apiClient(ctx, unleash)
 	if err != nil {
-		log.Info("Could not create Unleash client; skipping token cleanup", "error", err.Error())
-		return nil
+		if apierrors.IsNotFound(err) {
+			log.Info("Unleash credentials no longer exist; skipping token cleanup")
+			return nil
+		}
+		return fmt.Errorf("creating Unleash client for token cleanup: %w", err)
 	}
 
 	log.Info("Performing Finalizer Operations for ApiToken before deletion")

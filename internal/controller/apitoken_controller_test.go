@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jarcoal/httpmock"
@@ -286,21 +287,29 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
 			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
 
+			var deleteAttempts atomic.Int32
 			httpmock.RegisterResponder("DELETE", fmt.Sprintf("=~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint),
-				httpmock.NewStringResponder(http.StatusInternalServerError, "delete failed"))
+				func(*http.Request) (*http.Response, error) {
+					deleteAttempts.Add(1)
+					return httpmock.NewStringResponse(http.StatusInternalServerError, "delete failed"), nil
+				})
 			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
 
-			Eventually(func(g Gomega) {
+			Eventually(func() int32 {
+				return deleteAttempts.Load()
+			}, timeout, interval).Should(BeNumerically(">=", 1))
+
+			Consistently(func(g Gomega) {
 				deletingToken := &unleashv1.ApiToken{}
 				g.Expect(k8sClient.Get(ctx, apiTokenLookup, deletingToken)).To(Succeed())
 				g.Expect(deletingToken.DeletionTimestamp).ToNot(BeNil())
 				g.Expect(deletingToken.Finalizers).To(ContainElement(tokenFinalizer))
-			}, timeout, interval).Should(Succeed())
+			}, 500*time.Millisecond, interval).Should(Succeed())
 
 			registerApiTokenMocks(serverURL)
 			Eventually(func() bool {
 				return apierrors.IsNotFound(k8sClient.Get(ctx, apiTokenLookup, &unleashv1.ApiToken{}))
-			}, timeout, interval).Should(BeTrue())
+			}, timeout*3, interval).Should(BeTrue())
 		})
 	})
 

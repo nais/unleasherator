@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -154,7 +155,7 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 
 	res, err := c.HttpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("HTTP DELETE request failed: %w", withoutURLError(err))
 	}
 	defer res.Body.Close()
 
@@ -162,6 +163,19 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 		return fmt.Errorf("unexpected http status code %d", res.StatusCode)
 	}
 	return nil
+}
+
+func withoutURLError(err error) error {
+	for {
+		var urlErr *url.Error
+		if !errors.As(err, &urlErr) {
+			return err
+		}
+		if urlErr.Err == nil {
+			return errors.New("HTTP request failed")
+		}
+		err = urlErr.Err
+	}
 }
 
 func (c *Client) HTTPPost(ctx context.Context, requestPath string, p, v any) (*http.Response, error) {
