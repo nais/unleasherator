@@ -130,7 +130,7 @@ func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return res, fmt.Errorf("unexpected http status code %d", res.StatusCode)
+		return res, parseAPIError(res.StatusCode, body)
 	}
 
 	err = json.Unmarshal(body, v)
@@ -160,7 +160,11 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected http status code %d", res.StatusCode)
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			return err
+		}
+		return parseAPIError(res.StatusCode, body)
 	}
 	return nil
 }

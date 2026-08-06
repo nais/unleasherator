@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -31,6 +32,11 @@ import (
 )
 
 const tokenFinalizer = "unleash.nais.io/finalizer"
+
+const (
+	apiTokenFinalizerCleanupTimeout  = 30 * time.Second
+	apiTokenFinalizerCleanupDeadline = 24 * time.Hour
+)
 
 var (
 	// API Token controller timeouts - prefixed to avoid conflicts with other controllers
@@ -182,9 +188,18 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if token.GetDeletionTimestamp() != nil {
 		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
-			if err := r.cleanupTokenInUnleash(ctx, token, log); err != nil {
-				log.Error(err, "Failed to clean up token in reachable Unleash instance")
-				return ctrl.Result{}, err
+			if time.Since(token.DeletionTimestamp.Time) < apiTokenFinalizerCleanupDeadline {
+				cleanupCtx, cancel := context.WithTimeout(ctx, apiTokenFinalizerCleanupTimeout)
+				err := r.cleanupTokenInUnleash(cleanupCtx, token, log)
+				cancel()
+				if err != nil {
+					log.Error(err, "Failed to clean up token in reachable Unleash instance")
+					return ctrl.Result{}, err
+				}
+			} else {
+				r.Recorder.Event(token, "Warning", "TokenCleanupDeadlineExceeded",
+					"Proceeding with deletion after the token cleanup deadline elapsed")
+				log.Info("Token cleanup deadline exceeded; proceeding with deletion")
 			}
 
 			// Update status to indicate finalizing
@@ -511,6 +526,10 @@ func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, 
 	tokenName := token.ApiTokenName(r.ApiTokenNameSuffix)
 	tokens, err := unleashClient.GetAPITokensByName(ctx, tokenName)
 	if err != nil {
+		if isTerminalTokenCleanupError(err) {
+			log.Info("ApiToken lookup cannot be completed; proceeding with finalizer removal", "status", cleanupErrorStatusCode(err))
+			return nil
+		}
 		log.Error(err, fmt.Sprintf("Failed to get ApiToken %s from Unleash", tokenName))
 		return fmt.Errorf("getting ApiToken %s from Unleash: %w", tokenName, err)
 	}
@@ -523,12 +542,29 @@ func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, 
 	for _, t := range tokens.Tokens {
 		log.Info(fmt.Sprintf("Deleting ApiToken %s from Unleash", t.TokenName))
 		if err := unleashClient.DeleteApiToken(ctx, t.Secret); err != nil {
+			if isTerminalTokenCleanupError(err) {
+				log.Info("ApiToken deletion cannot be completed; proceeding with finalizer removal", "status", cleanupErrorStatusCode(err))
+				return nil
+			}
 			log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", t.TokenName))
 			return fmt.Errorf("deleting ApiToken %s from Unleash: %w", t.TokenName, err)
 		}
 		log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", t.TokenName))
 	}
 	return nil
+}
+
+func isTerminalTokenCleanupError(err error) bool {
+	statusCode := cleanupErrorStatusCode(err)
+	return statusCode == 401 || statusCode == 403 || statusCode == 404 || statusCode == 405
+}
+
+func cleanupErrorStatusCode(err error) int {
+	var apiErr *unleashclient.UnleashAPIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode
+	}
+	return 0
 }
 
 // cleanupTokenInUnleash deletes the token during finalization when Unleash is reachable.
