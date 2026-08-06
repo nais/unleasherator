@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -263,6 +264,43 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				err := k8sClient.Get(ctx, apiTokenLookup, &unleashv1.ApiToken{})
 				return err != nil
 			}, timeout, interval).Should(BeTrue(), "ApiToken should be deleted even when Unleash instance doesn't exist")
+		})
+	})
+
+	Context("When finalizing an ApiToken", func() {
+		It("Should retain the finalizer when token deletion fails", func() {
+			ctx := context.Background()
+			apiTokenName := "test-apitoken-finalizer-delete-failure"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+			serverURL := mockRemoteUnleashURL(apiTokenName, ApiTokenNamespace)
+
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, serverURL, secretCreated)
+			registerApiTokenMocks(serverURL)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+
+			httpmock.RegisterResponder("DELETE", fmt.Sprintf("=~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint),
+				httpmock.NewStringResponder(http.StatusInternalServerError, "delete failed"))
+			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				deletingToken := &unleashv1.ApiToken{}
+				g.Expect(k8sClient.Get(ctx, apiTokenLookup, deletingToken)).To(Succeed())
+				g.Expect(deletingToken.DeletionTimestamp).ToNot(BeNil())
+				g.Expect(deletingToken.Finalizers).To(ContainElement(tokenFinalizer))
+			}, timeout, interval).Should(Succeed())
+
+			registerApiTokenMocks(serverURL)
+			Eventually(func() bool {
+				return apierrors.IsNotFound(k8sClient.Get(ctx, apiTokenLookup, &unleashv1.ApiToken{}))
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 

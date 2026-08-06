@@ -182,10 +182,9 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if token.GetDeletionTimestamp() != nil {
 		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
-			// Try to clean up the token in Unleash if the instance exists
 			if err := r.cleanupTokenInUnleash(ctx, token, log); err != nil {
-				// Log but don't block deletion - the Unleash instance may not exist
-				log.Info("Could not clean up token in Unleash, proceeding with deletion", "error", err.Error())
+				log.Error(err, "Failed to clean up token in reachable Unleash instance")
+				return ctrl.Result{}, err
 			}
 
 			// Update status to indicate finalizing
@@ -507,50 +506,56 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 	return nil
 }
 
-// doFinalizerOperationsForToken will delete the ApiToken from Unleash
-func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) {
+// doFinalizerOperationsForToken deletes the ApiToken from Unleash.
+func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, token *unleashv1.ApiToken, unleashClient *unleashclient.Client, log logr.Logger) error {
 	tokenName := token.ApiTokenName(r.ApiTokenNameSuffix)
 	tokens, err := unleashClient.GetAPITokensByName(ctx, tokenName)
 	if err != nil {
 		log.Error(err, fmt.Sprintf("Failed to get ApiToken %s from Unleash", tokenName))
-		return
+		return fmt.Errorf("getting ApiToken %s from Unleash: %w", tokenName, err)
 	}
 
 	if tokens == nil || len(tokens.Tokens) == 0 {
 		log.Info(fmt.Sprintf("ApiToken %s not found in Unleash", tokenName))
-		return
+		return nil
 	}
 
 	for _, t := range tokens.Tokens {
 		log.Info(fmt.Sprintf("Deleting ApiToken %s from Unleash", t.TokenName))
-		err = unleashClient.DeleteApiToken(ctx, t.Secret)
-		if err != nil {
+		if err := unleashClient.DeleteApiToken(ctx, t.Secret); err != nil {
 			log.Error(err, fmt.Sprintf("Failed to delete ApiToken %s from Unleash", t.TokenName))
+			return fmt.Errorf("deleting ApiToken %s from Unleash: %w", t.TokenName, err)
 		}
 		log.Info(fmt.Sprintf("Successfully deleted ApiToken %s from Unleash", t.TokenName))
 	}
+	return nil
 }
 
-// cleanupTokenInUnleash attempts to delete the token from Unleash during finalization.
-// Returns an error if cleanup fails, but callers may choose to ignore this to allow deletion to proceed.
+// cleanupTokenInUnleash deletes the token during finalization when Unleash is reachable.
+// A missing or unavailable instance cannot be cleaned up and must not block CR deletion.
 func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *unleashv1.ApiToken, log logr.Logger) error {
 	unleash, err := r.getUnleashInstance(ctx, token)
 	if err != nil {
-		return fmt.Errorf("failed to get Unleash instance: %w", err)
+		if apierrors.IsNotFound(err) {
+			log.Info("Unleash instance no longer exists; skipping token cleanup")
+			return nil
+		}
+		return fmt.Errorf("getting Unleash instance for token cleanup: %w", err)
 	}
 
 	if !unleash.IsReady() {
-		return fmt.Errorf("unleash instance not ready")
+		log.Info("Unleash instance is not ready; skipping token cleanup")
+		return nil
 	}
 
 	apiClient, err := r.apiClient(ctx, unleash)
 	if err != nil {
-		return fmt.Errorf("failed to create Unleash client: %w", err)
+		log.Info("Could not create Unleash client; skipping token cleanup", "error", err.Error())
+		return nil
 	}
 
 	log.Info("Performing Finalizer Operations for ApiToken before deletion")
-	r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
-	return nil
+	return r.doFinalizerOperationsForToken(ctx, token, apiClient, log)
 }
 
 func (r *ApiTokenReconciler) apiClient(ctx context.Context, instance resources.UnleashInstance) (*unleashclient.Client, error) {
