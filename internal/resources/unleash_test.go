@@ -466,6 +466,39 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Equal(t, "test:v1", image)
 	})
 
+	t.Run("should use explicit rollback image for an unassigned instance during rollback", func(t *testing.T) {
+		releaseChannel := &unleashv1.ReleaseChannel{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-channel", Namespace: "test-namespace"},
+			Spec: unleashv1.ReleaseChannelSpec{
+				Image: "test:v3",
+				Rollback: unleashv1.RollbackConfig{
+					PreviousImage: "test:v1.5",
+				},
+			},
+			Status: unleashv1.ReleaseChannelStatus{
+				Phase: unleashv1.ReleaseChannelPhaseRollingBack,
+				InstanceImages: map[string]string{
+					"assigned-instance": "test:v1.5",
+				},
+			},
+		}
+		unassignedInstance := &unleashv1.Unleash{
+			ObjectMeta: metav1.ObjectMeta{Name: "unassigned-instance", Namespace: "test-namespace"},
+			Spec: unleashv1.UnleashSpec{
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: releaseChannel.Name},
+			},
+		}
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(releaseChannel).
+			Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unassignedInstance)
+		assert.NoError(t, err)
+		assert.False(t, modified)
+		assert.Equal(t, "test:v1.5", image)
+	})
+
 	t.Run("should prioritize CustomImage over ReleaseChannel", func(t *testing.T) {
 		unleashWithCustom := &unleashv1.Unleash{
 			ObjectMeta: metav1.ObjectMeta{

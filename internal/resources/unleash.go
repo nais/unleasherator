@@ -575,10 +575,16 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 
 		// During rolling and rollback, instances outside InstanceImages keep the
 		// previous image until their batch explicitly assigns a new one.
-		if (releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling ||
-			releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack) &&
-			releaseChannel.Status.PreviousImage != "" {
-			return releaseChannel.Status.PreviousImage, false, nil
+		if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRolling ||
+			releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack {
+			fallbackImage := releaseChannel.Status.PreviousImage
+			if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack &&
+				releaseChannel.Spec.Rollback.PreviousImage != "" {
+				fallbackImage = releaseChannel.Spec.Rollback.PreviousImage
+			}
+			if fallbackImage != "" {
+				return fallbackImage, false, nil
+			}
 		}
 
 		// Completed rollouts and initial deployment may use the target image when
