@@ -331,6 +331,9 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "multi-test:v1",
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled: false,
+					},
 				},
 			}
 

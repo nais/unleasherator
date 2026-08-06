@@ -267,6 +267,39 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 			expectedImage:        "test:v1",
 			releaseChannelExists: true,
 		},
+		{
+			name: "rollback phase - explicit rollback image overrides previous image",
+			instance: &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-unleash",
+					Namespace: "default",
+				},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{
+						Name: "test-channel",
+					},
+				},
+			},
+			targetImage: "test:v2",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-channel",
+					Namespace: "default",
+				},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image: "test:v2",
+					Rollback: unleashv1.RollbackConfig{
+						PreviousImage: "test:v1.5",
+					},
+				},
+				Status: unleashv1.ReleaseChannelStatus{
+					Phase:         unleashv1.ReleaseChannelPhaseRollingBack,
+					PreviousImage: "test:v1",
+				},
+			},
+			expectedImage:        "test:v1.5",
+			releaseChannelExists: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -712,6 +745,49 @@ func TestExecuteRollingPhaseClearsActiveBatchOnHealthFailure(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(releaseChannel, instance).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := reconciler.executeRollingPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, updated.Status.Phase)
+	assert.Nil(t, updated.Status.ActiveBatch)
+}
+
+func TestExecuteRollingPhaseClearsActiveBatchOnTimeout(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	startTime := metav1.NewTime(time.Now().Add(-time.Minute))
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image: "test:v2",
+			Strategy: unleashv1.ReleaseChannelStrategy{
+				MaxUpgradeTime: &metav1.Duration{Duration: time.Second},
+			},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:     unleashv1.ReleaseChannelPhaseRolling,
+			StartTime: &startTime,
+			ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+				InstanceNames: []string{"instance-1"},
+				TargetImage:   "test:v2",
+				StartTime:     startTime,
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel).
 		WithStatusSubresource(releaseChannel).
 		Build()
 	reconciler := &ReleaseChannelReconciler{
@@ -1185,6 +1261,36 @@ func TestReleaseChannelStatusEqual(t *testing.T) {
 			},
 			b: &unleashv1.ReleaseChannelStatus{
 				InstanceImages: map[string]string{"a": "v2"},
+			},
+			expected: false,
+		},
+		{
+			name: "nil and active batch differ",
+			a:    &unleashv1.ReleaseChannelStatus{},
+			b: &unleashv1.ReleaseChannelStatus{
+				ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+					InstanceNames: []string{"instance-1"},
+					TargetImage:   "test:v2",
+					StartTime:     now,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "active batches with different targets differ",
+			a: &unleashv1.ReleaseChannelStatus{
+				ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+					InstanceNames: []string{"instance-1"},
+					TargetImage:   "test:v2",
+					StartTime:     now,
+				},
+			},
+			b: &unleashv1.ReleaseChannelStatus{
+				ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+					InstanceNames: []string{"instance-1"},
+					TargetImage:   "test:v3",
+					StartTime:     now,
+				},
 			},
 			expected: false,
 		},

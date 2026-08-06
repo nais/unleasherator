@@ -455,6 +455,7 @@ func (r *ReleaseChannelReconciler) executePhase(ctx context.Context, releaseChan
 
 func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing idle phase", "specImage", string(releaseChannel.Spec.Image), "previousImage", releaseChannel.Status.PreviousImage)
+	releaseChannel.Status.ActiveBatch = nil
 
 	// Find all Unleash instances that reference this ReleaseChannel
 	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
@@ -614,6 +615,7 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 	releaseChannel.Status.FailureReason = ""
 	releaseChannel.Status.RetryCount = 0
 	releaseChannel.Status.LastFailureTime = nil
+	releaseChannel.Status.ActiveBatch = nil
 	// Note: PreviousImage is kept for potential future rollback reference
 
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -622,6 +624,11 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Handling failed rollout", "reason", releaseChannel.Status.FailureReason)
 	labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
+
+	if releaseChannel.Status.ActiveBatch != nil {
+		releaseChannel.Status.ActiveBatch = nil
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
 
 	// Auto-retry transient errors before considering rollback
 	if isTransientError(releaseChannel.Status.FailureReason) {
@@ -919,6 +926,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.ActiveBatch = nil
 		releaseChannel.Status.FailureReason = reason
 		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
 		return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -929,6 +937,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		newPhase := unleashv1.ReleaseChannelPhaseFailed
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.ActiveBatch = nil
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to get target instances: %v", err)
 		// Record metrics for failure state
 		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
@@ -1064,6 +1073,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.ActiveBatch = nil
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
 		r.recordMetrics(releaseChannel, labels)
 		if _, statusErr := r.updateReleaseChannelStatus(ctx, releaseChannel); statusErr != nil {
@@ -1078,6 +1088,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 
 func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing rollback phase")
+	releaseChannel.Status.ActiveBatch = nil
 
 	// Determine rollback image: use spec override if provided, otherwise use tracked previous image
 	rollbackImage := releaseChannel.Spec.Rollback.PreviousImage
@@ -1493,6 +1504,11 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 	if err != nil {
 		// If we can't get the release channel, expect the target image
 		return targetImage
+	}
+
+	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack &&
+		releaseChannel.Spec.Rollback.PreviousImage != "" {
+		return releaseChannel.Spec.Rollback.PreviousImage
 	}
 
 	previousImage := string(releaseChannel.Status.PreviousImage)
@@ -1985,6 +2001,9 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 		}
 	}
 	if a.PreviousImage != b.PreviousImage {
+		return false
+	}
+	if !reflect.DeepEqual(a.ActiveBatch, b.ActiveBatch) {
 		return false
 	}
 	if a.InstanceImagesGeneration != b.InstanceImagesGeneration {
