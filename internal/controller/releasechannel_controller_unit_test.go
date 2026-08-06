@@ -635,6 +635,97 @@ func TestExecuteRollingPhaseWaitsForActiveBatchConnectivity(t *testing.T) {
 	assert.Equal(t, "test:v1", updated.Status.InstanceImages["instance-2"])
 }
 
+func TestExecuteRollingPhaseClearsActiveBatchOnHealthFailure(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image: "test:v2",
+			HealthChecks: unleashv1.HealthCheckConfig{
+				Enabled:      true,
+				InitialDelay: &metav1.Duration{},
+				Endpoint:     "\n",
+			},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase: unleashv1.ReleaseChannelPhaseRolling,
+			ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+				InstanceNames: []string{"instance-1"},
+				TargetImage:   "test:v2",
+				StartTime:     metav1.Now(),
+			},
+		},
+	}
+	instance := &unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "instance-1", Namespace: "default"},
+		Spec: unleashv1.UnleashSpec{
+			ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: releaseChannel.Name},
+		},
+		Status: unleashv1.UnleashStatus{
+			ResolvedReleaseChannelImage: "test:v2",
+			Conditions: []metav1.Condition{
+				{Type: unleashv1.UnleashStatusConditionTypeReconciled, Status: metav1.ConditionTrue},
+				{Type: unleashv1.UnleashStatusConditionTypeConnected, Status: metav1.ConditionTrue},
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel, instance).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := reconciler.executeRollingPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, updated.Status.Phase)
+	assert.Nil(t, updated.Status.ActiveBatch)
+}
+
+func TestAreInstancesReadyDoesNotRequireConnectionForRollback(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec:       unleashv1.ReleaseChannelSpec{Image: "test:v2"},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:         unleashv1.ReleaseChannelPhaseRollingBack,
+			PreviousImage: "test:v1",
+		},
+	}
+	instance := &unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "instance-1", Namespace: "default"},
+		Spec: unleashv1.UnleashSpec{
+			ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: releaseChannel.Name},
+		},
+		Status: unleashv1.UnleashStatus{
+			ResolvedReleaseChannelImage: "test:v1",
+			Conditions: []metav1.Condition{
+				{Type: unleashv1.UnleashStatusConditionTypeReconciled, Status: metav1.ConditionTrue},
+				{Type: unleashv1.UnleashStatusConditionTypeConnected, Status: metav1.ConditionFalse},
+			},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel, instance).
+		Build()
+	reconciler := &ReleaseChannelReconciler{Client: fakeClient, Scheme: scheme}
+
+	assert.True(t, reconciler.areInstancesReady(context.Background(), []unleashv1.Unleash{*instance}, "test:v1", false, ctrl.Log.WithName("test")))
+	assert.False(t, reconciler.areInstancesReady(context.Background(), []unleashv1.Unleash{*instance}, "test:v1", true, ctrl.Log.WithName("test")))
+}
+
 func TestMatchesLabelSelector(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, unleashv1.AddToScheme(scheme))

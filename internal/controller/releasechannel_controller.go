@@ -867,7 +867,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	r.recordMetrics(releaseChannel, labels)
 
 	// Check if canary deployment is complete
-	canaryComplete := r.areInstancesReady(ctx, canaryInstances, string(releaseChannel.Spec.Image), log)
+	canaryComplete := r.areInstancesReady(ctx, canaryInstances, string(releaseChannel.Spec.Image), true, log)
 	if !canaryComplete {
 		log.Info("Canary instances not ready yet")
 		if _, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
@@ -962,7 +962,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		if targetImage == "" {
 			targetImage = string(releaseChannel.Spec.Image)
 		}
-		if !r.areInstancesReady(ctx, batch, targetImage, log) {
+		if !r.areInstancesReady(ctx, batch, targetImage, true, log) {
 			log.Info("Active batch instances are not ready yet", "batchSize", len(batch))
 			return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
 		}
@@ -979,6 +979,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 				newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 				r.recordPhaseTransition(releaseChannel, newPhase)
 				releaseChannel.Status.Phase = newPhase
+				releaseChannel.Status.ActiveBatch = nil
 				releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment health check failed: %v", err)
 				r.recordMetrics(releaseChannel, labels)
 				return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -1005,7 +1006,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	// Get instances that need updates (excluding already updated canary instances)
 	instancesToUpdate := r.getInstancesToUpdate(targetInstances, releaseChannel)
 	if len(instancesToUpdate) == 0 {
-		if !r.areInstancesReady(ctx, targetInstances, string(releaseChannel.Spec.Image), log) {
+		if !r.areInstancesReady(ctx, targetInstances, string(releaseChannel.Spec.Image), true, log) {
 			log.Info("Instances have the target image but are not ready yet")
 			return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
 		}
@@ -1135,7 +1136,7 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	log.Info("Updated InstanceImages map with rollback image", "rollbackImage", rollbackImage)
 
 	// Check if rollback is complete by verifying instances are using the rollback image
-	rollbackComplete := r.areInstancesReady(ctx, targetInstances, rollbackImage, log)
+	rollbackComplete := r.areInstancesReady(ctx, targetInstances, rollbackImage, false, log)
 
 	if !rollbackComplete {
 		log.Info("Rollback still in progress, waiting for instances to update")
@@ -1399,7 +1400,7 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 	return ctrl.Result{}, nil
 }
 
-func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instances []unleashv1.Unleash, targetImage string, log logr.Logger) bool {
+func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instances []unleashv1.Unleash, targetImage string, requireConnected bool, log logr.Logger) bool {
 	for _, instance := range instances {
 		// Re-fetch instance to get current status
 		currentInstance := &unleashv1.Unleash{}
@@ -1423,7 +1424,7 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 			log.V(1).Info("Instance not ready yet", "name", instance.ObjectMeta.Name)
 			return false
 		}
-		if !r.isInstanceConnected(currentInstance) {
+		if requireConnected && !r.isInstanceConnected(currentInstance) {
 			log.V(1).Info("Instance not connected yet", "name", instance.ObjectMeta.Name)
 			return false
 		}
