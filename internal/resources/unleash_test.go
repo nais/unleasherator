@@ -437,6 +437,35 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Contains(t, err.Error(), "failed to get ReleaseChannel")
 	})
 
+	t.Run("should preserve previous image for an unassigned instance during rolling", func(t *testing.T) {
+		releaseChannel := &unleashv1.ReleaseChannel{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-channel", Namespace: "test-namespace"},
+			Spec:       unleashv1.ReleaseChannelSpec{Image: "test:v2"},
+			Status: unleashv1.ReleaseChannelStatus{
+				Phase:         unleashv1.ReleaseChannelPhaseRolling,
+				PreviousImage: "test:v1",
+				InstanceImages: map[string]string{
+					"active-instance": "test:v2",
+				},
+			},
+		}
+		unassignedInstance := &unleashv1.Unleash{
+			ObjectMeta: metav1.ObjectMeta{Name: "unassigned-instance", Namespace: "test-namespace"},
+			Spec: unleashv1.UnleashSpec{
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: releaseChannel.Name},
+			},
+		}
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(releaseChannel).
+			Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, unassignedInstance)
+		assert.NoError(t, err)
+		assert.False(t, modified)
+		assert.Equal(t, "test:v1", image)
+	})
+
 	t.Run("should prioritize CustomImage over ReleaseChannel", func(t *testing.T) {
 		unleashWithCustom := &unleashv1.Unleash{
 			ObjectMeta: metav1.ObjectMeta{
