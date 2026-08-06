@@ -160,11 +160,7 @@ func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			return err
-		}
-		return parseAPIError(res.StatusCode, body)
+		return &UnleashAPIError{StatusCode: res.StatusCode}
 	}
 	return nil
 }

@@ -14,14 +14,14 @@ func TestIsTerminalTokenCleanupError(t *testing.T) {
 		terminal bool
 	}{
 		{
-			name:     "unauthorized is terminal",
+			name:     "unauthorized is retried",
 			err:      &unleashclient.UnleashAPIError{StatusCode: 401},
-			terminal: true,
+			terminal: false,
 		},
 		{
-			name:     "forbidden is terminal",
+			name:     "forbidden is retried",
 			err:      &unleashclient.UnleashAPIError{StatusCode: 403},
-			terminal: true,
+			terminal: false,
 		},
 		{
 			name:     "not found is terminal",

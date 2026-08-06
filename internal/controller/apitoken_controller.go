@@ -188,18 +188,21 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if token.GetDeletionTimestamp() != nil {
 		log.Info("ApiToken marked for deletion")
 		if controllerutil.ContainsFinalizer(token, tokenFinalizer) {
-			if time.Since(token.DeletionTimestamp.Time) < apiTokenFinalizerCleanupDeadline {
-				cleanupCtx, cancel := context.WithTimeout(ctx, apiTokenFinalizerCleanupTimeout)
-				err := r.cleanupTokenInUnleash(cleanupCtx, token, log)
-				cancel()
-				if err != nil {
+			cleanupCtx, cancel := context.WithTimeout(ctx, apiTokenFinalizerCleanupTimeout)
+			err := r.cleanupTokenInUnleash(cleanupCtx, token, log)
+			cancel()
+			if err != nil {
+				if time.Since(token.DeletionTimestamp.Time) < apiTokenFinalizerCleanupDeadline {
 					log.Error(err, "Failed to clean up token in reachable Unleash instance")
 					return ctrl.Result{}, err
 				}
-			} else {
-				r.Recorder.Event(token, "Warning", "TokenCleanupDeadlineExceeded",
-					"Proceeding with deletion after the token cleanup deadline elapsed")
+				if r.Recorder != nil {
+					r.Recorder.Event(token, "Warning", "TokenCleanupDeadlineExceeded",
+						"Proceeding with deletion after the token cleanup deadline elapsed")
+				}
 				log.Info("Token cleanup deadline exceeded; proceeding with deletion")
+			} else {
+				log.Info("ApiToken cleanup completed")
 			}
 
 			// Update status to indicate finalizing
@@ -556,7 +559,7 @@ func (r *ApiTokenReconciler) doFinalizerOperationsForToken(ctx context.Context, 
 
 func isTerminalTokenCleanupError(err error) bool {
 	statusCode := cleanupErrorStatusCode(err)
-	return statusCode == 401 || statusCode == 403 || statusCode == 404 || statusCode == 405
+	return statusCode == 404 || statusCode == 405
 }
 
 func cleanupErrorStatusCode(err error) int {
