@@ -679,13 +679,19 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			)
 			replacementRU.Spec.AdminSecret.Namespace = remoteUnleashReconciler.OperatorNamespace
 
-			Expect(handler(
-				ctx,
-				[]*unleashv1.RemoteUnleash{replacementRU},
-				[]*corev1.Secret{replacementSecret},
-				clusters,
-				pb.Status_Provisioned,
-			)).To(Succeed())
+			// The handler upserts the RemoteUnleash while the controller may
+			// concurrently update its status; conflicts are transient (in
+			// production the message would be nacked and redelivered), so
+			// retry until the idempotent handler converges.
+			Eventually(func() error {
+				return handler(
+					ctx,
+					[]*unleashv1.RemoteUnleash{replacementRU},
+					[]*corev1.Secret{replacementSecret},
+					clusters,
+					pb.Status_Provisioned,
+				)
+			}, timeout, interval).Should(Succeed())
 
 			Expect(k8sClient.Get(
 				ctx,
