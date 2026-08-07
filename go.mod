@@ -73,6 +73,7 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jjti/go-spancheck v0.6.4 // indirect
 	github.com/karamaru-alpha/copyloopvar v1.2.1 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
 	github.com/ldez/exptostd v0.4.2 // indirect
 	github.com/ldez/grignotin v0.9.0 // indirect

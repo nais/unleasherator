@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/nais/unleasherator/internal/pb"
 	"github.com/nais/unleasherator/internal/resources"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
@@ -17,9 +19,38 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
+
+// PermanentError marks a message that can never be processed successfully
+// (unparseable payload, authorization failure). Such messages are poison:
+// redelivering them only blocks the subscription ordering key, so they are
+// acknowledged and dropped with an observable metric instead of nacked.
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+
+// Permanent wraps err so the subscriber acknowledges and drops the message.
+func Permanent(err error) *PermanentError {
+	return &PermanentError{Err: err}
+}
+
+var federationPoisonMessages = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "unleasherator_federation_poison_messages_total",
+		Help: "Number of federation Pub/Sub messages dropped after permanent failure",
+	},
+	[]string{"subscription"},
+)
+
+func init() {
+	metrics.Registry.MustRegister(federationPoisonMessages)
+}
 
 type Subscriber interface {
 	Subscribe(ctx context.Context, handler Handler) error
@@ -83,8 +114,22 @@ func (s *subscriber) Subscribe(ctx context.Context, handler Handler) error {
 		if err := s.handleMessage(ctx, msg, handler); err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			log.Error(err, "nack message")
-			msg.Nack()
+
+			var permanent *PermanentError
+			if errors.As(err, &permanent) {
+				// Count before acking so a dropped message is observable even
+				// if the log line is lost.
+				subID := ""
+				if s.subscription != nil {
+					subID = s.subscription.ID()
+				}
+				federationPoisonMessages.WithLabelValues(subID).Inc()
+				log.Error(err, "dropping poison message")
+				msg.Ack()
+			} else {
+				log.Error(err, "nack message")
+				msg.Nack()
+			}
 		} else {
 			log.Info("ack message")
 			msg.Ack()
@@ -105,7 +150,9 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		log.Error(err, "unmarshal message")
-		return err
+		// An unparseable payload can never succeed; drop it instead of
+		// redelivering forever.
+		return Permanent(fmt.Errorf("unmarshal federation message: %w", err))
 	}
 
 	if instance.GetStatus() == pb.Status_Removed && instance.GetSecretToken() == "" {

@@ -2,7 +2,9 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/pb"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
@@ -258,4 +261,162 @@ func TestSubscriberIgnoresUnauthenticatedLegacyRemoval(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.False(t, handlerCalled)
+}
+
+func TestSubscriberDropsPoisonMessage(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "poison-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	defer conn.Close()
+	defer c.Close()
+
+	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
+
+	handlerCalls := make(chan struct{}, 10)
+	go func() {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+			handlerCalls <- struct{}{}
+			return nil
+		})
+	}()
+
+	// Poison message: bytes that can never unmarshal into pb.Instance.
+	res := topic.Publish(ctx, &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        []byte("not-a-protobuf"),
+		PublishTime: time.Now(),
+		OrderingKey: "poison-ordering",
+	})
+	_, err = res.Get(ctx)
+	assert.NoError(t, err)
+
+	// A valid message with the same ordering key must not be blocked by the
+	// poison message: if the poison were nacked, redelivery would starve it.
+	instance := &pb.Instance{
+		Name:        "after-poison",
+		Url:         "https://after.example.com",
+		SecretToken: "token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+	res = topic.Publish(ctx, &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: "poison-ordering",
+	})
+	_, err = res.Get(ctx)
+	assert.NoError(t, err)
+
+	select {
+	case <-handlerCalls:
+	case <-time.After(10 * time.Second):
+		t.Fatal("valid message was not processed; poison message blocked the ordering key")
+	}
+
+	assert.Eventually(t, func() bool {
+		return testutil.ToFloat64(federationPoisonMessages.WithLabelValues(subscription.ID())) >= 1
+	}, 5*time.Second, 10*time.Millisecond, "poison message must be counted before being dropped")
+}
+
+func TestSubscriberAcksPermanentHandlerError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "permanent-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	defer conn.Close()
+	defer c.Close()
+
+	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
+
+	var calls atomic.Int32
+	go func() {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+			calls.Add(1)
+			return Permanent(errors.New("authorization denied"))
+		})
+	}()
+
+	instance := &pb.Instance{
+		Name:        "permanent-instance",
+		Url:         "https://permanent.example.com",
+		SecretToken: "token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+	res := topic.Publish(ctx, &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: "permanent-ordering",
+	})
+	_, err = res.Get(ctx)
+	assert.NoError(t, err)
+
+	assert.Eventually(t, func() bool { return calls.Load() == 1 }, 10*time.Second, 10*time.Millisecond)
+	// A nacked message would be redelivered promptly; an acked poison message
+	// must not be handled again.
+	time.Sleep(500 * time.Millisecond)
+	assert.Equal(t, int32(1), calls.Load(), "permanent error must be acked, not redelivered")
+	assert.GreaterOrEqual(t, testutil.ToFloat64(federationPoisonMessages.WithLabelValues(subscription.ID())), float64(1))
+}
+
+func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	srv, conn, c, topic, subscription, err := newPubSub(ctx, "transient-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	defer conn.Close()
+	defer c.Close()
+
+	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
+
+	var calls atomic.Int32
+	go func() {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+			calls.Add(1)
+			return errors.New("temporary API server failure")
+		})
+	}()
+
+	instance := &pb.Instance{
+		Name:        "transient-instance",
+		Url:         "https://transient.example.com",
+		SecretToken: "token",
+		Namespaces:  []string{"namespace-a"},
+		Clusters:    []string{"cluster-a"},
+		Status:      pb.Status_Provisioned,
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+	res := topic.Publish(ctx, &pubsub.Message{
+		ID:          uuid.New().String(),
+		Data:        payload,
+		PublishTime: time.Now(),
+		OrderingKey: "transient-ordering",
+	})
+	_, err = res.Get(ctx)
+	assert.NoError(t, err)
+
+	assert.Eventually(t, func() bool { return calls.Load() >= 2 }, 10*time.Second, 10*time.Millisecond,
+		"transient errors must be nacked and redelivered")
 }
