@@ -271,11 +271,11 @@ func TestSubscriberDropsPoisonMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Cancel Receive before tearing down the test server.
-	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
+	// LIFO: Receive is cancelled before the test server is torn down.
+	defer cancel()
 
 	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
 
@@ -336,11 +336,11 @@ func TestSubscriberAcksPermanentHandlerError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Cancel Receive before tearing down the test server.
-	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
+	// LIFO: Receive is cancelled before the test server is torn down.
+	defer cancel()
 
 	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
 
@@ -391,11 +391,11 @@ func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Cancel Receive before tearing down the test server.
-	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
+	// LIFO: Receive is cancelled before the test server is torn down.
+	defer cancel()
 
 	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
 

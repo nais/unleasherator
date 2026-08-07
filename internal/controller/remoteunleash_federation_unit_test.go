@@ -126,9 +126,9 @@ func TestFederationSubscribeReturnsPermanentHandlerError(t *testing.T) {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			err := handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed)
-			// Recoverable operator-side failures (RBAC) nack the message so it
-			// is redelivered once the operator restarts healthy.
 			assert.ErrorIs(t, err, forbidden)
+			var permanent *federation.PermanentError
+			assert.NotErrorAs(t, err, &permanent, "RBAC failures must be nacked, not dropped")
 		}()
 	}
 	for range 4 {

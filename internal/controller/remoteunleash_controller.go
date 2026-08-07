@@ -457,6 +457,11 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		// permanent handler error is recorded as the cancel cause; anything
 		// else from Receive is a transient subscription failure to retry.
 		started := time.Now()
+		// A run that stays up past the backoff cap counts as recovered; clear
+		// the gauge while healthy so alerts do not fire on a stale blip.
+		healthy := time.AfterFunc(federationReceiveBackoffMax, func() {
+			federationReceiveConsecutiveErrors.Set(0)
+		})
 		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
 			// failPermanently stops receiving so the operator restarts into a
 			// corrected configuration, but nacks the message: operator-side
@@ -733,9 +738,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			}
 		})
 
-		// Subscribe returns when the subscription context is cancelled. A
-		// permanent handler error is recorded as the cancel cause; anything
-		// else from Receive is a transient subscription failure to retry.
+		healthy.Stop()
 		cancel(nil)
 
 		if ctx.Err() != nil {
