@@ -65,7 +65,8 @@ func legacySecret() *corev1.Secret {
 			},
 		},
 		Data: map[string][]byte{
-			unleashv1.UnleashSecretTokenKey: []byte(migrationToken),
+			unleashv1.UnleashSecretTokenKey:     []byte(migrationToken),
+			unleashv1.UnleashSecretServerURLKey: []byte(migrationURL),
 		},
 	}
 }
@@ -124,15 +125,19 @@ func TestMigrateLegacyAdminSecretPreservesSharedSecret(t *testing.T) {
 
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
 	require.NoError(t, err)
-	assert.True(t, migrated)
+	assert.False(t, migrated, "shared legacy secrets are refused before any mutation")
 
 	updated := &unleashv1.RemoteUnleash{}
 	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
-	assert.Equal(t, namespaceBoundSecretKey(t), updated.AdminSecretNamespacedName())
+	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name,
+		"reference must stay on the shared legacy secret")
 
 	legacyKey := types.NamespacedName{Name: secret.Name, Namespace: migrationTenantNamespace}
 	require.NoError(t, reconciler.Get(context.Background(), legacyKey, &corev1.Secret{}),
-		"shared legacy secret must be preserved until the other RemoteUnleash migrates")
+		"shared legacy secret must be preserved")
+
+	require.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
+		"no replacement grant may be minted for a shared secret")
 }
 
 func TestMigrateLegacyAdminSecretNoopWhenNamespaceBound(t *testing.T) {
@@ -272,7 +277,7 @@ func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
 	require.Error(t, err)
 	assert.False(t, migrated)
-	assert.Contains(t, err.Error(), "does not match")
+	assert.Contains(t, err.Error(), "republication required")
 }
 
 func TestMigrateLegacyAdminSecretIsIdempotentOnRetry(t *testing.T) {

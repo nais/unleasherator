@@ -80,12 +80,36 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		return false, fmt.Errorf("legacy admin secret %s is missing key %q", legacyKey, remoteUnleash.Spec.AdminSecret.Key)
 	}
 
-	// Refuse to launder a stale URL binding into the durable namespace-bound
-	// grant: a recorded URL that disagrees with the spec indicates drift.
-	if recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey]); recordedURL != "" &&
-		recordedURL != remoteUnleash.Spec.Server.URL {
+	// Never derive the authoritative URL binding from tenant-controlled spec:
+	// pre-#746 legacy secrets carry no URL, and a tenant could otherwise point
+	// the spec at an attacker server and have the grant survive the legacy
+	// enforcement flip. Such secrets require one operator-driven republication
+	// (which writes the url key) before they can migrate.
+	if string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey]) != remoteUnleash.Spec.Server.URL {
+		if r.Recorder != nil {
+			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretMigrationRefused",
+				"Legacy admin secret does not assert its URL; republication is required before migration")
+		}
 		federationSecretMigrations.WithLabelValues("failed").Inc()
-		return false, fmt.Errorf("legacy admin secret %s URL does not match spec.server.url", legacyKey)
+		return false, fmt.Errorf("legacy admin secret %s does not assert spec.server.url; republication required", legacyKey)
+	}
+
+	// Refuse shared legacy secrets before minting anything: each referencing
+	// RemoteUnleash would otherwise receive its own annotated grant, and the
+	// canary tooling already treats shared secrets as manual-review cases.
+	shared, err := federationAdminSecretReferencedByOtherRemoteUnleash(
+		ctx, r.APIReader, legacyKey, client.ObjectKeyFromObject(remoteUnleash))
+	if err != nil {
+		return false, fmt.Errorf("checking legacy admin secret references: %w", err)
+	}
+	if shared {
+		log.Info("Refusing to migrate shared legacy admin secret; migrate referencing resources manually", "secret", legacyKey)
+		if r.Recorder != nil {
+			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretMigrationRefused",
+				"Legacy admin secret is shared with another RemoteUnleash; manual migration required")
+		}
+		federationSecretMigrations.WithLabelValues("refused").Inc()
+		return false, nil
 	}
 
 	// Same derivation as the federation subscriber fallback, so a later
@@ -140,7 +164,8 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		if err := r.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash); err != nil {
 			return err
 		}
-		if remoteUnleash.AdminSecretNamespacedName() != legacyKey {
+		if remoteUnleash.AdminSecretNamespacedName() != legacyKey ||
+			remoteUnleash.Spec.Server.URL != string(newSecret.Data[unleashv1.UnleashSecretServerURLKey]) {
 			return errMigrationSuperseded
 		}
 		remoteUnleash.Spec.AdminSecret.Name = secretName
@@ -156,20 +181,8 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		return false, fmt.Errorf("repointing RemoteUnleash to namespace-bound admin secret: %w", err)
 	}
 
-	shared, err := federationAdminSecretReferencedByOtherRemoteUnleash(
-		ctx, r.APIReader, legacyKey, client.ObjectKeyFromObject(remoteUnleash))
-	if err != nil {
-		federationSecretMigrations.WithLabelValues("cleanup_failed").Inc()
-		return true, fmt.Errorf("checking legacy admin secret references: %w", err)
-	}
-	if shared {
-		log.Info("Preserving legacy admin secret referenced by another RemoteUnleash", "secret", legacyKey)
-		federationSecretMigrations.WithLabelValues("preserved").Inc()
-		return true, nil
-	}
-
-	// Delete with preconditions so a secret recreated after our read is never
-	// removed underneath its new owner.
+	// By this point the shared-secret check already refused migration, so the
+	// legacy secret is solely owned and can be deleted with preconditions.
 	if err := r.Delete(ctx, legacySecret, &client.DeleteOptions{
 		Preconditions: &metav1.Preconditions{
 			UID:             &legacySecret.UID,
