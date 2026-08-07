@@ -583,8 +583,9 @@ func (r *ApiTokenReconciler) cleanupTokenInUnleash(ctx context.Context, token *u
 	}
 
 	if !unleash.IsReady() {
-		log.Info("Unleash instance is not ready; skipping token cleanup")
-		return nil
+		// Retryable: a restarting instance may become ready shortly; the
+		// finalizer deadline bounds how long deletion can wait.
+		return fmt.Errorf("unleash instance not ready for token cleanup")
 	}
 
 	apiClient, err := r.apiClient(ctx, unleash)
