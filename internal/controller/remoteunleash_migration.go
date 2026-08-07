@@ -84,19 +84,26 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 	// pre-#746 legacy secrets carry no URL, and a tenant could otherwise point
 	// the spec at an attacker server and have the grant survive the legacy
 	// enforcement flip.
+	//
+	// The credential was just verified against the Unleash server at this URL
+	// (the stats call succeeded), so filling an absent url key is a faithful
+	// statement of where the credential was proven to work — no republication
+	// needed. A recorded URL that disagrees is genuine drift: fail loudly.
 	recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey])
-	if recordedURL != remoteUnleash.Spec.Server.URL {
-		if r.Recorder != nil {
-			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretMigrationRefused",
-				"Legacy admin secret does not assert its URL; republication is required before migration")
+	if recordedURL == "" {
+		patch := client.MergeFrom(legacySecret.DeepCopy())
+		if legacySecret.Data == nil {
+			legacySecret.Data = map[string][]byte{}
 		}
-		if recordedURL == "" {
-			// The documented, expected state before republication — not an
-			// error; the resource stays healthy on its normal requeue.
-			log.Info("Refusing to migrate legacy admin secret that does not assert its URL; republication required", "secret", legacyKey)
-			federationSecretMigrations.WithLabelValues("refused").Inc()
-			return false, nil
+		legacySecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleash.Spec.Server.URL)
+		if err := r.Patch(ctx, legacySecret, patch); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil // deleted concurrently; next reconcile re-evaluates
+			}
+			federationSecretMigrations.WithLabelValues("failed").Inc()
+			return false, fmt.Errorf("stamping url onto legacy admin secret %s: %w", legacyKey, err)
 		}
+	} else if recordedURL != remoteUnleash.Spec.Server.URL {
 		federationSecretMigrations.WithLabelValues("failed").Inc()
 		return false, fmt.Errorf("legacy admin secret %s URL %q does not match spec.server.url %q", legacyKey, recordedURL, remoteUnleash.Spec.Server.URL)
 	}

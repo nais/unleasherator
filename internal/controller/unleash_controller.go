@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -740,15 +739,6 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 		return ctrl.Result{}, err
 	}
 
-	// Stamp the url key onto federation-managed legacy secrets so the
-	// RemoteUnleash migration (which refuses secrets without a self-asserted
-	// URL) can converge without requiring a republication.
-	if r.Federation.Enabled && unleash.Spec.Federation.Enabled {
-		if err := r.refreshFederationSecretURLs(ctx, unleash, adminKey, log); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	// Create instance secret if it doesn't already exist (Create+IgnoreAlreadyExists
 	// avoids needing Get permission on secrets in the CR namespace)
 	newInstanceSecret, err := resources.InstanceSecretForUnleash(unleash, r.Scheme, adminKey)
@@ -764,57 +754,6 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// refreshFederationSecretURLs stamps the url key onto this instance's
-// federation-managed secrets (both operator-namespace and tenant-namespace
-// layouts). Legacy secrets predate the url key; the RemoteUnleash migration
-// refuses to convert a secret that cannot self-assert its URL, so this is the
-// operator-driven republication that unblocks it.
-func (r *UnleashReconciler) refreshFederationSecretURLs(ctx context.Context, unleash *unleashv1.Unleash, adminKey string, log logr.Logger) error {
-	currentURL := unleash.PublicApiURL()
-	if currentURL == "" {
-		return nil
-	}
-
-	namespaces := unleash.Spec.Federation.Namespaces
-	if len(namespaces) == 0 {
-		return nil
-	}
-
-	secrets := &corev1.SecretList{}
-	if err := r.List(ctx, secrets, client.MatchingLabels{
-		"app.kubernetes.io/instance":   unleash.Name,
-		"app.kubernetes.io/part-of":    "unleasherator",
-		"app.kubernetes.io/created-by": "controller-manager",
-	}); err != nil {
-		return fmt.Errorf("listing federation secrets: %w", err)
-	}
-
-	for i := range secrets.Items {
-		secret := &secrets.Items[i]
-		if !strings.HasPrefix(secret.Name, unleashv1.UnleashSecretNamePrefix+"-") {
-			continue
-		}
-		if string(secret.Data[unleashv1.UnleashSecretTokenKey]) != adminKey {
-			continue
-		}
-		if string(secret.Data[unleashv1.UnleashSecretServerURLKey]) == currentURL {
-			continue
-		}
-
-		patch := client.MergeFrom(secret.DeepCopy())
-		if secret.Data == nil {
-			secret.Data = map[string][]byte{}
-		}
-		secret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(currentURL)
-		log.Info("Stamping url onto federation admin secret", "Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
-		if err := r.Patch(ctx, secret, patch); err != nil {
-			return fmt.Errorf("patching federation secret %s/%s: %w", secret.Namespace, secret.Name, err)
-		}
-	}
-
-	return nil
 }
 
 // reconcileDeployment will ensure that the required deployment is created
