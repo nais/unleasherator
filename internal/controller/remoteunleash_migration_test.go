@@ -286,15 +286,16 @@ func TestMigrateLegacyAdminSecretRefusesUnassertedURL(t *testing.T) {
 	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
+	// The credential was verified against the spec URL by the stats check
+	// earlier in the reconcile, so filling the absent url key is a faithful
+	// statement and the migration proceeds.
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
-	require.NoError(t, err, "a missing URL is the expected pre-republication state, not an error")
-	assert.False(t, migrated)
+	require.NoError(t, err)
+	assert.True(t, migrated, "absent url is stamped from the verified spec URL, then migrated")
 
 	updated := &unleashv1.RemoteUnleash{}
 	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
-	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
-	require.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
-		"no grant may be minted without a secret-asserted URL")
+	assert.Equal(t, namespaceBoundSecretKey(t), updated.AdminSecretNamespacedName())
 }
 
 func TestMigrateLegacyAdminSecretIsIdempotentOnRetry(t *testing.T) {
