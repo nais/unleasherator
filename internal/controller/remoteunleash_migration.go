@@ -80,37 +80,9 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		return false, fmt.Errorf("legacy admin secret %s is missing key %q", legacyKey, remoteUnleash.Spec.AdminSecret.Key)
 	}
 
-	// Never derive the authoritative URL binding from tenant-controlled spec:
-	// pre-#746 legacy secrets carry no URL, and a tenant could otherwise point
-	// the spec at an attacker server and have the grant survive the legacy
-	// enforcement flip.
-	//
-	// The credential was just verified against the Unleash server at this URL
-	// (the stats call succeeded), so filling an absent url key is a faithful
-	// statement of where the credential was proven to work — no republication
-	// needed. A recorded URL that disagrees is genuine drift: fail loudly.
-	recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey])
-	if recordedURL == "" {
-		patch := client.MergeFrom(legacySecret.DeepCopy())
-		if legacySecret.Data == nil {
-			legacySecret.Data = map[string][]byte{}
-		}
-		legacySecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleash.Spec.Server.URL)
-		if err := r.Patch(ctx, legacySecret, patch); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil // deleted concurrently; next reconcile re-evaluates
-			}
-			federationSecretMigrations.WithLabelValues("failed").Inc()
-			return false, fmt.Errorf("stamping url onto legacy admin secret %s: %w", legacyKey, err)
-		}
-	} else if recordedURL != remoteUnleash.Spec.Server.URL {
-		federationSecretMigrations.WithLabelValues("failed").Inc()
-		return false, fmt.Errorf("legacy admin secret %s URL %q does not match spec.server.url %q", legacyKey, recordedURL, remoteUnleash.Spec.Server.URL)
-	}
-
-	// Refuse shared legacy secrets before minting anything: each referencing
-	// RemoteUnleash would otherwise receive its own annotated grant, and the
-	// canary tooling already treats shared secrets as manual-review cases.
+	// Refuse shared legacy secrets before minting or mutating anything: each
+	// referencing RemoteUnleash would otherwise receive its own annotated
+	// grant, and the canary tooling treats shared secrets as manual-review.
 	shared, err := federationAdminSecretReferencedByOtherRemoteUnleash(
 		ctx, r.APIReader, legacyKey, client.ObjectKeyFromObject(remoteUnleash))
 	if err != nil {
@@ -124,6 +96,45 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		}
 		federationSecretMigrations.WithLabelValues("refused").Inc()
 		return false, nil
+	}
+
+	// Never derive the authoritative URL binding from tenant-controlled spec:
+	// pre-#746 legacy secrets carry no URL, and a tenant could otherwise point
+	// the spec at an attacker server and have the grant survive the legacy
+	// enforcement flip.
+	//
+	// For a same-namespace legacy secret the credential is already readable by
+	// the tenant, and the reconcile just verified it against the spec URL via
+	// the stats call, so filling an absent url key is faithful and needs no
+	// republication. A cross-namespace url-less secret asserts nothing about
+	// the URL and is refused until the publisher writes it. A recorded URL
+	// that disagrees is genuine drift and fails loudly.
+	recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey])
+	switch {
+	case recordedURL == "" && legacyKey.Namespace == remoteUnleash.Namespace:
+		patch := client.MergeFrom(legacySecret.DeepCopy())
+		if legacySecret.Data == nil {
+			legacySecret.Data = map[string][]byte{}
+		}
+		legacySecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleash.Spec.Server.URL)
+		if err := r.Patch(ctx, legacySecret, patch); err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil // deleted concurrently; next reconcile re-evaluates
+			}
+			federationSecretMigrations.WithLabelValues("failed").Inc()
+			return false, fmt.Errorf("stamping url onto legacy admin secret %s: %w", legacyKey, err)
+		}
+	case recordedURL == "":
+		log.Info("Refusing to migrate cross-namespace legacy admin secret without a url assertion; republication required", "secret", legacyKey)
+		if r.Recorder != nil {
+			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretMigrationRefused",
+				"Legacy admin secret does not assert its URL; republication is required before migration")
+		}
+		federationSecretMigrations.WithLabelValues("refused").Inc()
+		return false, nil
+	case recordedURL != remoteUnleash.Spec.Server.URL:
+		federationSecretMigrations.WithLabelValues("failed").Inc()
+		return false, fmt.Errorf("legacy admin secret %s URL %q does not match spec.server.url %q", legacyKey, recordedURL, remoteUnleash.Spec.Server.URL)
 	}
 
 	// Same derivation as the federation subscriber fallback, so a later
