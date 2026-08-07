@@ -172,6 +172,7 @@ func TestMigrateLegacyAdminSecretMigratesNameBoundOperatorSecret(t *testing.T) {
 
 	secret := legacySecret()
 	secret.Namespace = migrationOperatorNamespace
+	// Cross-namespace legacy secrets keep their publisher-asserted URL.
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
@@ -179,6 +180,55 @@ func TestMigrateLegacyAdminSecretMigratesNameBoundOperatorSecret(t *testing.T) {
 	assert.True(t, migrated, "name-bound operator secret without annotation is legacy and must migrate")
 
 	require.NoError(t, reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{}))
+}
+
+func TestMigrateLegacyAdminSecretRefusesCrossNamespaceUnassertedURL(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	remoteUnleash.Spec.AdminSecret.Namespace = migrationOperatorNamespace
+
+	secret := legacySecret()
+	secret.Namespace = migrationOperatorNamespace
+	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated, "cross-namespace url-less secrets assert nothing about the URL")
+
+	updated := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
+	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
+	assert.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
+		"no grant may be minted from a url-less cross-namespace secret")
+}
+
+func TestMigrateLegacyAdminSecretDoesNotMutateSharedSecret(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	delete(secret.Data, unleashv1.UnleashSecretServerURLKey) // url-less: stamp must not fire
+
+	other := &unleashv1.RemoteUnleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-unleash", Namespace: "tenant-b"},
+		Spec: unleashv1.RemoteUnleashSpec{
+			Server: unleashv1.RemoteUnleashServer{URL: migrationURL},
+			AdminSecret: unleashv1.RemoteUnleashSecret{
+				Name:      secret.Name,
+				Namespace: migrationTenantNamespace,
+				Key:       unleashv1.UnleashSecretTokenKey,
+			},
+		},
+	}
+	reconciler := migrationTestSetup(t, remoteUnleash, secret, other)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated)
+
+	fresh := &corev1.Secret{}
+	legacyKey := types.NamespacedName{Name: secret.Name, Namespace: migrationTenantNamespace}
+	require.NoError(t, reconciler.Get(context.Background(), legacyKey, fresh))
+	assert.Empty(t, fresh.Data[unleashv1.UnleashSecretServerURLKey],
+		"refused shared secrets must not be mutated")
 }
 
 func TestMigrateLegacyAdminSecretRejectsConflictingSecret(t *testing.T) {
