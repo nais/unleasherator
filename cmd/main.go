@@ -132,6 +132,7 @@ func main() {
 			Subscriber:  subscriber,
 		},
 		AllowLegacyNameBoundSecrets: cfg.Features.AllowLegacyNameBoundSecrets,
+		NamespaceBoundSecrets:       cfg.Features.FederationNamespaceBoundSecrets,
 		Tracer:                      tp.Tracer("remoteunleash-controller"),
 	}
 	if err = remoteUnleashReconciler.SetupWithManager(mgr); err != nil {

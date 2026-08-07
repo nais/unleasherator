@@ -223,16 +223,23 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 }
 
 func stableNonce(instance *pb.Instance) (string, error) {
-	if instance.GetSecretToken() == "" {
+	return StableSecretNonce(instance.GetName(), instance.GetUrl(), instance.GetSecretToken())
+}
+
+// StableSecretNonce derives a deterministic secret nonce from the instance
+// identity and credential, so reconciles and republications converge on the
+// same secret name while credential rotation produces a new one.
+func StableSecretNonce(name, url, secretToken string) (string, error) {
+	if secretToken == "" {
 		return "", fmt.Errorf("cannot derive stable nonce without an admin token")
 	}
 
 	hash := sha256.New()
-	hash.Write([]byte(instance.GetName()))
+	hash.Write([]byte(name))
 	hash.Write([]byte{0})
-	hash.Write([]byte(instance.GetUrl()))
+	hash.Write([]byte(url))
 	hash.Write([]byte{0})
-	hash.Write([]byte(instance.GetSecretToken()))
+	hash.Write([]byte(secretToken))
 
 	return hex.EncodeToString(hash.Sum(nil)[:6]), nil
 }

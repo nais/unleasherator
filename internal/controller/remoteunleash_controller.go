@@ -84,7 +84,11 @@ type RemoteUnleashReconciler struct {
 	Timeout                     config.TimeoutConfig
 	Federation                  RemoteUnleashFederation
 	AllowLegacyNameBoundSecrets bool
-	Tracer                      trace.Tracer
+	// NamespaceBoundSecrets enables reconcile-driven migration of legacy
+	// admin secrets to the namespace-bound layout when combined with
+	// AllowLegacyNameBoundSecrets.
+	NamespaceBoundSecrets bool
+	Tracer                trace.Tracer
 }
 
 type RemoteUnleashFederation struct {
@@ -256,6 +260,22 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	err = r.updateStatusSuccess(ctx, stats, remoteUnleash)
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// The credential is verified by the stats call above; this is the safe
+	// point to move a legacy admin secret to the namespace-bound layout.
+	if r.NamespaceBoundSecrets && r.AllowLegacyNameBoundSecrets {
+		migrated, err := r.migrateLegacyAdminSecret(ctx, remoteUnleash, log)
+		if err != nil {
+			log.Error(err, "Failed to migrate legacy admin secret")
+			return ctrl.Result{}, err
+		}
+		if migrated {
+			// The spec change triggers the next reconcile via the generation
+			// predicate; the jittered requeue is belt-and-braces in case a
+			// future change makes the update a no-op.
+			return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(remoteUnleashRequeueAfter, remoteUnleashRequeueJitter)}, nil
+		}
 	}
 
 	return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(remoteUnleashRequeueAfter, remoteUnleashRequeueJitter)}, nil
