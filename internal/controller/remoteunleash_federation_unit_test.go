@@ -121,18 +121,17 @@ func TestFederationSubscribeReturnsPermanentHandlerError(t *testing.T) {
 
 	// Concurrent callbacks hitting the same permanent failure must not race on
 	// shared subscriber state; the first cancellation decides the cause.
-	done := make(chan struct{})
+	errs := make(chan error, 4)
 	for range 4 {
 		go func() {
-			defer func() { done <- struct{}{} }()
-			err := handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed)
-			assert.ErrorIs(t, err, forbidden)
-			var permanent *federation.PermanentError
-			assert.NotErrorAs(t, err, &permanent, "RBAC failures must be nacked, not dropped")
+			errs <- handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed)
 		}()
 	}
 	for range 4 {
-		<-done
+		err := <-errs
+		assert.ErrorIs(t, err, forbidden)
+		var permanent *federation.PermanentError
+		assert.NotErrorAs(t, err, &permanent, "RBAC failures must be nacked, not dropped")
 	}
 
 	select {
