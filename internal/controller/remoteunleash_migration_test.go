@@ -58,6 +58,11 @@ func legacySecret() *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "unleasherator-test-unleash-abc123",
 			Namespace: migrationTenantNamespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/instance":   "test-unleash",
+				"app.kubernetes.io/part-of":    "unleasherator",
+				"app.kubernetes.io/created-by": "controller-manager",
+			},
 		},
 		Data: map[string][]byte{
 			unleashv1.UnleashSecretTokenKey: []byte(migrationToken),
@@ -92,8 +97,8 @@ func TestMigrateLegacyAdminSecretMigratesTenantSecret(t *testing.T) {
 	require.NoError(t, reconciler.Get(context.Background(), namespaceBoundSecretKey(t), migratedSecret))
 	assert.Equal(t, migrationTenantNamespace,
 		migratedSecret.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
-	assert.Equal(t, migrationToken, migratedSecret.StringData[unleashv1.UnleashSecretTokenKey])
-	assert.Equal(t, migrationURL, migratedSecret.StringData[unleashv1.UnleashSecretServerURLKey])
+	assert.Equal(t, []byte(migrationToken), migratedSecret.Data[unleashv1.UnleashSecretTokenKey])
+	assert.Equal(t, []byte(migrationURL), migratedSecret.Data[unleashv1.UnleashSecretServerURLKey])
 
 	legacyKey := types.NamespacedName{Name: "unleasherator-test-unleash-abc123", Namespace: migrationTenantNamespace}
 	err = reconciler.Get(context.Background(), legacyKey, &corev1.Secret{})
@@ -211,4 +216,98 @@ func TestMigrateLegacyAdminSecretRequiresTokenKey(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, migrated)
 	assert.Contains(t, err.Error(), "missing key")
+}
+
+func TestMigrateLegacyAdminSecretSkipsTenantOwnedSecret(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	secret.Labels = nil // tenant-authored secret without operator labels
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated, "tenant-owned secrets must never be migrated or deleted")
+
+	updated := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
+	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
+
+	legacyKey := types.NamespacedName{Name: secret.Name, Namespace: migrationTenantNamespace}
+	require.NoError(t, reconciler.Get(context.Background(), legacyKey, &corev1.Secret{}),
+		"tenant-owned secret must be preserved")
+}
+
+func TestMigrateLegacyAdminSecretAbortsOnConcurrentSpecChange(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	// Simulate a concurrent federation rotation repointing the resource before
+	// the migration's spec update lands.
+	updated := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
+	updated.Spec.AdminSecret.Name = "unleasherator-test-unleash-tenant-a-admin-key-rotated"
+	updated.Spec.AdminSecret.Namespace = migrationOperatorNamespace
+	require.NoError(t, reconciler.Update(context.Background(), updated))
+
+	// Reset the in-memory object to the pre-rotation reference, as the
+	// reconciler would have read it before the rotation landed.
+	incoming := legacyRemoteUnleash()
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), incoming, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated, "migration must abort when the reference changed concurrently")
+
+	current := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), current))
+	assert.Equal(t, "unleasherator-test-unleash-tenant-a-admin-key-rotated", current.Spec.AdminSecret.Name,
+		"concurrent repoint must not be overwritten by a stale migration")
+}
+
+func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	secret.Data[unleashv1.UnleashSecretServerURLKey] = []byte("https://attacker.example.com")
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.Error(t, err)
+	assert.False(t, migrated)
+	assert.Contains(t, err.Error(), "does not match")
+}
+
+func TestMigrateLegacyAdminSecretIsIdempotentOnRetry(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	// Simulate a crash after the replacement was created but before repoint:
+	// the namespace-bound secret already exists with identical content.
+	boundKey := namespaceBoundSecretKey(t)
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      boundKey.Name,
+			Namespace: migrationOperatorNamespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/instance":   "test-unleash",
+				"app.kubernetes.io/part-of":    "unleasherator",
+				"app.kubernetes.io/created-by": "controller-manager",
+			},
+			Annotations: map[string]string{
+				unleashv1.UnleashSecretAuthorizedNamespaceAnnotation: migrationTenantNamespace,
+			},
+		},
+		Data: map[string][]byte{
+			unleashv1.UnleashSecretTokenKey:     []byte(migrationToken),
+			unleashv1.UnleashSecretServerURLKey: []byte(migrationURL),
+		},
+	}
+	require.NoError(t, reconciler.Create(context.Background(), existing))
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.True(t, migrated, "retry with an existing identical replacement must converge")
+
+	final := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), final))
+	assert.Equal(t, boundKey, final.AdminSecretNamespacedName())
 }

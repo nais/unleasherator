@@ -268,13 +268,13 @@ func (r *RemoteUnleashReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		migrated, err := r.migrateLegacyAdminSecret(ctx, remoteUnleash, log)
 		if err != nil {
 			log.Error(err, "Failed to migrate legacy admin secret")
-			federationSecretMigrations.WithLabelValues("failed").Inc()
 			return ctrl.Result{}, err
 		}
 		if migrated {
 			// The spec change triggers the next reconcile via the generation
-			// predicate; it will validate the new reference end-to-end.
-			return ctrl.Result{}, nil
+			// predicate; the jittered requeue is belt-and-braces in case a
+			// future change makes the update a no-op.
+			return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(remoteUnleashRequeueAfter, remoteUnleashRequeueJitter)}, nil
 		}
 	}
 
