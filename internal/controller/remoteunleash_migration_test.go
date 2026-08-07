@@ -275,9 +275,26 @@ func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
-	require.Error(t, err)
+	require.Error(t, err, "a recorded URL that mismatches the spec is genuine drift and must fail")
 	assert.False(t, migrated)
-	assert.Contains(t, err.Error(), "republication required")
+	assert.Contains(t, err.Error(), "does not match")
+}
+
+func TestMigrateLegacyAdminSecretRefusesUnassertedURL(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err, "a missing URL is the expected pre-republication state, not an error")
+	assert.False(t, migrated)
+
+	updated := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
+	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
+	require.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
+		"no grant may be minted without a secret-asserted URL")
 }
 
 func TestMigrateLegacyAdminSecretIsIdempotentOnRetry(t *testing.T) {

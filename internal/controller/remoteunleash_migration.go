@@ -83,15 +83,22 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 	// Never derive the authoritative URL binding from tenant-controlled spec:
 	// pre-#746 legacy secrets carry no URL, and a tenant could otherwise point
 	// the spec at an attacker server and have the grant survive the legacy
-	// enforcement flip. Such secrets require one operator-driven republication
-	// (which writes the url key) before they can migrate.
-	if string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey]) != remoteUnleash.Spec.Server.URL {
+	// enforcement flip.
+	recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey])
+	if recordedURL != remoteUnleash.Spec.Server.URL {
 		if r.Recorder != nil {
 			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretMigrationRefused",
 				"Legacy admin secret does not assert its URL; republication is required before migration")
 		}
+		if recordedURL == "" {
+			// The documented, expected state before republication — not an
+			// error; the resource stays healthy on its normal requeue.
+			log.Info("Refusing to migrate legacy admin secret that does not assert its URL; republication required", "secret", legacyKey)
+			federationSecretMigrations.WithLabelValues("refused").Inc()
+			return false, nil
+		}
 		federationSecretMigrations.WithLabelValues("failed").Inc()
-		return false, fmt.Errorf("legacy admin secret %s does not assert spec.server.url; republication required", legacyKey)
+		return false, fmt.Errorf("legacy admin secret %s URL %q does not match spec.server.url %q", legacyKey, recordedURL, remoteUnleash.Spec.Server.URL)
 	}
 
 	// Refuse shared legacy secrets before minting anything: each referencing
