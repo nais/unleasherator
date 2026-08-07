@@ -330,7 +330,7 @@ func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
 	assert.Contains(t, err.Error(), "does not match")
 }
 
-func TestMigrateLegacyAdminSecretRefusesUnassertedURL(t *testing.T) {
+func TestMigrateLegacyAdminSecretStampsAbsentURLAndMigrates(t *testing.T) {
 	remoteUnleash := legacyRemoteUnleash()
 	secret := legacySecret()
 	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
