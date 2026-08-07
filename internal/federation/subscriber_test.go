@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/pstest"
 	"github.com/google/uuid"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/nais/unleasherator/internal/pb"
@@ -265,12 +266,13 @@ func TestSubscriberIgnoresUnauthenticatedLegacyRemoval(t *testing.T) {
 
 func TestSubscriberDropsPoisonMessage(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	srv, conn, c, topic, subscription, err := newPubSub(ctx, "poison-test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Cancel Receive before tearing down the test server.
+	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
@@ -329,12 +331,13 @@ func TestSubscriberDropsPoisonMessage(t *testing.T) {
 
 func TestSubscriberAcksPermanentHandlerError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	srv, conn, c, topic, subscription, err := newPubSub(ctx, "permanent-test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Cancel Receive before tearing down the test server.
+	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
@@ -377,18 +380,27 @@ func TestSubscriberAcksPermanentHandlerError(t *testing.T) {
 }
 
 func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
+	// pstest redelivers nacked messages only after the subscription ack
+	// deadline; the default 10s makes this test slow and flaky.
+	pstest.SetMinAckDeadline(2 * time.Second)
+	defer pstest.ResetMinAckDeadline()
+
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	srv, conn, c, topic, subscription, err := newPubSub(ctx, "transient-test")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Cancel Receive before tearing down the test server.
+	defer cancel()
 	defer srv.Close()
 	defer conn.Close()
 	defer c.Close()
 
 	subscriber := NewSubscriber(c, subscription, "unleasherator-system", true)
+
+	_, err = subscription.Update(ctx, pubsub.SubscriptionConfigToUpdate{AckDeadline: 2 * time.Second})
+	assert.NoError(t, err)
 
 	var calls atomic.Int32
 	go func() {
@@ -417,6 +429,6 @@ func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
 	_, err = res.Get(ctx)
 	assert.NoError(t, err)
 
-	assert.Eventually(t, func() bool { return calls.Load() >= 2 }, 10*time.Second, 10*time.Millisecond,
+	assert.Eventually(t, func() bool { return calls.Load() >= 2 }, 30*time.Second, 50*time.Millisecond,
 		"transient errors must be nacked and redelivered")
 }

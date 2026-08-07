@@ -25,9 +25,13 @@ import (
 )
 
 // PermanentError marks a message that can never be processed successfully
-// (unparseable payload, authorization failure). Such messages are poison:
-// redelivering them only blocks the subscription ordering key, so they are
-// acknowledged and dropped with an observable metric instead of nacked.
+// because its payload is malformed. Such messages are poison: redelivering
+// them only blocks the subscription ordering key, so they are acknowledged
+// and dropped with an observable metric instead of nacked.
+//
+// Recoverable operator-side failures (RBAC, API errors) must NOT use this:
+// they cancel the subscription to force a restart, but the message is nacked
+// so it is redelivered once the operator is healthy again.
 type PermanentError struct {
 	Err error
 }

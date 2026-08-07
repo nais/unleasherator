@@ -60,7 +60,9 @@ func TestFederationSubscribeRetriesTransientErrors(t *testing.T) {
 
 	require.Eventually(t, func() bool { return subscribeCalls.Load() >= 2 }, 5*time.Second, 10*time.Millisecond,
 		"transient receive errors must trigger a reconnect")
-	assert.GreaterOrEqual(t, testutil.ToFloat64(federationReceiveConsecutiveErrors), float64(2))
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(federationReceiveConsecutiveErrors) >= 2
+	}, 5*time.Second, 10*time.Millisecond)
 
 	cancel()
 	require.NoError(t, <-errCh, "parent cancellation must shut down cleanly")
@@ -124,8 +126,9 @@ func TestFederationSubscribeReturnsPermanentHandlerError(t *testing.T) {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			err := handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed)
-			var permanent *federation.PermanentError
-			assert.ErrorAs(t, err, &permanent)
+			// Recoverable operator-side failures (RBAC) nack the message so it
+			// is redelivered once the operator restarts healthy.
+			assert.ErrorIs(t, err, forbidden)
 		}()
 	}
 	for range 4 {

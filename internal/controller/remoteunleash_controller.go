@@ -453,13 +453,18 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		// receive loop exits deterministically.
 		subCtx, cancel := context.WithCancelCause(ctx)
 
+		// Subscribe returns when the subscription context is cancelled. A
+		// permanent handler error is recorded as the cancel cause; anything
+		// else from Receive is a transient subscription failure to retry.
+		started := time.Now()
 		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
-			// failPermanently stops receiving (operator must restart into a
-			// corrected configuration) and drops the message instead of
-			// redelivering it forever.
+			// failPermanently stops receiving so the operator restarts into a
+			// corrected configuration, but nacks the message: operator-side
+			// failures (e.g. RBAC) are recoverable, and the message must be
+			// redelivered once the operator is healthy again.
 			failPermanently := func(err error) error {
 				cancel(err)
-				return federation.Permanent(err)
+				return err
 			}
 			if len(remoteUnleashes) == 0 {
 				log.Info("Received pubsub message with no namespaces, ignoring", "status", status, "clusters", clusters)
@@ -624,6 +629,9 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 								client.ObjectKeyFromObject(existingRU),
 							)
 							if err != nil {
+								if !retriableError(err) {
+									return failPermanently(err)
+								}
 								return err
 							}
 							if !referencedByOther {
@@ -640,6 +648,9 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						r.OperatorNamespace,
 					)
 					if err != nil {
+						if !retriableError(err) {
+							return failPermanently(err)
+						}
 						return err
 					}
 					for _, secret := range discoveredSecrets {
@@ -698,9 +709,17 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					secretsToDelete = append(secretsToDelete, secret)
 				}
 				if errs := utils.DeleteAllObjects(cleanupCtx, r.Client, secretsToDelete); len(errs) > 0 {
+					var permanentErr error
 					for _, err := range errs {
 						remoteUnleashReceived.WithLabelValues("provisioned", "failed").Inc()
 						log.Error(err, "Failed to delete superseded federation admin secret")
+
+						if !retriableError(err) {
+							permanentErr = err
+						}
+					}
+					if permanentErr != nil {
+						return failPermanently(permanentErr)
 					}
 					return errs[0]
 				}
@@ -727,6 +746,15 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		if cause := context.Cause(subCtx); cause != nil && !errors.Is(cause, context.Canceled) {
 			log.Error(cause, "Permanent federation handler error, stopping subscriber")
 			return cause
+		}
+
+		// A subscription that stayed up past the backoff cap counts as
+		// recovered; the next blip starts from a clean retry state instead of
+		// inheriting a pinned gauge and a five-minute delay.
+		if err == nil || time.Since(started) > federationReceiveBackoffMax {
+			consecutiveErrors = 0
+			backoff = federationReceiveBackoffBase
+			federationReceiveConsecutiveErrors.Set(0)
 		}
 
 		if err != nil {
