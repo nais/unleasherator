@@ -118,8 +118,10 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		}
 		legacySecret.Data[unleashv1.UnleashSecretServerURLKey] = []byte(remoteUnleash.Spec.Server.URL)
 		if err := r.Patch(ctx, legacySecret, patch); err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil // deleted concurrently; next reconcile re-evaluates
+			if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+				// Deleted or modified concurrently; the next reconcile
+				// re-reads and re-evaluates.
+				return false, nil
 			}
 			federationSecretMigrations.WithLabelValues("failed").Inc()
 			return false, fmt.Errorf("stamping url onto legacy admin secret %s: %w", legacyKey, err)
