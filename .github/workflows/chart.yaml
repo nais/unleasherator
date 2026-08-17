@@ -15,7 +15,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.9"
   HELM_VERSION: v3.11.2
-  GHCR_REGISTRY: ghcr.io
+  IMAGE: europe-north1-docker.pkg.dev/nais-io/nais/images/unleasherator:main
   ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
   ARTIFACT_REPO: nais-io/nais/feature
   SERVICE_ACCOUNT: gh-unleasherator@nais-io.iam.gserviceaccount.com
@@ -128,8 +128,6 @@ jobs:
 
       - name: Build and load image to kind
         if: steps.list-changed.outputs.changed == 'true'
-        env:
-          IMAGE: ${{ env.GHCR_REGISTRY }}/${{ github.repository }}:main
         run: |
           tmp=$(mktemp -d)
           cp manager "${tmp}/"

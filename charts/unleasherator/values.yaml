@@ -29,7 +29,7 @@ controllerManager:
       otelTracesExporter: none
       webhookPort: "9443"
     image:
-      repository: ghcr.io/nais/unleasherator
+      repository: europe-north1-docker.pkg.dev/nais-io/nais/images/unleasherator
       tag: main
     imagePullPolicy: Always
     resources:

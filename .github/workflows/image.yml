@@ -18,7 +18,7 @@ env:
 
   ARTIFACT_REGISTRY: europe-north1-docker.pkg.dev
   ARTIFACT_REPO: nais-io/nais/images
-  SERVICE_ACCOUNT: gh-bifrost@nais-io.iam.gserviceaccount.com
+  SERVICE_ACCOUNT: gh-unleasherator@nais-io.iam.gserviceaccount.com
 
 jobs:
   meta:
@@ -123,6 +123,7 @@ jobs:
     name: Build Docker image (${{ matrix.arch }})
     permissions:
       contents: read
+      id-token: write
       packages: write
     runs-on: ${{ matrix.runner }}
     needs: [meta, lint, build]
@@ -141,12 +142,28 @@ jobs:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: auth
+        name: Authenticate to Google Cloud
+        if: github.ref == 'refs/heads/main'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # ratchet:google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+          token_format: access_token
+      - name: Log in to Google Artifact Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # ratchet:docker/login-action@v4.6.0
+        with:
+          registry: ${{ env.ARTIFACT_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # ratchet:docker/setup-buildx-action@v4.2.0
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # ratchet:docker/metadata-action@v6.2.0
         id: metadata
         with:
           images: |
             ${{ env.GHCR_REGISTRY }}/${{ github.repository }}
+            ${{ env.GAR_REGISTRY }}/unleasherator
           tags: |
             type=schedule,suffix=-${{ matrix.arch }}
             type=ref,event=branch,suffix=-${{ matrix.arch }}
@@ -170,6 +187,7 @@ jobs:
     name: Create and Push Multi-arch Manifest
     permissions:
       contents: read
+      id-token: write
       packages: write
     runs-on: ubuntu-latest
     needs: [meta, docker]
@@ -180,24 +198,41 @@ jobs:
           registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # ratchet:google-github-actions/auth@v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+          token_format: access_token
+      - name: Log in to Google Artifact Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # ratchet:docker/login-action@v4.6.0
+        with:
+          registry: ${{ env.ARTIFACT_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # ratchet:docker/setup-buildx-action@v4.2.0
       - name: Create and push manifest
         run: |
           IMAGE="${{ env.GHCR_REGISTRY }}/${{ github.repository }}"
+          GAR_IMAGE="${{ env.GAR_REGISTRY }}/unleasherator"
           VERSION="${{ needs.meta.outputs.version }}"
 
           # Create manifest for version tag
           docker buildx imagetools create -t ${IMAGE}:${VERSION} \
+            -t ${GAR_IMAGE}:${VERSION} \
             ${IMAGE}:${VERSION}-amd64 \
             ${IMAGE}:${VERSION}-arm64
 
           # Create manifest for main branch tag
           docker buildx imagetools create -t ${IMAGE}:main \
+            -t ${GAR_IMAGE}:main \
             ${IMAGE}:main-amd64 \
             ${IMAGE}:main-arm64
 
           # Create manifest for sha tag
           SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           docker buildx imagetools create -t ${IMAGE}:sha-${SHA} \
+            -t ${GAR_IMAGE}:sha-${SHA} \
             ${IMAGE}:sha-${SHA}-amd64 \
             ${IMAGE}:sha-${SHA}-arm64
