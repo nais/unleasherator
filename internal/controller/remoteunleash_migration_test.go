@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 const (
@@ -172,6 +173,7 @@ func TestMigrateLegacyAdminSecretMigratesNameBoundOperatorSecret(t *testing.T) {
 
 	secret := legacySecret()
 	secret.Namespace = migrationOperatorNamespace
+	// Cross-namespace legacy secrets keep their publisher-asserted URL.
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
@@ -179,6 +181,55 @@ func TestMigrateLegacyAdminSecretMigratesNameBoundOperatorSecret(t *testing.T) {
 	assert.True(t, migrated, "name-bound operator secret without annotation is legacy and must migrate")
 
 	require.NoError(t, reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{}))
+}
+
+func TestMigrateLegacyAdminSecretRefusesCrossNamespaceUnassertedURL(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	remoteUnleash.Spec.AdminSecret.Namespace = migrationOperatorNamespace
+
+	secret := legacySecret()
+	secret.Namespace = migrationOperatorNamespace
+	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
+	reconciler := migrationTestSetup(t, remoteUnleash, secret)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated, "cross-namespace url-less secrets assert nothing about the URL")
+
+	updated := &unleashv1.RemoteUnleash{}
+	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
+	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
+	assert.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
+		"no grant may be minted from a url-less cross-namespace secret")
+}
+
+func TestMigrateLegacyAdminSecretDoesNotMutateSharedSecret(t *testing.T) {
+	remoteUnleash := legacyRemoteUnleash()
+	secret := legacySecret()
+	delete(secret.Data, unleashv1.UnleashSecretServerURLKey) // url-less: stamp must not fire
+
+	other := &unleashv1.RemoteUnleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-unleash", Namespace: "tenant-b"},
+		Spec: unleashv1.RemoteUnleashSpec{
+			Server: unleashv1.RemoteUnleashServer{URL: migrationURL},
+			AdminSecret: unleashv1.RemoteUnleashSecret{
+				Name:      secret.Name,
+				Namespace: migrationTenantNamespace,
+				Key:       unleashv1.UnleashSecretTokenKey,
+			},
+		},
+	}
+	reconciler := migrationTestSetup(t, remoteUnleash, secret, other)
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.False(t, migrated)
+
+	fresh := &corev1.Secret{}
+	legacyKey := types.NamespacedName{Name: secret.Name, Namespace: migrationTenantNamespace}
+	require.NoError(t, reconciler.Get(context.Background(), legacyKey, fresh))
+	assert.Empty(t, fresh.Data[unleashv1.UnleashSecretServerURLKey],
+		"refused shared secrets must not be mutated")
 }
 
 func TestMigrateLegacyAdminSecretRejectsConflictingSecret(t *testing.T) {
@@ -280,21 +331,87 @@ func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
 	assert.Contains(t, err.Error(), "does not match")
 }
 
-func TestMigrateLegacyAdminSecretRefusesUnassertedURL(t *testing.T) {
+func TestMigrateLegacyAdminSecretStampsAbsentURLAndMigrates(t *testing.T) {
 	remoteUnleash := legacyRemoteUnleash()
 	secret := legacySecret()
 	delete(secret.Data, unleashv1.UnleashSecretServerURLKey)
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
+	// The credential was verified against the spec URL by the stats check
+	// earlier in the reconcile, so filling the absent url key is a faithful
+	// statement and the migration proceeds.
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
-	require.NoError(t, err, "a missing URL is the expected pre-republication state, not an error")
-	assert.False(t, migrated)
+	require.NoError(t, err)
+	assert.True(t, migrated, "absent url is stamped from the verified spec URL, then migrated")
 
 	updated := &unleashv1.RemoteUnleash{}
 	require.NoError(t, reconciler.Get(context.Background(), remoteUnleash.NamespacedName(), updated))
-	assert.Equal(t, "unleasherator-test-unleash-abc123", updated.Spec.AdminSecret.Name)
-	require.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
-		"no grant may be minted without a secret-asserted URL")
+	assert.Equal(t, namespaceBoundSecretKey(t), updated.AdminSecretNamespacedName())
+
+	minted := &corev1.Secret{}
+	require.NoError(t, reconciler.Get(context.Background(), namespaceBoundSecretKey(t), minted))
+	assert.Equal(t, migrationURL, string(minted.Data[unleashv1.UnleashSecretServerURLKey]),
+		"the grant must record the verified spec URL, not an empty one")
+	assert.Equal(t, migrationToken, string(minted.Data[unleashv1.UnleashSecretTokenKey]))
+	assert.Equal(t, migrationTenantNamespace, minted.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation])
+
+	legacyKey := types.NamespacedName{Name: secret.Name, Namespace: migrationTenantNamespace}
+	assert.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), legacyKey, &corev1.Secret{})),
+		"the stamped legacy secret must still be cleaned up")
+}
+
+// A publisher writing the authoritative url between our read and our patch must
+// win: the optimistic lock turns the stamp into a no-op so the mismatch check
+// still sees genuine drift on the next reconcile.
+func TestMigrateLegacyAdminSecretAbortsStampOnConcurrentWrite(t *testing.T) {
+	const publisherURL = "https://publisher.example.com"
+
+	remoteUnleash := legacyRemoteUnleash()
+	legacy := legacySecret()
+	delete(legacy.Data, unleashv1.UnleashSecretServerURLKey)
+	legacyKey := types.NamespacedName{Name: legacy.Name, Namespace: legacy.Namespace}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+
+	raced := false
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(remoteUnleash, legacy).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
+				if s, ok := obj.(*corev1.Secret); ok && !raced && client.ObjectKeyFromObject(s) == legacyKey {
+					raced = true
+					competing := &corev1.Secret{}
+					require.NoError(t, c.Get(ctx, legacyKey, competing))
+					competing.Data[unleashv1.UnleashSecretServerURLKey] = []byte(publisherURL)
+					require.NoError(t, c.Update(ctx, competing))
+				}
+				return c.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:            fakeClient,
+		APIReader:         fakeClient,
+		Scheme:            scheme,
+		OperatorNamespace: migrationOperatorNamespace,
+	}
+
+	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
+	require.NoError(t, err, "a lost race is transient, not a migration failure")
+	assert.False(t, migrated)
+	assert.True(t, raced, "the interceptor must have fired, otherwise the race was never exercised")
+
+	fresh := &corev1.Secret{}
+	require.NoError(t, reconciler.Get(context.Background(), legacyKey, fresh))
+	assert.Equal(t, publisherURL, string(fresh.Data[unleashv1.UnleashSecretServerURLKey]),
+		"the publisher's url must survive the stamp attempt")
+
+	assert.True(t, apierrors.IsNotFound(reconciler.Get(context.Background(), namespaceBoundSecretKey(t), &corev1.Secret{})),
+		"no grant may be minted from a lost stamp race")
 }
 
 func TestMigrateLegacyAdminSecretIsIdempotentOnRetry(t *testing.T) {
