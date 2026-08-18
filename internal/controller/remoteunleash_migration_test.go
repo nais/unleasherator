@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -325,10 +326,23 @@ func TestMigrateLegacyAdminSecretRefusesURLDrift(t *testing.T) {
 	secret.Data[unleashv1.UnleashSecretServerURLKey] = []byte("https://attacker.example.com")
 	reconciler := migrationTestSetup(t, remoteUnleash, secret)
 
+	recorder := record.NewFakeRecorder(10)
+	reconciler.Recorder = recorder
+
 	migrated, err := reconciler.migrateLegacyAdminSecret(context.Background(), remoteUnleash, ctrl.Log.WithName("test"))
 	require.Error(t, err, "a recorded URL that mismatches the spec is genuine drift and must fail")
 	assert.False(t, migrated)
 	assert.Contains(t, err.Error(), "does not match")
+
+	// Drift must be visible to the tenant, not only in the operator log, and
+	// with a reason of its own rather than the url-less wording.
+	select {
+	case event := <-recorder.Events:
+		assert.Contains(t, event, "FederationSecretURLDrift")
+		assert.NotContains(t, event, "FederationSecretMigrationRefused")
+	default:
+		t.Fatal("drift emitted no event")
+	}
 }
 
 func TestMigrateLegacyAdminSecretStampsAbsentURLAndMigrates(t *testing.T) {
