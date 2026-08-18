@@ -558,6 +558,15 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 				g.Expect(getTokens()[0].Environment).To(Equal(originalEnvironment))
 				g.Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE =~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint)]).To(Equal(0))
 			}, "2s", interval).Should(Succeed())
+
+			By("Cleaning up the ApiToken")
+			// Restore the working responders first. Without this the ApiToken
+			// keeps reconciling against a permanent 500 for the rest of the
+			// suite, and its GET responder serves the shared token store — so a
+			// later ordering regression here could have it act on another
+			// spec's tokens.
+			registerApiTokenMocks(serverURL)
+			Expect(k8sClient.Delete(ctx, apiTokenCreated)).Should(Succeed())
 		})
 
 		It("Should update ApiToken in Unleash when it differs from Kubernetes", func() {
