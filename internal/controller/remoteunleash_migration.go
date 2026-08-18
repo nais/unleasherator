@@ -112,7 +112,11 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 	recordedURL := string(legacySecret.Data[unleashv1.UnleashSecretServerURLKey])
 	switch {
 	case recordedURL == "" && legacyKey.Namespace == remoteUnleash.Namespace:
-		patch := client.MergeFrom(legacySecret.DeepCopy())
+		// Optimistic lock: a plain MergeFrom omits resourceVersion, so the
+		// patch would silently win over a publisher that wrote the real url
+		// between the read above and this write — destroying the very drift
+		// signal the mismatch case below exists to surface.
+		patch := client.MergeFromWithOptions(legacySecret.DeepCopy(), client.MergeFromWithOptimisticLock{})
 		if legacySecret.Data == nil {
 			legacySecret.Data = map[string][]byte{}
 		}
@@ -121,11 +125,15 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 			if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
 				// Deleted or modified concurrently; the next reconcile
 				// re-reads and re-evaluates.
+				log.V(1).Info("Legacy admin secret changed while stamping url; retrying on next reconcile", "secret", legacyKey)
 				return false, nil
 			}
 			federationSecretMigrations.WithLabelValues("failed").Inc()
 			return false, fmt.Errorf("stamping url onto legacy admin secret %s: %w", legacyKey, err)
 		}
+		// Audit trail: the operator mutated a secret in the tenant namespace.
+		log.Info("Stamped verified url onto legacy admin secret", "secret", legacyKey, "url", remoteUnleash.Spec.Server.URL)
+		federationSecretMigrations.WithLabelValues("stamped").Inc()
 	case recordedURL == "":
 		log.Info("Refusing to migrate cross-namespace legacy admin secret without a url assertion; republication required", "secret", legacyKey)
 		if r.Recorder != nil {
