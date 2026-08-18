@@ -306,7 +306,12 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ti.After(tj)
 	})
 
-	// Delete outdated tokens in Unleash
+	// Identify the up-to-date token and collect the outdated ones. Nothing is
+	// deleted here: the superseded tokens are the only working credential until
+	// a replacement exists and its secret has been written. Deleting first meant
+	// a failed create left the ApiToken with no valid token at all, and every
+	// later reconcile repeated delete(none) -> create -> fail.
+	var outdated []unleashclient.ApiToken
 	for _, t := range apiTokens.Tokens {
 		// Check if the token is up to date and that we have not already found an up to date token
 		if token.IsEqual(t) && apiToken == nil {
@@ -317,7 +322,6 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 
 		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info(fmt.Sprintf("Token is outdated in Unleash. Token diff: %s", token.Diff(t)))
-		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
 
 		// If ApiTokenUpdateEnabled is false, prevent deletion of outdated tokens and subsequent creation of new tokens
 		// This also prevents deletion of duplicate tokens.
@@ -332,16 +336,8 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			continue
 		}
 
-		// At this point we know that the token is outdated or duplicate and it is safe to delete it
-		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting token in Unleash for ApiToken")
-		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
-		err = apiClient.DeleteApiToken(ctx, t.Secret)
-		if err != nil {
-			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, err
-		}
+		// Outdated or duplicate; queued for deletion once the replacement is in place.
+		outdated = append(outdated, t)
 	}
 
 	// Create token if it does not exist in Unleash
@@ -414,6 +410,22 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Info("Creating token secret for ApiToken")
 		if err := r.Create(ctx, secret); err != nil {
 			if err := r.updateStatusFailed(ctx, token, err, "TokenSecretFailed", "Failed to create new token secret"); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, err
+		}
+	}
+
+	// The replacement is in place and its secret is written, so the superseded
+	// tokens can go. A failure here leaves an extra valid token in Unleash,
+	// which the next reconcile collects again — strictly better than leaving
+	// the ApiToken with none.
+	for _, t := range outdated {
+		log.WithValues("token", t.TokenName, "created_at", t.CreatedAt).Info("Deleting superseded token in Unleash for ApiToken")
+		span.AddEvent(fmt.Sprintf("Deleting old token for %s created at %s in Unleash", t.TokenName, t.CreatedAt))
+		apiTokenDeletedCounter.WithLabelValues(token.Namespace, token.Name).Inc()
+		if err := apiClient.DeleteApiToken(ctx, t.Secret); err != nil {
+			if err := r.updateStatusFailed(ctx, token, err, "TokenUpdateFailed", "Failed to delete old token in Unleash"); err != nil {
 				return ctrl.Result{}, err
 			}
 			return ctrl.Result{}, err

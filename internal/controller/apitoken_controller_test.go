@@ -510,6 +510,56 @@ var _ = Describe("ApiToken Controller", Ordered, func() {
 	})
 
 	Context("When updating an existing ApiToken", func() {
+		It("Should keep the existing token when creating its replacement fails", func() {
+			ctx := context.Background()
+
+			apiTokenName := "test-apitoken-create-fails"
+			apiTokenLookup := types.NamespacedName{Name: apiTokenName, Namespace: ApiTokenNamespace}
+			serverURL := mockRemoteUnleashURL(apiTokenName, ApiTokenNamespace)
+
+			By("By creating a new RemoteUnleash")
+			secretCreated := remoteUnleashSecretResource(apiTokenName, ApiTokenNamespace, ApiTokenSecret)
+			Expect(k8sClient.Create(ctx, secretCreated)).Should(Succeed())
+			unleashKey, unleashCreated := remoteUnleashResource(apiTokenName, ApiTokenNamespace, serverURL, secretCreated)
+			registerApiTokenMocks(serverURL)
+			Expect(k8sClient.Create(ctx, unleashCreated)).Should(Succeed())
+			Eventually(remoteUnleashEventually(ctx, unleashKey, unleashCreated), timeout, interval).Should(ContainElement(remoteUnleashSuccessCondition()))
+
+			By("By creating a new ApiToken that succeeds")
+			apiTokenCreated := remoteUnleashApiTokenResource(apiTokenName, ApiTokenNamespace, apiTokenName, unleashCreated)
+			Expect(k8sClient.Create(ctx, apiTokenCreated)).Should(Succeed())
+			Eventually(apiTokenEventually(ctx, apiTokenLookup, apiTokenCreated), timeout, interval).Should(ContainElement(apiTokenSuccessCondition()))
+			Expect(getTokens()).Should(HaveLen(1))
+			originalEnvironment := getTokens()[0].Environment
+
+			By("By making token creation fail from now on")
+			httpmock.ZeroCallCounters()
+			httpmock.RegisterResponder("POST", serverURL+unleashclient.ApiTokensEndpoint,
+				httpmock.NewStringResponder(500, `{"message": "boom"}`))
+
+			By("By changing the spec so the existing token is superseded")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, apiTokenLookup, apiTokenCreated)).To(Succeed())
+				apiTokenCreated.Spec.Environment = "production"
+				g.Expect(k8sClient.Update(ctx, apiTokenCreated)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			By("By waiting for the reconcile to report the failure")
+			Eventually(func(g Gomega) {
+				g.Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("POST %s%s", serverURL, unleashclient.ApiTokensEndpoint)]).To(BeNumerically(">", 0))
+			}, timeout, interval).Should(Succeed())
+
+			By("By verifying the old token was never deleted")
+			// This is the whole point: deleting first meant a failed create left
+			// the ApiToken with no valid token at all, and every later reconcile
+			// repeated delete(none) -> create -> fail.
+			Consistently(func(g Gomega) {
+				g.Expect(getTokens()).To(HaveLen(1), "the existing token must survive a failed replacement")
+				g.Expect(getTokens()[0].Environment).To(Equal(originalEnvironment))
+				g.Expect(httpmock.GetCallCountInfo()[fmt.Sprintf("DELETE =~%s%s/.*", serverURL, unleashclient.ApiTokensEndpoint)]).To(Equal(0))
+			}, "2s", interval).Should(Succeed())
+		})
+
 		It("Should update ApiToken in Unleash when it differs from Kubernetes", func() {
 			ctx := context.Background()
 
