@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/pubsub"
@@ -19,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -53,8 +55,16 @@ var federationPoisonMessages = prometheus.NewCounterVec(
 	[]string{"subscription"},
 )
 
+var federationRejectedNamespaces = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "unleasherator_federation_rejected_namespaces_total",
+		Help: "Number of federation message namespaces refused before any resource was built",
+	},
+	[]string{"reason"},
+)
+
 func init() {
-	metrics.Registry.MustRegister(federationPoisonMessages)
+	metrics.Registry.MustRegister(federationPoisonMessages, federationRejectedNamespaces)
 }
 
 type Subscriber interface {
@@ -184,6 +194,12 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		log.Info("secret nonce not set, derived stable nonce")
 	}
 
+	// The payload names the namespaces to serve, and the operator has no
+	// independent inventory to check them against. What it does know is which
+	// namespaces are not tenants at all, so those are dropped here, before a
+	// single object is built from them.
+	namespaces := s.tenantNamespaces(ctx, instance.GetNamespaces())
+
 	var (
 		adminSecrets    []*corev1.Secret
 		remoteUnleashes []*unleashv1.RemoteUnleash
@@ -195,7 +211,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		// authorized-namespace annotation. The controller uses that annotation as the
 		// primary confused-deputy defense, so it cannot be bypassed by crafting a
 		// RemoteUnleash name.
-		for _, namespace := range instance.GetNamespaces() {
+		for _, namespace := range namespaces {
 			secretName := fmt.Sprintf("unleasherator-%s-%s-admin-key-%s", instance.GetName(), namespace, secretNonce)
 			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, s.namespace, instance.SecretToken, instance.GetUrl())
 			setAuthorizedNamespace(adminSecret, namespace)
@@ -212,18 +228,75 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 		// secrets in the operator namespace. Same-namespace references do not hit the
 		// cross-namespace authorization path in the controller.
 		secretName := fmt.Sprintf("unleasherator-%s-%s", instance.GetName(), secretNonce)
-		for _, namespace := range instance.GetNamespaces() {
+		for _, namespace := range namespaces {
 			adminSecret := resources.OperatorSecretForUnleash(instance.GetName(), secretName, namespace, instance.SecretToken, instance.GetUrl())
 			setAuthorizedNamespace(adminSecret, namespace)
 			adminSecrets = append(adminSecrets, adminSecret)
 		}
 
-		remoteUnleashes = resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), instance.GetNamespaces(), secretName, "")
+		remoteUnleashes = resources.RemoteunleashInstances(instance.GetName(), instance.GetUrl(), namespaces, secretName, "")
 	}
 
 	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
 	defer subspan.End()
 	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status, msg.PublishTime)
+}
+
+// tenantNamespaces filters the namespaces a federation message asks the
+// operator to serve down to the ones that can be a tenant at all.
+//
+// The publisher decides which namespaces get an instance, and the subscriber
+// cannot second-guess that: tenant namespaces are created and retired
+// continuously, so an operator-side list of "the namespaces we serve" would go
+// stale and start dropping legitimate messages — including removals, which is
+// how resources are orphaned. What the operator does know, without any
+// configuration, is which namespaces are never a tenant. Those are refused
+// here, before any object is built from them.
+//
+// Refusing the operator's own namespace is the one that matters. Managed admin
+// secrets live there precisely because tenants cannot read them, and a
+// RemoteUnleash created there would reference its admin secret in the same
+// namespace — which never crosses a privilege boundary, so it skips the
+// authorized-namespace check that is the primary confused-deputy control. In
+// the legacy layout it is worse still: the secret name is built from
+// publisher-supplied fields, so a message naming the operator namespace can
+// write an attacker-chosen credential over a managed secret belonging to
+// another tenant, under a name no RemoteUnleash of its own guards.
+//
+// Entries are trimmed and blanks ignored, the same way cluster list entries
+// are: a stray space in a team's federation config is a typo, not a namespace.
+// Names that Kubernetes cannot accept are dropped rather than sent to the API
+// server, where they would fail on every redelivery.
+func (s *subscriber) tenantNamespaces(ctx context.Context, namespaces []string) []string {
+	log := log.FromContext(ctx).WithName("subscribe")
+
+	accepted := make([]string, 0, len(namespaces))
+	for _, namespace := range namespaces {
+		namespace = strings.TrimSpace(namespace)
+
+		reason := ""
+		switch {
+		case namespace == "":
+			reason = "blank"
+		case namespace == s.namespace:
+			reason = "operator_namespace"
+		case strings.HasPrefix(namespace, "kube-"):
+			// Kubernetes reserves the kube- prefix for system namespaces.
+			reason = "reserved_namespace"
+		case len(validation.IsDNS1123Label(namespace)) > 0:
+			reason = "invalid_name"
+		}
+
+		if reason != "" {
+			federationRejectedNamespaces.WithLabelValues(reason).Inc()
+			log.Info("Refusing federation namespace", "namespace", namespace, "reason", reason)
+			continue
+		}
+
+		accepted = append(accepted, namespace)
+	}
+
+	return accepted
 }
 
 func stableNonce(instance *pb.Instance) (string, error) {

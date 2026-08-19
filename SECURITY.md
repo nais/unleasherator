@@ -93,6 +93,18 @@ The answer lies in the **Separation of Concerns** between the Management Cluster
 
 **Conclusion:** A tenant can only successfully provision API tokens if a Cluster Admin has explicitly authorized their namespace on the central Management Cluster. Authorization is enforced by the operator-stamped annotation, not by trusting the requested secret name.
 
+### Which namespaces a message may name
+
+The payload is also the only statement of *where* an instance belongs, and the subscriber has no independent inventory to check it against. Tenant namespaces are created and retired continuously, so an operator-side allowlist of served namespaces would go stale and start dropping legitimate messages — including removals, which is how `RemoteUnleash` resources are orphaned. The list stays authoritative.
+
+What the subscriber does refuse, without any configuration, are the namespaces that are never a tenant:
+
+* **The operator namespace.** Managed admin secrets live there precisely because tenants cannot read them. A `RemoteUnleash` created there would reference its admin secret in the same namespace, which never crosses a privilege boundary and therefore skips the authorized-namespace check entirely. In the legacy layout it is worse: the secret name is assembled from publisher-supplied fields, so a message naming the operator namespace can write a chosen credential over another tenant's managed secret, under a name that no `RemoteUnleash` of its own guards.
+* **Namespaces with the reserved `kube-` prefix.**
+* **Blank entries and names Kubernetes cannot accept.** Blanks are trimmed and ignored the same way cluster list entries are; invalid names are dropped rather than sent to the API server, where they would fail on every redelivery.
+
+Refused namespaces are counted by `unleasherator_federation_rejected_namespaces_total` with the reason as a label. A message left with no namespaces at all is acknowledged and does nothing; it is never read as a removal.
+
 ## Legacy Formats, The "Nonce", and Migration
 
 ### Where Legacy Federation Secrets Live
