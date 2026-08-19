@@ -48,6 +48,14 @@ const (
 	// parsing as the primary confused-deputy defense.
 	UnleashSecretAuthorizedNamespaceAnnotation = "unleash.nais.io/authorized-namespace"
 
+	// RemoteUnleashFederationPublishTimeAnnotation records, in RFC 3339 format,
+	// the Pub/Sub publish time of the most recent federation message applied to
+	// a RemoteUnleash. Pub/Sub redelivers, and an ordering key only orders what
+	// it delivers in one go, so a delayed copy of an older message can arrive
+	// after a newer one was applied. This is what lets the receive path tell the
+	// two apart and refuse to delete on the stale one.
+	RemoteUnleashFederationPublishTimeAnnotation = "unleash.nais.io/federation-publish-time"
+
 	ApiTokenSecretTokenEnv    = "UNLEASH_SERVER_API_TOKEN"
 	ApiTokenSecretServerEnv   = "UNLEASH_SERVER_API_URL"
 	ApiTokenSecretEnvEnv      = "UNLEASH_SERVER_API_ENV"

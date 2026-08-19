@@ -553,7 +553,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		healthy := time.AfterFunc(federationReceiveBackoffMax, func() {
 			federationReceiveConsecutiveErrors.Set(0)
 		})
-		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error {
 			// failPermanently stops receiving so the operator restarts into a
 			// corrected configuration, but nacks the message: operator-side
 			// failures (e.g. RBAC) are recoverable, and the message must be
@@ -662,6 +662,32 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						}
 						return err
 					}
+
+					// Replay protection. A redelivered older message carries an
+					// older cluster list, and acting on it deletes what a newer
+					// message legitimately created. Nothing would bring it back:
+					// the publisher skips republishing while its instance hash is
+					// unchanged, and there is no periodic federation resync, so
+					// recovery needs a human.
+					//
+					// A resource with no recorded time is not treated as newer
+					// than everything; it is treated as unknown, and unknown
+					// permits the deletion. Refusing instead would make every
+					// resource predating this annotation undeletable by
+					// federation, which is the orphan bug this path exists to
+					// fix. The gap closes by itself: the first provisioning
+					// message applied to a resource stamps it, and a transport
+					// that supplies no publish time never stamps anything, so it
+					// keeps working exactly as before rather than freezing.
+					if lastApplied := federationLastAppliedPublishTime(existingRU); !lastApplied.IsZero() &&
+						!publishTime.After(lastApplied) {
+						remoteUnleashReceived.WithLabelValues(removalState, "stale").Inc()
+						log.Info("Refusing to delete RemoteUnleash from a message older than the one already applied",
+							"name", ru.Name, "namespace", ru.Namespace,
+							"publishTime", publishTime, "lastApplied", lastApplied)
+						continue
+					}
+
 					if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
 						remoteUnleashReceived.WithLabelValues(removalState, "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
@@ -812,6 +838,16 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						supersededSecrets[client.ObjectKeyFromObject(secret)] = secret
 					}
 
+					// Record what this resource has seen, so a later replay of an
+					// older message cannot delete it. The stamp only moves
+					// forward: a replayed older provisioning message must not roll
+					// it back and re-open the window it closes.
+					stamp := publishTime
+					if lastApplied := federationLastAppliedPublishTime(existingRU); lastApplied.After(stamp) {
+						stamp = lastApplied
+					}
+					setFederationPublishTime(ru, stamp)
+
 					safeRUs = append(safeRUs, ru)
 					safeSecrets = append(safeSecrets, adminSecrets[i])
 				}
@@ -947,6 +983,38 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// federationLastAppliedPublishTime reports the publish time of the most recent
+// federation message applied to remoteUnleash. A missing or unparseable value
+// reads as the zero time, meaning "unknown": callers must treat that as no basis
+// to refuse rather than as an ordering claim.
+func federationLastAppliedPublishTime(remoteUnleash *unleashv1.RemoteUnleash) time.Time {
+	value, ok := remoteUnleash.Annotations[unleashv1.RemoteUnleashFederationPublishTimeAnnotation]
+	if !ok {
+		return time.Time{}
+	}
+
+	publishTime, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return publishTime
+}
+
+// setFederationPublishTime stamps remoteUnleash with the publish time of the
+// federation message being applied to it. A zero time is not recorded: it means
+// the transport supplied none, and a stamp that claims an ordering nobody
+// established would refuse every later deletion.
+func setFederationPublishTime(remoteUnleash *unleashv1.RemoteUnleash, publishTime time.Time) {
+	if publishTime.IsZero() {
+		return
+	}
+
+	if remoteUnleash.Annotations == nil {
+		remoteUnleash.Annotations = map[string]string{}
+	}
+	remoteUnleash.Annotations[unleashv1.RemoteUnleashFederationPublishTimeAnnotation] = publishTime.UTC().Format(time.RFC3339Nano)
 }
 
 func federationAdminSecret(ctx context.Context, k8sClient client.Reader, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {

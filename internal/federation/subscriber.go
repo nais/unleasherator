@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/nais/unleasherator/internal/pb"
@@ -61,7 +62,10 @@ type Subscriber interface {
 	Close() error
 }
 
-type Handler func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error
+// Handler receives one decoded federation message. publishTime is the Pub/Sub
+// publish time of that message, carried through so the controller can tell a
+// redelivered older message from a newer one before acting destructively on it.
+type Handler func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error
 
 type subscriber struct {
 	client                *pubsub.Client
@@ -219,7 +223,7 @@ func (s *subscriber) handleMessage(ctx context.Context, msg *pubsub.Message, han
 
 	ctx, subspan := otel.Tracer("subscribe").Start(ctx, "Process PubSub", spanOps...)
 	defer subspan.End()
-	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status)
+	return handler(ctx, remoteUnleashes, adminSecrets, instance.Clusters, instance.Status, msg.PublishTime)
 }
 
 func stableNonce(instance *pb.Instance) (string, error) {

@@ -364,7 +364,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned, time.Now())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())
@@ -380,7 +380,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			registerHTTPMocksForRemoteUnleash(remoteUnleash, RemoteUnleashVersion)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned, time.Now())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
@@ -396,7 +396,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
 			Eventually(func() error {
-				return handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+				return handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned, time.Now())
 			}, timeout, interval).ShouldNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).Should(Succeed())
@@ -460,7 +460,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			_, maliciousRU := remoteUnleashResource(name, namespaces[0], maliciousURL, secret)
 			remoteUnleashes := []*unleashv1.RemoteUnleash{maliciousRU}
 
-			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned, time.Now())
 			Expect(err).ToNot(HaveOccurred())
 
 			By("By verifying that the original RemoteUnleash URL is unchanged")
@@ -470,7 +470,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			Expect(fetchedRU.Spec.Server.URL).ToNot(Equal(maliciousURL))
 
 			By("By verifying that a malicious deletion is also blocked")
-			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Removed)
+			err = handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Removed, time.Now())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed(), "Legitimate RemoteUnleash should not be deleted by malicious tenant")
@@ -486,6 +486,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				[]*corev1.Secret{maliciousSecret},
 				clusters,
 				pb.Status_Provisioned,
+				time.Now(),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -499,6 +500,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				[]*corev1.Secret{maliciousSecret},
 				clusters,
 				pb.Status_Removed,
+				time.Now(),
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(k8sClient.Get(ctx, legitimateRU.NamespacedName(), fetchedRU)).Should(Succeed(), "Credential mismatch must not authorize deletion")
@@ -523,6 +525,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				[]*corev1.Secret{replacementSecret},
 				clusters,
 				pb.Status_Provisioned,
+				time.Now(),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -577,6 +580,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				[]*corev1.Secret{replacementSecret},
 				clusters,
 				pb.Status_Provisioned,
+				time.Now(),
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(orphanedLegacySecret), &corev1.Secret{})).ShouldNot(Succeed())
@@ -592,6 +596,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 				[]*corev1.Secret{removalSecret},
 				clusters,
 				pb.Status_Removed,
+				time.Now(),
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -690,6 +695,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 					[]*corev1.Secret{replacementSecret},
 					clusters,
 					pb.Status_Provisioned,
+					time.Now(),
 				)
 			}, timeout, interval).Should(Succeed())
 
@@ -741,7 +747,7 @@ var _ = Describe("RemoteUnleash Controller", func() {
 			_, remoteUnleash := remoteUnleashResource(name, namespaces[0], remoteUnleashURL, secret)
 			remoteUnleashes = []*unleashv1.RemoteUnleash{remoteUnleash}
 
-			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned)
+			err := handler(ctx, remoteUnleashes, []*corev1.Secret{secret}, clusters, pb.Status_Provisioned, time.Now())
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, remoteUnleash.NamespacedName(), remoteUnleash)).ShouldNot(Succeed())

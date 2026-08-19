@@ -71,7 +71,7 @@ func TestSubscriber_Subscribe(t *testing.T) {
 
 	// Start a goroutine to consume messages from the subscription.
 	go func() {
-		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		err = subscriber.Subscribe(ctx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error {
 			assert.Equal(t, 2, len(adminSecrets))
 			assert.Equal(t, namespace, adminSecrets[0].GetNamespace())
 			assert.Equal(t, namespace, adminSecrets[1].GetNamespace())
@@ -128,7 +128,7 @@ func TestSubscriber_handleMessage(t *testing.T) {
 	var capturedClusters []string
 	var capturedStatus pb.Status
 
-	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error {
 		capturedRemoteUnleashes = remoteUnleashes
 		capturedAdminSecrets = adminSecrets
 		capturedClusters = clusters
@@ -190,7 +190,7 @@ func TestSubscriber_handleMessage_Legacy(t *testing.T) {
 	var capturedRemoteUnleashes []*unleashv1.RemoteUnleash
 	var capturedAdminSecrets []*corev1.Secret
 
-	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+	mockHandler := func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error {
 		capturedRemoteUnleashes = remoteUnleashes
 		capturedAdminSecrets = adminSecrets
 		return nil
@@ -255,6 +255,7 @@ func TestSubscriberIgnoresUnauthenticatedLegacyRemoval(t *testing.T) {
 		[]*corev1.Secret,
 		[]string,
 		pb.Status,
+		time.Time,
 	) error {
 		handlerCalled = true
 		return nil
@@ -281,7 +282,7 @@ func TestSubscriberDropsPoisonMessage(t *testing.T) {
 
 	handlerCalls := make(chan struct{}, 10)
 	go func() {
-		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status, time.Time) error {
 			handlerCalls <- struct{}{}
 			return nil
 		})
@@ -346,7 +347,7 @@ func TestSubscriberAcksPermanentHandlerError(t *testing.T) {
 
 	var calls atomic.Int32
 	go func() {
-		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status, time.Time) error {
 			calls.Add(1)
 			return Permanent(errors.New("authorization denied"))
 		})
@@ -404,7 +405,7 @@ func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
 
 	var calls atomic.Int32
 	go func() {
-		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status) error {
+		_ = subscriber.Subscribe(ctx, func(context.Context, []*unleashv1.RemoteUnleash, []*corev1.Secret, []string, pb.Status, time.Time) error {
 			calls.Add(1)
 			return errors.New("temporary API server failure")
 		})

@@ -174,7 +174,7 @@ func TestFederationSubscribeReturnsPermanentHandlerError(t *testing.T) {
 	errs := make(chan error, 4)
 	for range 4 {
 		go func() {
-			errs <- handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed)
+			errs <- handler(ctx, []*unleashv1.RemoteUnleash{remoteUnleash}, []*corev1.Secret{secret}, []string{"test"}, pb.Status_Removed, time.Now())
 		}()
 	}
 	for range 4 {
@@ -228,6 +228,7 @@ func TestFederationRemovalReachesClustersNotOnTheMessage(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"cluster-b"},
 		pb.Status_Removed,
+		time.Now(),
 	))
 
 	err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
@@ -264,6 +265,7 @@ func TestFederationProvisioningDeprovisionsDroppedCluster(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"cluster-b"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
@@ -303,6 +305,7 @@ func TestFederationEmptyClusterListIsIgnored(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		nil,
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -348,6 +351,7 @@ func TestFederationBlankAndPaddedClusterEntriesDoNotDeprovision(t *testing.T) {
 				[]*corev1.Secret{secret.DeepCopy()},
 				tt.clusters,
 				pb.Status_Provisioned,
+				time.Now(),
 			))
 
 			require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -384,6 +388,7 @@ func TestFederationCaseMismatchDoesNotDeprovision(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"Cluster-A"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -420,6 +425,7 @@ func TestFederationEmptyOperatorClusterNameDoesNotDeprovision(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"cluster-a", "cluster-b"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -455,6 +461,7 @@ func TestFederationUnknownStatusIsIgnored(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"cluster-b"},
 		pb.Status_Unknown,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -486,6 +493,7 @@ func TestFederationProvisioningStaysClusterScoped(t *testing.T) {
 		[]*corev1.Secret{elsewhereSecret},
 		[]string{"cluster-b"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	err := c.Get(ctx, client.ObjectKeyFromObject(elsewhere), &unleashv1.RemoteUnleash{})
@@ -498,6 +506,7 @@ func TestFederationProvisioningStaysClusterScoped(t *testing.T) {
 		[]*corev1.Secret{hereSecret},
 		[]string{"cluster-a"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(here), &unleashv1.RemoteUnleash{}),
@@ -538,6 +547,7 @@ func TestFederationDeprovisionRefusesTokenRotation(t *testing.T) {
 		[]*corev1.Secret{rotatedSecret},
 		[]string{"cluster-b"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
@@ -573,8 +583,126 @@ func TestFederationDeprovisionRefusesURLMismatch(t *testing.T) {
 		[]*corev1.Secret{secret.DeepCopy()},
 		[]string{"cluster-b"},
 		pb.Status_Provisioned,
+		time.Now(),
 	))
 
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
 		"a deprovision naming a different server must be refused")
+}
+
+// Pub/Sub redelivers, and an ordering key only orders what it hands over in one
+// go: a delayed copy of an older provisioning message can arrive after a newer
+// one was applied, carrying the cluster list as it stood back then. Acting on it
+// deletes a RemoteUnleash the newer message legitimately created, and nothing
+// brings it back — the publisher skips republishing while its instance hash is
+// unchanged, and there is no periodic federation resync.
+func TestFederationStaleMessageDoesNotDeprovision(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	older := time.Now().Add(-time.Hour)
+	newer := time.Now()
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	remoteUnleash, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+
+	// The current state of the world: federated here, published just now.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{remoteUnleash.DeepCopy()},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-a"},
+		pb.Status_Provisioned,
+		newer,
+	))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(remoteUnleash), &unleashv1.RemoteUnleash{}))
+
+	// A redelivered copy of the message from before this cluster was added.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{remoteUnleash.DeepCopy()},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Provisioned,
+		older,
+	))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(remoteUnleash), &unleashv1.RemoteUnleash{}),
+		"a message older than the one already applied must not delete the RemoteUnleash")
+
+	// Replaying the older provisioning message must not roll the recorded time
+	// back either, or the window it closes simply reopens.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{remoteUnleash.DeepCopy()},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-a"},
+		pb.Status_Provisioned,
+		older,
+	))
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{remoteUnleash.DeepCopy()},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Provisioned,
+		newer.Add(-time.Minute),
+	))
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(remoteUnleash), &unleashv1.RemoteUnleash{}),
+		"a replayed provisioning message must not roll back the last applied publish time")
+
+	// The guard is about ordering, not about refusing deletions: a genuinely
+	// newer message still takes the cluster out.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{remoteUnleash.DeepCopy()},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Provisioned,
+		newer.Add(time.Minute),
+	))
+	err := c.Get(ctx, client.ObjectKeyFromObject(remoteUnleash), &unleashv1.RemoteUnleash{})
+	assert.True(t, apierrors.IsNotFound(err),
+		"a message newer than the one already applied must still deprovision")
+}
+
+// A resource that has never had a federation message applied to it carries no
+// recorded publish time. That is unknown, not "newer than everything": refusing
+// removals for it would make every resource predating the annotation
+// undeletable by federation, which is the orphan bug this path exists to fix.
+func TestFederationRemovalWithoutRecordedPublishTime(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	incoming := existing.DeepCopy()
+	incoming.ResourceVersion = ""
+
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Removed,
+		time.Now(),
+	))
+
+	err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
+	assert.True(t, apierrors.IsNotFound(err),
+		"a resource with no recorded publish time must still be removable")
 }
