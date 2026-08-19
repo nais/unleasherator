@@ -78,6 +78,7 @@ The Unleasherator controller exposes metrics across several dimensions:
 | `unleasherator_apitoken_existing_tokens` | Gauge   | Existing tokens in Unleash for ApiToken                         | `namespace`, `name`, `environment` |
 | `unleasherator_apitoken_created_total`   | Counter | ApiTokens created in Unleash                                    | `namespace`, `name`                |
 | `unleasherator_apitoken_deleted_total`   | Counter | ApiTokens deleted from Unleash                                  | `namespace`, `name`                |
+| `unleasherator_apitoken_waiting_for_instance` | Gauge | 1 while an ApiToken waits for its Unleash instance to exist, 0 once it does | `namespace`, `name`      |
 
 #### 5. Controller Health Metrics (from controller-runtime)
 

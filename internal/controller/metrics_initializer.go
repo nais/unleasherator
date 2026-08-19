@@ -5,6 +5,7 @@ import (
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -127,6 +128,15 @@ func (m *MetricsInitializer) initApiTokenMetrics(ctx context.Context) error {
 		} else {
 			apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(0)
 		}
+
+		// Seeded from the condition so an operator restart does not blank out
+		// the "blocked on a missing instance" series until the next slow
+		// requeue, which would silently reset any duration-based alert on it.
+		waiting := 0.0
+		if failedCond != nil && failedCond.Status == metav1.ConditionTrue && failedCond.Reason == "UnleashNotFound" {
+			waiting = 1.0
+		}
+		apiTokenWaitingForInstance.WithLabelValues(apiToken.Namespace, apiToken.Name).Set(waiting)
 	}
 
 	return nil
