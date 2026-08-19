@@ -433,3 +433,108 @@ func TestSubscriberRedeliversTransientHandlerError(t *testing.T) {
 	assert.Eventually(t, func() bool { return calls.Load() >= 2 }, 30*time.Second, 50*time.Millisecond,
 		"transient errors must be nacked and redelivered")
 }
+
+// The publisher decides which namespaces an instance is federated to, and the
+// subscriber acts on that list without any local authorization step. It can
+// still refuse the namespaces that are never a tenant, and it must: the
+// operator namespace holds every managed admin secret, and in the legacy
+// layout the secret name is assembled from publisher-supplied fields, so a
+// message naming it writes a chosen credential into that namespace under a
+// chosen name.
+func TestSubscriberRefusesNonTenantNamespaces(t *testing.T) {
+	ctx := context.Background()
+	operatorNamespace := "unleasherator-system"
+
+	for _, namespaceBound := range []bool{false, true} {
+		name := "legacy"
+		if namespaceBound {
+			name = "namespace-bound"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			s := &subscriber{namespace: operatorNamespace, namespaceBoundSecrets: namespaceBound}
+
+			instance := &pb.Instance{
+				Name:        "unleash",
+				Url:         "https://unleash.example.com",
+				SecretToken: "token",
+				SecretNonce: "nonce",
+				Status:      pb.Status_Provisioned,
+				Clusters:    []string{"cluster-a"},
+				Namespaces: []string{
+					"team-a",
+					"",
+					"   ",
+					operatorNamespace,
+					"kube-system",
+					"Not A Namespace",
+					" team-b ",
+				},
+			}
+			payload, err := proto.Marshal(instance)
+			assert.NoError(t, err)
+
+			var (
+				gotRemoteUnleashes []*unleashv1.RemoteUnleash
+				gotSecrets         []*corev1.Secret
+			)
+			err = s.handleMessage(ctx, &pubsub.Message{Data: payload, PublishTime: time.Now()},
+				func(_ context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, secrets []*corev1.Secret, _ []string, _ pb.Status, _ time.Time) error {
+					gotRemoteUnleashes = remoteUnleashes
+					gotSecrets = secrets
+					return nil
+				})
+			assert.NoError(t, err)
+
+			namespaces := []string{}
+			for _, ru := range gotRemoteUnleashes {
+				namespaces = append(namespaces, ru.Namespace)
+			}
+			assert.Equal(t, []string{"team-a", "team-b"}, namespaces,
+				"only tenant namespaces may reach the handler, and padded entries are the same tenant")
+
+			// The invariant the removal and provisioning paths index on: one
+			// admin secret per RemoteUnleash, in the same order.
+			assert.Len(t, gotSecrets, len(gotRemoteUnleashes))
+
+			for _, secret := range gotSecrets {
+				assert.NotEqual(t, operatorNamespace, secret.Annotations[unleashv1.UnleashSecretAuthorizedNamespaceAnnotation],
+					"no secret may be authorized for the operator namespace")
+				if !namespaceBound {
+					assert.NotEqual(t, operatorNamespace, secret.Namespace,
+						"a legacy tenant secret must never be written into the operator namespace")
+				}
+			}
+		})
+	}
+}
+
+// A message that names nothing the operator will serve must not reach the
+// handler with resources built from it; it is a no-op, not a removal.
+func TestSubscriberRefusesEveryNamespace(t *testing.T) {
+	ctx := context.Background()
+	s := &subscriber{namespace: "unleasherator-system"}
+
+	instance := &pb.Instance{
+		Name:        "unleash",
+		Url:         "https://unleash.example.com",
+		SecretToken: "token",
+		SecretNonce: "nonce",
+		Status:      pb.Status_Provisioned,
+		Clusters:    []string{"cluster-a"},
+		Namespaces:  []string{"unleasherator-system", "kube-public"},
+	}
+	payload, err := proto.Marshal(instance)
+	assert.NoError(t, err)
+
+	handlerCalled := false
+	err = s.handleMessage(ctx, &pubsub.Message{Data: payload, PublishTime: time.Now()},
+		func(_ context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, secrets []*corev1.Secret, _ []string, _ pb.Status, _ time.Time) error {
+			handlerCalled = true
+			assert.Empty(t, remoteUnleashes)
+			assert.Empty(t, secrets)
+			return nil
+		})
+	assert.NoError(t, err)
+	assert.True(t, handlerCalled, "the message is acknowledged, so the handler still runs and finds nothing to do")
+}

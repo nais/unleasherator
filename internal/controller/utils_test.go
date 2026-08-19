@@ -212,11 +212,13 @@ func remoteUnleashSuccessCondition() metav1.Condition {
 	}
 }
 
-// mockRemoteUnleashURL generates a unique URL for RemoteUnleash based on name and namespace.
-// This mirrors the Unleash.URL() pattern: http://<name>.<namespace>
+// mockRemoteUnleashURL generates a unique URL for RemoteUnleash based on name
+// and namespace. It is https because a federated instance is published with its
+// public API URL, which always is, and the receive path refuses to provision
+// from anything else.
 // Using unique URLs per test ensures httpmock isolation between concurrent tests.
 func mockRemoteUnleashURL(name, namespace string) string {
-	return fmt.Sprintf("http://%s.%s", name, namespace)
+	return fmt.Sprintf("https://%s.%s", name, namespace)
 }
 
 // registerHTTPMocksForRemoteUnleash registers httpmock responders for a RemoteUnleash instance.

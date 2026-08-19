@@ -93,6 +93,33 @@ The answer lies in the **Separation of Concerns** between the Management Cluster
 
 **Conclusion:** A tenant can only successfully provision API tokens if a Cluster Admin has explicitly authorized their namespace on the central Management Cluster. Authorization is enforced by the operator-stamped annotation, not by trusting the requested secret name.
 
+### Where the admin token may be sent
+
+The server URL is the single field that decides where the operator sends an Unleash admin token, so it is part of the trust boundary rather than a detail of the payload.
+
+On the federation receive path the URL is checked before anything is provisioned: an instance is only ever published with its public API URL, which is `https://<ingress host>` by construction, so a message carrying a plaintext `http://` URL is refused and counted as `unleasherator_federation_received_total{state="provisioned",status="insecure_url"}`. Removals are deliberately **not** checked — they authenticate against what is already stored, and refusing them would orphan exactly what the removal path exists to clean up.
+
+Two controls that this check is often confused with are deliberately **not** implemented:
+
+* **A `^https://` pattern on the CRD.** Plaintext HTTP is legitimate and load-bearing elsewhere: the management cluster reaches its own Unleash instances over the cluster-internal service name (`http://<name>.<namespace>`). Tightening the pattern would break the operator's own reconciliation and would make existing `RemoteUnleash` resources unpatchable.
+* **A host allowlist, or blocking private and loopback ranges in a custom dialer.** Tenants run their own instances on their own hostnames, so there is no list to compare against. Blocking by resolved address would refuse the addresses the operator legitimately talks to — cluster-internal service addresses on the management cluster — and it would not see the real target at all on on-prem clusters, which reach everything through `HTTPS_PROXY`; the only address such a check would ever inspect there is the proxy's.
+
+For tenant-authored `RemoteUnleash` resources the effective control is the admin secret rather than the URL: every operator-managed secret carries a `url` key, and the controller requires `spec.unleashInstance.url` to equal it. A tenant therefore cannot redirect a managed credential to a host of its choosing, whatever the CRD pattern allows.
+
+Dynamic path segments — a token name, a token secret — are escaped and kept out of `path.Join`, so a value containing `/` or `..` addresses an item under the endpoint instead of resolving to a different one; a segment that is nothing but dots is refused outright.
+
+### Which namespaces a message may name
+
+The payload is also the only statement of *where* an instance belongs, and the subscriber has no independent inventory to check it against. Tenant namespaces are created and retired continuously, so an operator-side allowlist of served namespaces would go stale and start dropping legitimate messages — including removals, which is how `RemoteUnleash` resources are orphaned. The list stays authoritative.
+
+What the subscriber does refuse, without any configuration, are the namespaces that are never a tenant:
+
+* **The operator namespace.** Managed admin secrets live there precisely because tenants cannot read them. A `RemoteUnleash` created there would reference its admin secret in the same namespace, which never crosses a privilege boundary and therefore skips the authorized-namespace check entirely. In the legacy layout it is worse: the secret name is assembled from publisher-supplied fields, so a message naming the operator namespace can write a chosen credential over another tenant's managed secret, under a name that no `RemoteUnleash` of its own guards.
+* **Namespaces with the reserved `kube-` prefix.**
+* **Blank entries and names Kubernetes cannot accept.** Blanks are trimmed and ignored the same way cluster list entries are; invalid names are dropped rather than sent to the API server, where they would fail on every redelivery.
+
+Refused namespaces are counted by `unleasherator_federation_rejected_namespaces_total` with the reason as a label. A message left with no namespaces at all is acknowledged and does nothing; it is never read as a removal.
+
 ## Legacy Formats, The "Nonce", and Migration
 
 ### Where Legacy Federation Secrets Live

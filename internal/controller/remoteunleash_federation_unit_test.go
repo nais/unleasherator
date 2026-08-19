@@ -759,3 +759,109 @@ func TestFederationRemovalWithMissingAdminSecretIsSkipped(t *testing.T) {
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
 		"a RemoteUnleash whose token could not be verified must not be deleted")
 }
+
+// Provisioning is where a credential substitution pays off: a message that keeps
+// the public URL but carries a different token would, if only the URL were
+// checked, replace the admin credential of a live tenant with one the publisher
+// chose. The URL is public information, so matching it proves nothing about who
+// sent the message; only the credential already bound to the resource does.
+func TestFederationProvisionRefusesTokenSubstitution(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	incoming := existing.DeepCopy()
+	incoming.ResourceVersion = ""
+	substituted := secret.DeepCopy()
+	substituted.ResourceVersion = ""
+	substituted.Data[unleashv1.UnleashSecretTokenKey] = []byte("attacker-controlled-token")
+
+	// The cluster list names this cluster, so the message is a provisioning
+	// message for it and nothing else diverts it into the removal path.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{substituted},
+		[]string{"cluster-a"},
+		pb.Status_Provisioned,
+		time.Now(),
+	))
+
+	stored := &corev1.Secret{}
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(secret), stored))
+	assert.Equal(t, []byte("token"), stored.Data[unleashv1.UnleashSecretTokenKey],
+		"a provisioning message that only matches the URL must not rotate the stored admin token")
+}
+
+// The URL decides where the operator sends the management cluster's admin
+// token, so a message carrying a plaintext one asks it to put that credential
+// on the wire in the clear. Provisioning refuses it; a removal must not, or a
+// resource federated before the check could never be deleted again.
+func TestFederationRefusesInsecureServerURL(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	for _, serverURL := range []string{
+		"http://unleash.example.com",
+		"http://169.254.169.254/computeMetadata/v1/",
+		"://not-a-url",
+	} {
+		insecure, insecureSecret := federationFixture("aura", "tenant", serverURL, "token")
+		require.NoError(t, handler(ctx,
+			[]*unleashv1.RemoteUnleash{insecure},
+			[]*corev1.Secret{insecureSecret},
+			[]string{"cluster-a"},
+			pb.Status_Provisioned,
+			time.Now(),
+		))
+
+		err := c.Get(ctx, client.ObjectKeyFromObject(insecure), &unleashv1.RemoteUnleash{})
+		assert.True(t, apierrors.IsNotFound(err),
+			"a message carrying %q must not provision a RemoteUnleash", serverURL)
+		err = c.Get(ctx, client.ObjectKeyFromObject(insecureSecret), &corev1.Secret{})
+		assert.True(t, apierrors.IsNotFound(err),
+			"a message carrying %q must not write an admin secret", serverURL)
+	}
+
+	// A resource that predates the check is still removable: the removal path
+	// authenticates against what is stored, and refusing it here would orphan
+	// exactly what the removal path exists to clean up.
+	stored, storedSecret := federationFixture("legacy", "tenant", "http://unleash.example.com", "token")
+	require.NoError(t, c.Create(ctx, stored))
+	require.NoError(t, c.Create(ctx, storedSecret))
+
+	incoming, incomingSecret := federationFixture("legacy", "tenant", "http://unleash.example.com", "token")
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{incomingSecret},
+		[]string{"cluster-a"},
+		pb.Status_Removed,
+		time.Now(),
+	))
+
+	err := c.Get(ctx, client.ObjectKeyFromObject(stored), &unleashv1.RemoteUnleash{})
+	assert.True(t, apierrors.IsNotFound(err),
+		"an authenticated removal must still delete a resource that carries a plaintext URL")
+}

@@ -202,8 +202,45 @@ func (c *Client) requestURL(requestPath string) *url.URL {
 	return req
 }
 
+// itemURL addresses a single item under an endpoint, where the item is data
+// that reached the client from outside it — a token name derived from an
+// ApiToken resource, or a token secret returned by the server.
+//
+// The item is escaped and kept out of path.Join. Both matter, and for
+// different reasons: without escaping, an item containing "/" adds path
+// segments and re-points the request at another endpoint, and path.Join
+// resolves a ".." away silently rather than treating it as the traversal it
+// is. An item that is nothing but dots is refused outright, because there is
+// no name it could be — only a relative path element.
+func (c *Client) itemURL(requestPath, item string) (*url.URL, error) {
+	if item == "" || strings.Trim(item, ".") == "" {
+		return nil, fmt.Errorf("invalid path segment %q", item)
+	}
+
+	req := c.requestURL(requestPath)
+	req.RawPath = req.EscapedPath() + "/" + url.PathEscape(item)
+	req.Path = req.Path + "/" + item
+
+	return req, nil
+}
+
 func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.Response, error) {
-	requestURL := c.requestURL(requestPath).String()
+	return c.httpGet(ctx, c.requestURL(requestPath), v)
+}
+
+// HTTPGetItem fetches a single item under an endpoint. The item is treated as
+// data, not as part of the request path; see itemURL.
+func (c *Client) HTTPGetItem(ctx context.Context, requestPath, item string, v any) (*http.Response, error) {
+	itemURL, err := c.itemURL(requestPath, item)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.httpGet(ctx, itemURL, v)
+}
+
+func (c *Client) httpGet(ctx context.Context, url *url.URL, v any) (*http.Response, error) {
+	requestURL := url.String()
 	requestMethod := "GET"
 
 	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, nil)
@@ -239,17 +276,24 @@ func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.
 }
 
 func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string) error {
-	requestURL := c.requestURL(fmt.Sprintf("%s/%s", requestPath, item)).String()
+	itemURL, err := c.itemURL(requestPath, item)
+	if err != nil {
+		return err
+	}
+	requestURL := itemURL.String()
 	requestMethod := "DELETE"
 
 	// The Unleash admin API identifies the token to delete by its secret, and
 	// only accepts it as a path segment, so it cannot move to a header the way
 	// the admin credential does. Hand the transport chain a redacted URL to
 	// hold up to instrumentation instead.
-	ctx = withRedactedURL(ctx, c.requestURL(fmt.Sprintf("%s/%s", requestPath, redactedPathSegment)).String())
+	redactedURL, err := c.itemURL(requestPath, redactedPathSegment)
+	if err != nil {
+		return err
+	}
+	ctx = withRedactedURL(ctx, redactedURL.String())
 
 	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, nil)
-
 	if err != nil {
 		return err
 	}
