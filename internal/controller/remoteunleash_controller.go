@@ -68,7 +68,78 @@ const (
 	federationReceiveBackoffBase         = 1 * time.Second
 	federationReceiveBackoffMax          = 5 * time.Minute
 	federationReceiveEscalationThreshold = 10
+
+	// federationStateRemoved labels counters for a deletion the management
+	// cluster published as such.
+	federationStateRemoved = "removed"
+	// federationStateDeprovisioned labels counters for a deletion this cluster
+	// derived from a provisioning message that no longer names it. The two are
+	// counted apart because they answer different questions: one says an
+	// instance is gone, the other says it moved.
+	federationStateDeprovisioned = "deprovisioned"
 )
+
+// clusterListMatch is the outcome of comparing this operator's cluster name
+// against the cluster list on a federation message. It is an enum rather than a
+// bool because "the list does not name me" and "the list says nothing useful"
+// must lead to different actions: only the first may delete.
+type clusterListMatch int
+
+const (
+	// clusterListNoStatement means the message asserts nothing about placement,
+	// either because it carries no clusters at all or because every entry is
+	// blank once trimmed.
+	clusterListNoStatement clusterListMatch = iota
+	// clusterListNamed means an entry names this cluster.
+	clusterListNamed
+	// clusterListCaseMismatch means an entry matches only when case is ignored.
+	clusterListCaseMismatch
+	// clusterListExcluded means the list names other clusters, and none of them
+	// is this one under any casing.
+	clusterListExcluded
+)
+
+// matchClusterList compares clusterName against the cluster list carried by a
+// federation message.
+//
+// Entries are trimmed before comparison, and entries that are empty once
+// trimmed are ignored: a stray space in a team's federation config is a typo,
+// not a different cluster, and a list of nothing but blanks says as little as
+// an empty list. Without this, `[" cluster-a"]` or `[""]` reads as "this
+// instance does not belong in cluster-a" and deletes it.
+//
+// The match itself stays case-sensitive: cluster names are exact identifiers
+// here (they name a real cluster in the fleet), and folding them would let two
+// distinct configured names collide. But a case-only difference is reported as
+// its own outcome instead of as an exclusion, because the caller's response to
+// an exclusion is destructive and "cluster-a" versus "Cluster-A" is far more
+// likely a naming mistake than a statement that the instance must go.
+func matchClusterList(clusterName string, clusters []string) clusterListMatch {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		// An operator that does not know its own name cannot conclude anything
+		// about placement. Callers reject this earlier and with a counter; this
+		// is here so no future caller can turn it into a deletion by accident.
+		return clusterListNoStatement
+	}
+
+	match := clusterListNoStatement
+	for _, cluster := range clusters {
+		cluster = strings.TrimSpace(cluster)
+		switch {
+		case cluster == "":
+			continue
+		case cluster == clusterName:
+			return clusterListNamed
+		case strings.EqualFold(cluster, clusterName):
+			match = clusterListCaseMismatch
+		case match == clusterListNoStatement:
+			match = clusterListExcluded
+		}
+	}
+
+	return match
+}
 
 func init() {
 	metrics.Registry.MustRegister(remoteUnleashStatus, remoteUnleashReceived, federationReceiveConsecutiveErrors)
@@ -519,22 +590,56 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 			// holding no matching resource does nothing either way, and the URL
 			// and credential checks below still refuse anything that disagrees
 			// with what is stored.
+			//
+			// Rewriting a message into a deletion is only ever done from an
+			// explicit Status_Provisioned. Every other status, including the
+			// proto3 zero value Status_Unknown that an absent field
+			// deserialises to, keeps the old no-op behaviour: a message we
+			// cannot read must not be the most destructive one we handle.
 			effective := status
-			switch {
-			case status == pb.Status_Removed:
-				// Applies everywhere.
-			case len(clusters) == 0:
-				// Asserts nothing about placement. Treating it as "remove
-				// everywhere" would turn a malformed publish into fleet-wide
-				// deletion, so ignore it instead.
-				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "no_clusters").Inc()
-				log.Info("Message names no clusters; ignoring", "cluster", r.Federation.ClusterName)
-				return nil
-			case !utils.StringInSlice(r.Federation.ClusterName, clusters):
-				effective = pb.Status_Removed
-				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "deprovisioned_here").Inc()
-				log.Info("Instance is no longer federated to this cluster; removing local resources",
-					"cluster", r.Federation.ClusterName, "clusters", clusters)
+			// Counters in the shared removal body are labelled with the reason
+			// the removal happened, so a deletion this cluster derived from a
+			// dropped cluster list stays distinguishable from one the
+			// management cluster actually published.
+			removalState := federationStateRemoved
+
+			if status == pb.Status_Provisioned {
+				ownCluster := strings.TrimSpace(r.Federation.ClusterName)
+				if ownCluster == "" {
+					// Config.Validate refuses to start without CLUSTER_NAME, but
+					// a single check is a poor guard for a fleet-wide deletion:
+					// an operator that does not know its own name reads every
+					// message as "not for me" and would empty the cluster.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "cluster_name_unset").Inc()
+					log.Info("Operator has no cluster name; refusing to act on placement", "clusters", clusters)
+					return nil
+				}
+
+				switch matchClusterList(ownCluster, clusters) {
+				case clusterListNamed:
+					// The instance belongs here; provision it below.
+				case clusterListNoStatement:
+					// Asserts nothing about placement. Treating it as "remove
+					// everywhere" would turn a malformed publish into fleet-wide
+					// deletion, so ignore it instead.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "no_clusters").Inc()
+					log.Info("Message names no clusters; ignoring", "cluster", ownCluster)
+					return nil
+				case clusterListCaseMismatch:
+					// Ambiguous: the list plausibly means this cluster and only
+					// the casing differs. Deleting on a guess is the one reading
+					// that cannot be undone, so do nothing and leave a counter
+					// for whoever has to explain the naming mismatch.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "cluster_name_case_mismatch").Inc()
+					log.Info("Cluster list matches this cluster only when case is ignored; ignoring",
+						"cluster", ownCluster, "clusters", clusters)
+					return nil
+				case clusterListExcluded:
+					effective = pb.Status_Removed
+					removalState = federationStateDeprovisioned
+					log.Info("Instance is no longer federated to this cluster; removing local resources",
+						"cluster", ownCluster, "clusters", clusters)
+				}
 			}
 
 			switch effective {
@@ -558,7 +663,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						return err
 					}
 					if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
-						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace,
 							"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
@@ -573,7 +678,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						return err
 					}
 					if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
-						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to credential mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace)
 						continue
@@ -594,7 +699,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				if errs := utils.DeleteAllObjects(objectsCtx, r.Client, safeRUs); len(errs) > 0 {
 					var permanentErr error
 					for _, err := range errs {
-						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "failed").Inc()
 						log.Error(err, "Failed to delete RemoteUnleash")
 
 						if !retriableError(err) {
@@ -614,7 +719,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				if errs := utils.DeleteAllObjects(secretCtx, r.Client, safeSecrets); len(errs) > 0 {
 					var permanentErr error
 					for _, err := range errs {
-						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "failed").Inc()
 						log.Error(err, "Failed to delete admin secret")
 
 						if !retriableError(err) {
@@ -627,7 +732,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return errs[0]
 				}
 
-				remoteUnleashReceived.WithLabelValues("removed", "success").Inc()
+				remoteUnleashReceived.WithLabelValues(removalState, "success").Inc()
 				log.Info("Successfully deleted RemoteUnleash resources and secret")
 				return nil
 
