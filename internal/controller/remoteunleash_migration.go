@@ -143,6 +143,16 @@ func (r *RemoteUnleashReconciler) migrateLegacyAdminSecret(ctx context.Context, 
 		federationSecretMigrations.WithLabelValues("refused").Inc()
 		return false, nil
 	case recordedURL != remoteUnleash.Spec.Server.URL:
+		// Drift gets its own reason. Every other refusal here emits an event,
+		// so without this the one outcome the URL binding exists to catch is
+		// the only one a tenant cannot see with kubectl describe. The URLs stay
+		// out of the message — they are already in the error for the operator
+		// log, and the event is visible to the tenant.
+		log.Info("Refusing to migrate legacy admin secret whose recorded URL differs from the spec", "secret", legacyKey)
+		if r.Recorder != nil {
+			r.Recorder.Event(remoteUnleash, "Warning", "FederationSecretURLDrift",
+				"Admin secret records a different server URL than spec.server.url; migration is blocked until they agree")
+		}
 		federationSecretMigrations.WithLabelValues("failed").Inc()
 		return false, fmt.Errorf("legacy admin secret %s URL %q does not match spec.server.url %q", legacyKey, recordedURL, remoteUnleash.Spec.Server.URL)
 	}
