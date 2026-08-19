@@ -697,6 +697,20 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					}
 
 					existingSecret, err := federationAdminSecret(ctx, r.APIReader, existingRU)
+					if apierrors.IsNotFound(err) {
+						// Without the stored credential the removal cannot be
+						// authenticated, so this resource is left alone: deleting
+						// unverified is exactly the hijack the checks below exist
+						// to stop. Returning the error instead would nack forever
+						// — the secret is not coming back — and block every later
+						// message sharing the ordering key, now in every cluster
+						// rather than only the ones the message names.
+						remoteUnleashReceived.WithLabelValues(removalState, "missing_secret").Inc()
+						log.Info("Refusing to delete RemoteUnleash whose admin secret is missing",
+							"name", ru.Name, "namespace", ru.Namespace,
+							"secret", existingRU.AdminSecretNamespacedName())
+						continue
+					}
 					if err != nil {
 						if !retriableError(err) {
 							return failPermanently(err)

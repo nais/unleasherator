@@ -706,3 +706,42 @@ func TestFederationRemovalWithoutRecordedPublishTime(t *testing.T) {
 	assert.True(t, apierrors.IsNotFound(err),
 		"a resource with no recorded publish time must still be removable")
 }
+
+// A RemoteUnleash whose admin secret is gone cannot have a removal authenticated
+// against it. Erroring out nacks the message forever — the secret is not coming
+// back — and blocks every later message sharing the ordering key, which since
+// removals reach every cluster means the whole fleet rather than the clusters the
+// message names. Skip the resource instead, and leave it standing: deleting what
+// cannot be verified is the hijack the credential check exists to stop.
+func TestFederationRemovalWithMissingAdminSecretIsSkipped(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+
+	scheme := federationTestScheme(t)
+	// The RemoteUnleash exists; the admin secret it references does not.
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	incoming := existing.DeepCopy()
+	incoming.ResourceVersion = ""
+
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Removed,
+		time.Now(),
+	), "a missing admin secret must not nack the message forever")
+
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
+		"a RemoteUnleash whose token could not be verified must not be deleted")
+}
