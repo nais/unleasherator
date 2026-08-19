@@ -507,21 +507,37 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
-			// Removals are never cluster-filtered. The cluster list on the
-			// message is the instance's federation config at the moment it was
-			// deleted, so a cluster dropped from that list earlier would never
-			// be told the instance is gone — leaving a RemoteUnleash pointing at
-			// a server that no longer exists, alerting forever with no way to
-			// discover why. A cluster holding no matching RemoteUnleash does
-			// nothing with the message, and the URL and credential checks below
-			// still refuse a removal that does not match what is stored.
-			if status != pb.Status_Removed && !utils.StringInSlice(r.Federation.ClusterName, clusters) {
-				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "other_cluster").Inc()
-				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
+			// A federation message states where the instance should exist; it is
+			// not an instruction addressed to the clusters it happens to name.
+			// Acting only when named is what orphans resources: a cluster taken
+			// out of a team's federation config, or one dropped from the list
+			// before the instance was deleted, keeps a RemoteUnleash pointing at
+			// a server it can no longer reach and alerts on it forever.
+			//
+			// So removals apply everywhere, and a provisioning message that no
+			// longer names this cluster is treated as a removal here. A cluster
+			// holding no matching resource does nothing either way, and the URL
+			// and credential checks below still refuse anything that disagrees
+			// with what is stored.
+			effective := status
+			switch {
+			case status == pb.Status_Removed:
+				// Applies everywhere.
+			case len(clusters) == 0:
+				// Asserts nothing about placement. Treating it as "remove
+				// everywhere" would turn a malformed publish into fleet-wide
+				// deletion, so ignore it instead.
+				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "no_clusters").Inc()
+				log.Info("Message names no clusters; ignoring", "cluster", r.Federation.ClusterName)
 				return nil
+			case !utils.StringInSlice(r.Federation.ClusterName, clusters):
+				effective = pb.Status_Removed
+				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "deprovisioned_here").Inc()
+				log.Info("Instance is no longer federated to this cluster; removing local resources",
+					"cluster", r.Federation.ClusterName, "clusters", clusters)
 			}
 
-			switch status {
+			switch effective {
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, deleting RemoteUnleash resources and secret")
 

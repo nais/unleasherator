@@ -222,8 +222,136 @@ func TestFederationRemovalReachesClustersNotOnTheMessage(t *testing.T) {
 		"a removal must delete the RemoteUnleash even when this cluster is not on the message")
 }
 
-// Provisioning stays cluster-scoped: a message for another cluster must not
-// create resources here.
+// Taking a cluster out of a team's federation config must remove the resource
+// there. Ignoring the message because this cluster is no longer named is what
+// leaves a RemoteUnleash behind pointing at a server it may not reach.
+func TestFederationProvisioningDeprovisionsDroppedCluster(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const serverURL = "https://unleash.example.com"
+
+	existing := &unleashv1.RemoteUnleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "aura", Namespace: "tenant"},
+		Spec: unleashv1.RemoteUnleashSpec{
+			Server:      unleashv1.RemoteUnleashServer{URL: serverURL},
+			AdminSecret: unleashv1.RemoteUnleashSecret{Name: "unleasherator-aura", Key: unleashv1.UnleashSecretTokenKey},
+		},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "unleasherator-aura", Namespace: "tenant"},
+		Data: map[string][]byte{
+			unleashv1.UnleashSecretTokenKey:     []byte("token"),
+			unleashv1.UnleashSecretServerURLKey: []byte(serverURL),
+		},
+	}
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
+
+	handlerCh := make(chan federation.Handler, 1)
+	mockSubscriber := &mockfederation.MockSubscriber{}
+	mockSubscriber.On("Subscribe", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			handlerCh <- args.Get(1).(federation.Handler)
+			<-args.Get(0).(context.Context).Done()
+		}).
+		Return(nil)
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:    c,
+		APIReader: c,
+		Scheme:    scheme,
+		Federation: RemoteUnleashFederation{
+			Enabled:     true,
+			ClusterName: "cluster-a",
+			Subscriber:  mockSubscriber,
+		},
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- reconciler.FederationSubscribe(ctx) }()
+
+	var handler federation.Handler
+	select {
+	case handler = <-handlerCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Subscribe was not called")
+	}
+
+	incoming := existing.DeepCopy()
+	incoming.ResourceVersion = ""
+
+	// Still provisioned, but cluster-a has been taken off the list.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{secret.DeepCopy()},
+		[]string{"cluster-b"},
+		pb.Status_Provisioned,
+	))
+
+	err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
+	assert.True(t, apierrors.IsNotFound(err),
+		"a cluster dropped from the federation list must remove its RemoteUnleash")
+}
+
+// A message naming no clusters asserts nothing about placement. Treating it as
+// "remove everywhere" would turn one malformed publish into fleet-wide deletion.
+func TestFederationEmptyClusterListIsIgnored(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	existing := &unleashv1.RemoteUnleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "aura", Namespace: "tenant"},
+		Spec:       unleashv1.RemoteUnleashSpec{Server: unleashv1.RemoteUnleashServer{URL: "https://unleash.example.com"}},
+	}
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
+
+	handlerCh := make(chan federation.Handler, 1)
+	mockSubscriber := &mockfederation.MockSubscriber{}
+	mockSubscriber.On("Subscribe", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			handlerCh <- args.Get(1).(federation.Handler)
+			<-args.Get(0).(context.Context).Done()
+		}).
+		Return(nil)
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:    c,
+		APIReader: c,
+		Scheme:    scheme,
+		Federation: RemoteUnleashFederation{
+			Enabled:     true,
+			ClusterName: "cluster-a",
+			Subscriber:  mockSubscriber,
+		},
+	}
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- reconciler.FederationSubscribe(ctx) }()
+
+	var handler federation.Handler
+	select {
+	case handler = <-handlerCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Subscribe was not called")
+	}
+
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{existing.DeepCopy()},
+		[]*corev1.Secret{{ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "tenant"}}},
+		nil,
+		pb.Status_Provisioned,
+	))
+
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
+		"an empty cluster list must not delete anything")
+}
+
+// Provisioning stays cluster-scoped for creation: a message for another cluster
+// must not create resources here.
 func TestFederationProvisioningStaysClusterScoped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
