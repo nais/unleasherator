@@ -12,9 +12,22 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+// DefaultTimeout bounds a single Unleash API call. Reconcilers hand the client
+// a context without a deadline, so without it a server that accepts the
+// connection but never answers pins a reconcile worker forever. It is a var so
+// tests can shorten it.
+var DefaultTimeout = 30 * time.Second
+
+// maxResponseBytes caps how much of a response body is buffered. The instance
+// URL is user controlled through RemoteUnleash, so an unbounded read lets a
+// hostile or broken server OOM the operator. The largest response we expect is
+// a full token list, which is orders of magnitude smaller than this.
+const maxResponseBytes = 10 << 20 // 10 MiB
 
 type Client struct {
 	URL        url.URL
@@ -29,9 +42,9 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 	if os.Getenv("UNLEASH_TEST_MODE") == "true" {
 		// Create a new client that uses whatever http.DefaultTransport currently is
 		// If httpmock has been activated, this will be the mock transport
-		httpClient = &http.Client{Transport: http.DefaultTransport}
+		httpClient = &http.Client{Transport: http.DefaultTransport, Timeout: DefaultTimeout}
 	} else {
-		httpClient = &http.Client{Transport: newTransport(http.DefaultTransport)}
+		httpClient = &http.Client{Transport: newTransport(http.DefaultTransport), Timeout: DefaultTimeout}
 	}
 
 	return NewClientWithHttpClient(instanceUrl, apiToken, httpClient)
@@ -165,6 +178,22 @@ func parseAPIError(statusCode int, body []byte) *UnleashAPIError {
 	// Return with just raw body if parsing fails
 	return apiErr
 }
+
+// readResponseBody buffers the response up to maxResponseBytes and fails rather
+// than growing without bound when the server sends more.
+func readResponseBody(res *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(res.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(body) > maxResponseBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBytes)
+	}
+
+	return body, nil
+}
+
 func (c *Client) requestURL(requestPath string) *url.URL {
 	req := new(url.URL)
 	*req = c.URL
@@ -190,8 +219,9 @@ func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.
 	if err != nil {
 		return res, err
 	}
+	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readResponseBody(res)
 	if err != nil {
 		return res, err
 	}
@@ -275,7 +305,7 @@ func (c *Client) HTTPPost(ctx context.Context, requestPath string, p, v any) (*h
 	}
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
+	body, err := readResponseBody(res)
 	if err != nil {
 		return res, err
 	}

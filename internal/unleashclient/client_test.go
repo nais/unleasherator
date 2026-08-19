@@ -3,11 +3,13 @@ package unleashclient
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -151,5 +153,112 @@ func TestHTTPDeleteKeepsAdminTokenOutOfRequestURL(t *testing.T) {
 
 	if strings.Contains(requestURL, adminToken) {
 		t.Fatalf("admin token leaked into request URL: %s", requestURL)
+	}
+}
+
+func TestNewClientHasTimeout(t *testing.T) {
+	client, err := NewClient("http://localhost:4242", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.HttpClient.Timeout == 0 {
+		t.Fatal("expected the client to bound requests with a timeout")
+	}
+	if client.HttpClient.Timeout != DefaultTimeout {
+		t.Fatalf("expected timeout %s, got %s", DefaultTimeout, client.HttpClient.Timeout)
+	}
+}
+
+func TestHTTPGetGivesUpOnHungServer(t *testing.T) {
+	released := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-released
+	}))
+	defer server.Close()
+	defer close(released)
+
+	original := DefaultTimeout
+	DefaultTimeout = 100 * time.Millisecond
+	defer func() { DefaultTimeout = original }()
+
+	client, err := NewClient(server.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.HTTPGet(context.Background(), HealthEndpoint, &HealthResult{})
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected the hung request to fail")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("request to a hung server never returned")
+	}
+}
+
+func TestHTTPGetRejectsOversizedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := make([]byte, 1<<20)
+		for written := 0; written <= maxResponseBytes; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithHttpClient(server.URL, "test", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.HTTPGet(context.Background(), HealthEndpoint, &HealthResult{})
+	if err == nil {
+		t.Fatal("expected an oversized response body to be rejected")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected a size limit error, got: %v", err)
+	}
+}
+
+// countingBody reports whether the response body was closed, which is what
+// returns the connection to the pool.
+type countingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *countingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestHTTPGetClosesResponseBody(t *testing.T) {
+	for name, status := range map[string]int{"ok": http.StatusOK, "error": http.StatusInternalServerError} {
+		t.Run(name, func(t *testing.T) {
+			body := &countingBody{Reader: strings.NewReader(`{"health":"GOOD"}`)}
+			client, err := NewClientWithHttpClient("http://unleash.example.com", "test", &http.Client{
+				Transport: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+					return &http.Response{StatusCode: status, Body: body, Header: http.Header{}}, nil
+				}),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			//nolint:errcheck // the error is irrelevant, the body must be closed either way
+			client.HTTPGet(context.Background(), HealthEndpoint, &HealthResult{})
+
+			if !body.closed {
+				t.Fatal("HTTPGet leaked the response body")
+			}
+		})
 	}
 }
