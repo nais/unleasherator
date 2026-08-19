@@ -31,10 +31,77 @@ func NewClient(instanceUrl string, apiToken string) (*Client, error) {
 		// If httpmock has been activated, this will be the mock transport
 		httpClient = &http.Client{Transport: http.DefaultTransport}
 	} else {
-		httpClient = &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+		httpClient = &http.Client{Transport: newTransport(http.DefaultTransport)}
 	}
 
 	return NewClientWithHttpClient(instanceUrl, apiToken, httpClient)
+}
+
+// redactedPathSegment stands in for a secret that the Unleash admin API insists
+// on receiving as a path segment.
+const redactedPathSegment = "REDACTED"
+
+type contextKey int
+
+const (
+	// redactedURLContextKey carries the URL that instrumentation is allowed to
+	// see, set by the request builder that knows which part is secret.
+	redactedURLContextKey contextKey = iota
+
+	// unredactedURLContextKey carries the real URL past instrumentation so the
+	// layer closest to the network can put it back.
+	unredactedURLContextKey
+)
+
+// withRedactedURL marks a request whose URL embeds a secret.
+func withRedactedURL(ctx context.Context, redacted string) context.Context {
+	return context.WithValue(ctx, redactedURLContextKey, redacted)
+}
+
+// newTransport builds the transport chain used against real Unleash instances.
+// otelhttp records the full request URL as a span attribute, which would ship
+// deleted token secrets to the trace backend, so redaction has to happen above
+// otelhttp and restoration below it: the span sees a placeholder while only the
+// wire sees the secret.
+func newTransport(base http.RoundTripper, opts ...otelhttp.Option) http.RoundTripper {
+	return &redactingTransport{next: otelhttp.NewTransport(&restoringTransport{next: base}, opts...)}
+}
+
+type redactingTransport struct {
+	next http.RoundTripper
+}
+
+func (t *redactingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	redacted, ok := req.Context().Value(redactedURLContextKey).(string)
+	if !ok {
+		return t.next.RoundTrip(req)
+	}
+
+	redactedURL, err := url.Parse(redacted)
+	if err != nil {
+		return nil, err
+	}
+
+	req = req.Clone(context.WithValue(req.Context(), unredactedURLContextKey, req.URL))
+	req.URL = redactedURL
+
+	return t.next.RoundTrip(req)
+}
+
+type restoringTransport struct {
+	next http.RoundTripper
+}
+
+func (t *restoringTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	unredacted, ok := req.Context().Value(unredactedURLContextKey).(*url.URL)
+	if !ok {
+		return t.next.RoundTrip(req)
+	}
+
+	req = req.Clone(req.Context())
+	req.URL = unredacted
+
+	return t.next.RoundTrip(req)
 }
 
 func NewClientWithHttpClient(instanceUrl string, apiToken string, httpClient *http.Client) (*Client, error) {
@@ -144,6 +211,12 @@ func (c *Client) HTTPGet(ctx context.Context, requestPath string, v any) (*http.
 func (c *Client) HTTPDelete(ctx context.Context, requestPath string, item string) error {
 	requestURL := c.requestURL(fmt.Sprintf("%s/%s", requestPath, item)).String()
 	requestMethod := "DELETE"
+
+	// The Unleash admin API identifies the token to delete by its secret, and
+	// only accepts it as a path segment, so it cannot move to a header the way
+	// the admin credential does. Hand the transport chain a redacted URL to
+	// hold up to instrumentation instead.
+	ctx = withRedactedURL(ctx, c.requestURL(fmt.Sprintf("%s/%s", requestPath, redactedPathSegment)).String())
 
 	req, err := http.NewRequestWithContext(ctx, requestMethod, requestURL, nil)
 
