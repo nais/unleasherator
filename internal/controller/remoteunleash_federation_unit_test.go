@@ -674,37 +674,51 @@ func TestFederationStaleMessageDoesNotDeprovision(t *testing.T) {
 // recorded publish time. That is unknown, not "newer than everything": refusing
 // removals for it would make every resource predating the annotation
 // undeletable by federation, which is the orphan bug this path exists to fix.
+//
+// The same holds when the message itself carries no publish time. A transport
+// that supplies none stamps nothing either, so the two stay consistent and
+// removals keep working exactly as they did before the guard existed.
 func TestFederationRemovalWithoutRecordedPublishTime(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	for _, tt := range []struct {
+		name        string
+		publishTime time.Time
+	}{
+		{name: "message carries a publish time", publishTime: time.Now()},
+		{name: "message carries no publish time", publishTime: time.Time{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+			existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
 
-	scheme := federationTestScheme(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
+			scheme := federationTestScheme(t)
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
 
-	reconciler := &RemoteUnleashReconciler{
-		Client:     c,
-		APIReader:  c,
-		Scheme:     scheme,
-		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+			reconciler := &RemoteUnleashReconciler{
+				Client:     c,
+				APIReader:  c,
+				Scheme:     scheme,
+				Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+			}
+			handler := startFederationHandler(ctx, t, reconciler)
+
+			incoming := existing.DeepCopy()
+			incoming.ResourceVersion = ""
+
+			require.NoError(t, handler(ctx,
+				[]*unleashv1.RemoteUnleash{incoming},
+				[]*corev1.Secret{secret.DeepCopy()},
+				[]string{"cluster-b"},
+				pb.Status_Removed,
+				tt.publishTime,
+			))
+
+			err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
+			assert.True(t, apierrors.IsNotFound(err),
+				"a resource with no recorded publish time must still be removable")
+		})
 	}
-	handler := startFederationHandler(ctx, t, reconciler)
-
-	incoming := existing.DeepCopy()
-	incoming.ResourceVersion = ""
-
-	require.NoError(t, handler(ctx,
-		[]*unleashv1.RemoteUnleash{incoming},
-		[]*corev1.Secret{secret.DeepCopy()},
-		[]string{"cluster-b"},
-		pb.Status_Removed,
-		time.Now(),
-	))
-
-	err := c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{})
-	assert.True(t, apierrors.IsNotFound(err),
-		"a resource with no recorded publish time must still be removable")
 }
 
 // A RemoteUnleash whose admin secret is gone cannot have a removal authenticated
