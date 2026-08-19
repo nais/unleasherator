@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/pubsub"
@@ -92,6 +93,16 @@ func (f *Features) Validate() error {
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
+	// envconfig's `required` only rejects an UNSET variable, so a chart value
+	// that is dropped or mis-templated arrives here as the empty string and
+	// starts the operator anyway. That is not a harmless default: the federation
+	// receive path decides whether an instance belongs in this cluster by
+	// looking for this name on the message, and a name that can never match
+	// reads every message as "no longer federated here". Refuse to start.
+	if strings.TrimSpace(c.ClusterName) == "" {
+		return fmt.Errorf("CLUSTER_NAME must be set to a non-empty value; federation uses it to decide whether an instance belongs in this cluster")
+	}
+
 	return c.Features.Validate()
 }
 

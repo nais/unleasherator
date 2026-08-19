@@ -57,6 +57,7 @@ func TestFeaturesValidate(t *testing.T) {
 
 func TestConfigValidate(t *testing.T) {
 	cfg := &Config{
+		ClusterName: "test-cluster",
 		Features: Features{
 			FederationNamespaceBoundSecrets: false,
 			AllowLegacyNameBoundSecrets:     false,
@@ -66,4 +67,18 @@ func TestConfigValidate(t *testing.T) {
 
 	cfg.Features.AllowLegacyNameBoundSecrets = true
 	assert.NoError(t, cfg.Validate(), "default configuration should pass validation")
+}
+
+// An empty CLUSTER_NAME must stop the operator from starting. envconfig's
+// `required` only rejects an unset variable, so the chart default and any
+// mis-templated value reach the process as "", and federation would then read
+// every provisioning message as "this instance is no longer federated here".
+func TestConfigValidateRequiresClusterName(t *testing.T) {
+	for _, clusterName := range []string{"", "   ", "\t"} {
+		cfg := &Config{
+			ClusterName: clusterName,
+			Features:    Features{AllowLegacyNameBoundSecrets: true},
+		}
+		assert.Error(t, cfg.Validate(), "cluster name %q should fail validation", clusterName)
+	}
 }
