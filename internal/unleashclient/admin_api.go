@@ -2,7 +2,6 @@ package unleashclient
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 )
 
@@ -133,7 +132,7 @@ func (c *Client) GetAllAPITokens(ctx context.Context) (*ApiTokenResult, error) {
 func (c *Client) GetAPITokensByName(ctx context.Context, userName string) (*ApiTokenResult, error) {
 	res := &ApiTokenResult{Tokens: []ApiToken{}}
 
-	_, err := c.HTTPGet(ctx, fmt.Sprintf("%s/%s", ApiTokensEndpoint, userName), res)
+	_, err := c.HTTPGetItem(ctx, ApiTokensEndpoint, userName, res)
 	if err != nil {
 		return res, err
 	}

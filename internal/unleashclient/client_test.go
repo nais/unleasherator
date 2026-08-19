@@ -262,3 +262,58 @@ func TestHTTPGetClosesResponseBody(t *testing.T) {
 		})
 	}
 }
+
+// The token name and the token secret are the only parts of a request path the
+// client does not control. Escaping them keeps them data: a name carrying "/"
+// must address an item under the endpoint, not a different endpoint, and a
+// name that is only dots is not a name at all.
+func TestItemPathSegmentsAreData(t *testing.T) {
+	tests := []struct {
+		name     string
+		item     string
+		wantPath string
+		wantErr  bool
+	}{
+		{name: "ordinary name", item: "team-a-unleash", wantPath: "/api/admin/api-tokens/team-a-unleash"},
+		{name: "token secret", item: "project:development.5ec4e7", wantPath: "/api/admin/api-tokens/project:development.5ec4e7"},
+		{name: "traversal", item: "../../../api/admin/user", wantPath: "/api/admin/api-tokens/..%2F..%2F..%2Fapi%2Fadmin%2Fuser"},
+		{name: "query separator", item: "name?x=1", wantPath: "/api/admin/api-tokens/name%3Fx=1"},
+		{name: "fragment separator", item: "name#frag", wantPath: "/api/admin/api-tokens/name%23frag"},
+		{name: "relative element", item: "..", wantErr: true},
+		{name: "current element", item: ".", wantErr: true},
+		{name: "empty", item: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var requestURI string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestURI = r.URL.EscapedPath()
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			client, err := NewClientWithHttpClient(server.URL, "admin-token", server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			err = client.HTTPDelete(context.Background(), ApiTokensEndpoint, tt.item)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected %q to be refused as a path segment", tt.item)
+				}
+				if requestURI != "" {
+					t.Fatalf("refused segment still reached the server as %q", requestURI)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if requestURI != tt.wantPath {
+				t.Errorf("expected request path %q, got %q", tt.wantPath, requestURI)
+			}
+		})
+	}
+}

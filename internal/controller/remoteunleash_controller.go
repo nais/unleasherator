@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -785,6 +786,25 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				supersededSecrets := make(map[client.ObjectKey]*corev1.Secret)
 
 				for i, ru := range remoteUnleashes {
+					// The credential on a federation message is the management
+					// cluster's own admin token, and the URL is the single field
+					// that decides where the operator sends it. The only URL an
+					// instance is ever published with is its public API URL,
+					// which is https by construction, so a plaintext one is not
+					// an instance this operator can reach safely — it is the
+					// admin token on the wire in the clear.
+					//
+					// Only provisioning is checked. A removal has to keep
+					// working against whatever is already stored, or a resource
+					// federated before this check could never be deleted again,
+					// which is the orphan the removal path exists to prevent.
+					if !federationServerURLIsSecure(ru.Spec.Server.URL) {
+						remoteUnleashReceived.WithLabelValues("provisioned", "insecure_url").Inc()
+						log.Info("Refusing to provision RemoteUnleash from a message that does not carry an https URL",
+							"name", ru.Name, "namespace", ru.Namespace, "url", ru.Spec.Server.URL)
+						continue
+					}
+
 					existingRU := &unleashv1.RemoteUnleash{}
 					err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(ru), existingRU)
 					if err != nil && !apierrors.IsNotFound(err) {
@@ -1029,6 +1049,25 @@ func setFederationPublishTime(remoteUnleash *unleashv1.RemoteUnleash, publishTim
 		remoteUnleash.Annotations = map[string]string{}
 	}
 	remoteUnleash.Annotations[unleashv1.RemoteUnleashFederationPublishTimeAnnotation] = publishTime.UTC().Format(time.RFC3339Nano)
+}
+
+// federationServerURLIsSecure reports whether a federated server URL is one the
+// operator may send the admin token to.
+//
+// This is deliberately a scheme check and not a host allowlist. Tenants run
+// their own Unleash instances on their own hostnames, so the operator has no
+// list of legitimate hosts to compare against, and blocking hosts by resolved
+// address would refuse the addresses the operator legitimately talks to: the
+// management cluster reaches its own instances over cluster-internal service
+// names, and on-prem clusters reach everything through an HTTP proxy whose
+// address is the only one such a check would ever see.
+func federationServerURLIsSecure(serverURL string) bool {
+	parsed, err := url.Parse(serverURL)
+	if err != nil {
+		return false
+	}
+
+	return parsed.Scheme == "https" && parsed.Host != ""
 }
 
 func federationAdminSecret(ctx context.Context, k8sClient client.Reader, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {
