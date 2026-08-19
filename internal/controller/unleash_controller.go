@@ -443,7 +443,18 @@ func (r *UnleashReconciler) publish(ctx context.Context, unleash *unleashv1.Unle
 
 // finalizeUnleash will perform the required operations before delete the CR.
 func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleash, ctx context.Context, log logr.Logger) error {
-	// Publish removal message to federated clusters
+	// Publish removal message to federated clusters.
+	//
+	// Skipping is recorded rather than silent: an instance deleted while
+	// federation was off leaves whatever RemoteUnleash resources earlier
+	// publications created, and without a counter the only evidence is a
+	// connection alert in another cluster weeks later.
+	if !r.Federation.Enabled || !cr.Spec.Federation.Enabled {
+		unleashPublished.WithLabelValues("removed", "skipped").Inc()
+		log.Info("Federation disabled; not publishing removal",
+			"operatorFederation", r.Federation.Enabled,
+			"instanceFederation", cr.Spec.Federation.Enabled)
+	}
 	if r.Federation.Enabled && cr.Spec.Federation.Enabled {
 		log.Info("Publishing removal message to federation")
 		unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSending).Inc()

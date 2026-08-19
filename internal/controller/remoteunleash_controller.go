@@ -507,7 +507,16 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
-			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
+			// Removals are never cluster-filtered. The cluster list on the
+			// message is the instance's federation config at the moment it was
+			// deleted, so a cluster dropped from that list earlier would never
+			// be told the instance is gone — leaving a RemoteUnleash pointing at
+			// a server that no longer exists, alerting forever with no way to
+			// discover why. A cluster holding no matching RemoteUnleash does
+			// nothing with the message, and the URL and credential checks below
+			// still refuse a removal that does not match what is stored.
+			if status != pb.Status_Removed && !utils.StringInSlice(r.Federation.ClusterName, clusters) {
+				remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "other_cluster").Inc()
 				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
 				return nil
 			}
