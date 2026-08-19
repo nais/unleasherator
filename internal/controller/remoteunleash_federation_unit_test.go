@@ -759,3 +759,47 @@ func TestFederationRemovalWithMissingAdminSecretIsSkipped(t *testing.T) {
 	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(existing), &unleashv1.RemoteUnleash{}),
 		"a RemoteUnleash whose token could not be verified must not be deleted")
 }
+
+// Provisioning is where a credential substitution pays off: a message that keeps
+// the public URL but carries a different token would, if only the URL were
+// checked, replace the admin credential of a live tenant with one the publisher
+// chose. The URL is public information, so matching it proves nothing about who
+// sent the message; only the credential already bound to the resource does.
+func TestFederationProvisionRefusesTokenSubstitution(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	existing, secret := federationFixture("aura", "tenant", "https://unleash.example.com", "token")
+
+	scheme := federationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing, secret).Build()
+
+	reconciler := &RemoteUnleashReconciler{
+		Client:     c,
+		APIReader:  c,
+		Scheme:     scheme,
+		Federation: RemoteUnleashFederation{Enabled: true, ClusterName: "cluster-a"},
+	}
+	handler := startFederationHandler(ctx, t, reconciler)
+
+	incoming := existing.DeepCopy()
+	incoming.ResourceVersion = ""
+	substituted := secret.DeepCopy()
+	substituted.ResourceVersion = ""
+	substituted.Data[unleashv1.UnleashSecretTokenKey] = []byte("attacker-controlled-token")
+
+	// The cluster list names this cluster, so the message is a provisioning
+	// message for it and nothing else diverts it into the removal path.
+	require.NoError(t, handler(ctx,
+		[]*unleashv1.RemoteUnleash{incoming},
+		[]*corev1.Secret{substituted},
+		[]string{"cluster-a"},
+		pb.Status_Provisioned,
+		time.Now(),
+	))
+
+	stored := &corev1.Secret{}
+	require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(secret), stored))
+	assert.Equal(t, []byte("token"), stored.Data[unleashv1.UnleashSecretTokenKey],
+		"a provisioning message that only matches the URL must not rotate the stored admin token")
+}
