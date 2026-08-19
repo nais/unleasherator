@@ -68,7 +68,78 @@ const (
 	federationReceiveBackoffBase         = 1 * time.Second
 	federationReceiveBackoffMax          = 5 * time.Minute
 	federationReceiveEscalationThreshold = 10
+
+	// federationStateRemoved labels counters for a deletion the management
+	// cluster published as such.
+	federationStateRemoved = "removed"
+	// federationStateDeprovisioned labels counters for a deletion this cluster
+	// derived from a provisioning message that no longer names it. The two are
+	// counted apart because they answer different questions: one says an
+	// instance is gone, the other says it moved.
+	federationStateDeprovisioned = "deprovisioned"
 )
+
+// clusterListMatch is the outcome of comparing this operator's cluster name
+// against the cluster list on a federation message. It is an enum rather than a
+// bool because "the list does not name me" and "the list says nothing useful"
+// must lead to different actions: only the first may delete.
+type clusterListMatch int
+
+const (
+	// clusterListNoStatement means the message asserts nothing about placement,
+	// either because it carries no clusters at all or because every entry is
+	// blank once trimmed.
+	clusterListNoStatement clusterListMatch = iota
+	// clusterListNamed means an entry names this cluster.
+	clusterListNamed
+	// clusterListCaseMismatch means an entry matches only when case is ignored.
+	clusterListCaseMismatch
+	// clusterListExcluded means the list names other clusters, and none of them
+	// is this one under any casing.
+	clusterListExcluded
+)
+
+// matchClusterList compares clusterName against the cluster list carried by a
+// federation message.
+//
+// Entries are trimmed before comparison, and entries that are empty once
+// trimmed are ignored: a stray space in a team's federation config is a typo,
+// not a different cluster, and a list of nothing but blanks says as little as
+// an empty list. Without this, `[" cluster-a"]` or `[""]` reads as "this
+// instance does not belong in cluster-a" and deletes it.
+//
+// The match itself stays case-sensitive: cluster names are exact identifiers
+// here (they name a real cluster in the fleet), and folding them would let two
+// distinct configured names collide. But a case-only difference is reported as
+// its own outcome instead of as an exclusion, because the caller's response to
+// an exclusion is destructive and "cluster-a" versus "Cluster-A" is far more
+// likely a naming mistake than a statement that the instance must go.
+func matchClusterList(clusterName string, clusters []string) clusterListMatch {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		// An operator that does not know its own name cannot conclude anything
+		// about placement. Callers reject this earlier and with a counter; this
+		// is here so no future caller can turn it into a deletion by accident.
+		return clusterListNoStatement
+	}
+
+	match := clusterListNoStatement
+	for _, cluster := range clusters {
+		cluster = strings.TrimSpace(cluster)
+		switch {
+		case cluster == "":
+			continue
+		case cluster == clusterName:
+			return clusterListNamed
+		case strings.EqualFold(cluster, clusterName):
+			match = clusterListCaseMismatch
+		case match == clusterListNoStatement:
+			match = clusterListExcluded
+		}
+	}
+
+	return match
+}
 
 func init() {
 	metrics.Registry.MustRegister(remoteUnleashStatus, remoteUnleashReceived, federationReceiveConsecutiveErrors)
@@ -482,7 +553,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 		healthy := time.AfterFunc(federationReceiveBackoffMax, func() {
 			federationReceiveConsecutiveErrors.Set(0)
 		})
-		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status) error {
+		err := r.Federation.Subscriber.Subscribe(subCtx, func(ctx context.Context, remoteUnleashes []*unleashv1.RemoteUnleash, adminSecrets []*corev1.Secret, clusters []string, status pb.Status, publishTime time.Time) error {
 			// failPermanently stops receiving so the operator restarts into a
 			// corrected configuration, but nacks the message: operator-side
 			// failures (e.g. RBAC) are recoverable, and the message must be
@@ -507,12 +578,71 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 
 			log.Info("Received pubsub message", "status", status, "unleash", remoteUnleashes[0].GetName(), "clusters", clusters)
 
-			if !utils.StringInSlice(r.Federation.ClusterName, clusters) {
-				log.Info("Ignoring message, not for this cluster", "cluster", r.Federation.ClusterName, "clusters", clusters)
-				return nil
+			// A federation message states where the instance should exist; it is
+			// not an instruction addressed to the clusters it happens to name.
+			// Acting only when named is what orphans resources: a cluster taken
+			// out of a team's federation config, or one dropped from the list
+			// before the instance was deleted, keeps a RemoteUnleash pointing at
+			// a server it can no longer reach and alerts on it forever.
+			//
+			// So removals apply everywhere, and a provisioning message that no
+			// longer names this cluster is treated as a removal here. A cluster
+			// holding no matching resource does nothing either way, and the URL
+			// and credential checks below still refuse anything that disagrees
+			// with what is stored.
+			//
+			// Rewriting a message into a deletion is only ever done from an
+			// explicit Status_Provisioned. Every other status, including the
+			// proto3 zero value Status_Unknown that an absent field
+			// deserialises to, keeps the old no-op behaviour: a message we
+			// cannot read must not be the most destructive one we handle.
+			effective := status
+			// Counters in the shared removal body are labelled with the reason
+			// the removal happened, so a deletion this cluster derived from a
+			// dropped cluster list stays distinguishable from one the
+			// management cluster actually published.
+			removalState := federationStateRemoved
+
+			if status == pb.Status_Provisioned {
+				ownCluster := strings.TrimSpace(r.Federation.ClusterName)
+				if ownCluster == "" {
+					// Config.Validate refuses to start without CLUSTER_NAME, but
+					// a single check is a poor guard for a fleet-wide deletion:
+					// an operator that does not know its own name reads every
+					// message as "not for me" and would empty the cluster.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "cluster_name_unset").Inc()
+					log.Info("Operator has no cluster name; refusing to act on placement", "clusters", clusters)
+					return nil
+				}
+
+				switch matchClusterList(ownCluster, clusters) {
+				case clusterListNamed:
+					// The instance belongs here; provision it below.
+				case clusterListNoStatement:
+					// Asserts nothing about placement. Treating it as "remove
+					// everywhere" would turn a malformed publish into fleet-wide
+					// deletion, so ignore it instead.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "no_clusters").Inc()
+					log.Info("Message names no clusters; ignoring", "cluster", ownCluster)
+					return nil
+				case clusterListCaseMismatch:
+					// Ambiguous: the list plausibly means this cluster and only
+					// the casing differs. Deleting on a guess is the one reading
+					// that cannot be undone, so do nothing and leave a counter
+					// for whoever has to explain the naming mismatch.
+					remoteUnleashReceived.WithLabelValues(strings.ToLower(status.String()), "cluster_name_case_mismatch").Inc()
+					log.Info("Cluster list matches this cluster only when case is ignored; ignoring",
+						"cluster", ownCluster, "clusters", clusters)
+					return nil
+				case clusterListExcluded:
+					effective = pb.Status_Removed
+					removalState = federationStateDeprovisioned
+					log.Info("Instance is no longer federated to this cluster; removing local resources",
+						"cluster", ownCluster, "clusters", clusters)
+				}
 			}
 
-			switch status {
+			switch effective {
 			case pb.Status_Removed:
 				log.Info("Received Status_Removed, deleting RemoteUnleash resources and secret")
 
@@ -532,8 +662,34 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						}
 						return err
 					}
+
+					// Replay protection. A redelivered older message carries an
+					// older cluster list, and acting on it deletes what a newer
+					// message legitimately created. Nothing would bring it back:
+					// the publisher skips republishing while its instance hash is
+					// unchanged, and there is no periodic federation resync, so
+					// recovery needs a human.
+					//
+					// A resource with no recorded time is not treated as newer
+					// than everything; it is treated as unknown, and unknown
+					// permits the deletion. Refusing instead would make every
+					// resource predating this annotation undeletable by
+					// federation, which is the orphan bug this path exists to
+					// fix. The gap closes by itself: the first provisioning
+					// message applied to a resource stamps it, and a transport
+					// that supplies no publish time never stamps anything, so it
+					// keeps working exactly as before rather than freezing.
+					if lastApplied := federationLastAppliedPublishTime(existingRU); !lastApplied.IsZero() &&
+						!publishTime.After(lastApplied) {
+						remoteUnleashReceived.WithLabelValues(removalState, "stale").Inc()
+						log.Info("Refusing to delete RemoteUnleash from a message older than the one already applied",
+							"name", ru.Name, "namespace", ru.Namespace,
+							"publishTime", publishTime, "lastApplied", lastApplied)
+						continue
+					}
+
 					if existingRU.Spec.Server.URL != ru.Spec.Server.URL {
-						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to URL mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace,
 							"existingURL", existingRU.Spec.Server.URL, "newURL", ru.Spec.Server.URL)
@@ -541,6 +697,20 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					}
 
 					existingSecret, err := federationAdminSecret(ctx, r.APIReader, existingRU)
+					if apierrors.IsNotFound(err) {
+						// Without the stored credential the removal cannot be
+						// authenticated, so this resource is left alone: deleting
+						// unverified is exactly the hijack the checks below exist
+						// to stop. Returning the error instead would nack forever
+						// — the secret is not coming back — and block every later
+						// message sharing the ordering key, now in every cluster
+						// rather than only the ones the message names.
+						remoteUnleashReceived.WithLabelValues(removalState, "missing_secret").Inc()
+						log.Info("Refusing to delete RemoteUnleash whose admin secret is missing",
+							"name", ru.Name, "namespace", ru.Namespace,
+							"secret", existingRU.AdminSecretNamespacedName())
+						continue
+					}
 					if err != nil {
 						if !retriableError(err) {
 							return failPermanently(err)
@@ -548,7 +718,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 						return err
 					}
 					if !federationTokensEqual(existingRU, existingSecret, adminSecrets[i]) {
-						remoteUnleashReceived.WithLabelValues("removed", "rejected").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "rejected").Inc()
 						log.Info("Refusing to delete RemoteUnleash due to credential mismatch - possible hijack attempt",
 							"name", ru.Name, "namespace", ru.Namespace)
 						continue
@@ -569,7 +739,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				if errs := utils.DeleteAllObjects(objectsCtx, r.Client, safeRUs); len(errs) > 0 {
 					var permanentErr error
 					for _, err := range errs {
-						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "failed").Inc()
 						log.Error(err, "Failed to delete RemoteUnleash")
 
 						if !retriableError(err) {
@@ -589,7 +759,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 				if errs := utils.DeleteAllObjects(secretCtx, r.Client, safeSecrets); len(errs) > 0 {
 					var permanentErr error
 					for _, err := range errs {
-						remoteUnleashReceived.WithLabelValues("removed", "failed").Inc()
+						remoteUnleashReceived.WithLabelValues(removalState, "failed").Inc()
 						log.Error(err, "Failed to delete admin secret")
 
 						if !retriableError(err) {
@@ -602,7 +772,7 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					return errs[0]
 				}
 
-				remoteUnleashReceived.WithLabelValues("removed", "success").Inc()
+				remoteUnleashReceived.WithLabelValues(removalState, "success").Inc()
 				log.Info("Successfully deleted RemoteUnleash resources and secret")
 				return nil
 
@@ -681,6 +851,16 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 					for _, secret := range discoveredSecrets {
 						supersededSecrets[client.ObjectKeyFromObject(secret)] = secret
 					}
+
+					// Record what this resource has seen, so a later replay of an
+					// older message cannot delete it. The stamp only moves
+					// forward: a replayed older provisioning message must not roll
+					// it back and re-open the window it closes.
+					stamp := publishTime
+					if lastApplied := federationLastAppliedPublishTime(existingRU); lastApplied.After(stamp) {
+						stamp = lastApplied
+					}
+					setFederationPublishTime(ru, stamp)
 
 					safeRUs = append(safeRUs, ru)
 					safeSecrets = append(safeSecrets, adminSecrets[i])
@@ -817,6 +997,38 @@ func (r *RemoteUnleashReconciler) FederationSubscribe(ctx context.Context) error
 // retriableError returns true if the error is not a forbidden or unauthorized error.
 func retriableError(err error) bool {
 	return !apierrors.IsForbidden(err) && !apierrors.IsUnauthorized(err)
+}
+
+// federationLastAppliedPublishTime reports the publish time of the most recent
+// federation message applied to remoteUnleash. A missing or unparseable value
+// reads as the zero time, meaning "unknown": callers must treat that as no basis
+// to refuse rather than as an ordering claim.
+func federationLastAppliedPublishTime(remoteUnleash *unleashv1.RemoteUnleash) time.Time {
+	value, ok := remoteUnleash.Annotations[unleashv1.RemoteUnleashFederationPublishTimeAnnotation]
+	if !ok {
+		return time.Time{}
+	}
+
+	publishTime, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return publishTime
+}
+
+// setFederationPublishTime stamps remoteUnleash with the publish time of the
+// federation message being applied to it. A zero time is not recorded: it means
+// the transport supplied none, and a stamp that claims an ordering nobody
+// established would refuse every later deletion.
+func setFederationPublishTime(remoteUnleash *unleashv1.RemoteUnleash, publishTime time.Time) {
+	if publishTime.IsZero() {
+		return
+	}
+
+	if remoteUnleash.Annotations == nil {
+		remoteUnleash.Annotations = map[string]string{}
+	}
+	remoteUnleash.Annotations[unleashv1.RemoteUnleashFederationPublishTimeAnnotation] = publishTime.UTC().Format(time.RFC3339Nano)
 }
 
 func federationAdminSecret(ctx context.Context, k8sClient client.Reader, remoteUnleash *unleashv1.RemoteUnleash) (*corev1.Secret, error) {

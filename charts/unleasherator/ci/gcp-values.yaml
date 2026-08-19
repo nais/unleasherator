@@ -6,6 +6,14 @@ controllerManagerGcp:
 controllerManager:
   manager:
     imagePullPolicy: Never
+    env:
+      # The operator refuses to start without this: federation uses it to decide
+      # whether an instance belongs in this cluster, and an empty value used to
+      # mean "no cluster matches", which turned a deprovisioning message into a
+      # fleet-wide delete. Real deployments get it from Feature.yaml, which
+      # always computes a non-empty name; the chart default is empty, so the
+      # test has to supply one like any other deployment does.
+      clusterName: chart-testing
 
 # Test configuration - faster timeouts for local/CI testing
 # For slower CI systems, override these with higher values
