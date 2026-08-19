@@ -450,12 +450,11 @@ func (r *UnleashReconciler) doFinalizerOperationsForUnleash(cr *unleashv1.Unleas
 	// publications created, and without a counter the only evidence is a
 	// connection alert in another cluster weeks later.
 	if !r.Federation.Enabled || !cr.Spec.Federation.Enabled {
-		unleashPublished.WithLabelValues("removed", "skipped").Inc()
+		unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSkipped).Inc()
 		log.Info("Federation disabled; not publishing removal",
 			"operatorFederation", r.Federation.Enabled,
 			"instanceFederation", cr.Spec.Federation.Enabled)
-	}
-	if r.Federation.Enabled && cr.Spec.Federation.Enabled {
+	} else {
 		log.Info("Publishing removal message to federation")
 		unleashPublished.WithLabelValues("removed", unleashPublishMetricStatusSending).Inc()
 
