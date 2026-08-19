@@ -172,6 +172,7 @@ var _ = BeforeSuite(func() {
 	err = (&ApiTokenReconciler{
 		Client:                      k8sManager.GetClient(),
 		Scheme:                      k8sManager.GetScheme(),
+		Recorder:                    k8sManager.GetEventRecorderFor("apitoken-controller"),
 		OperatorNamespace:           namespace,
 		ApiTokenNameSuffix:          ApiTokenNameSuffix,
 		ApiTokenUpdateEnabled:       true,

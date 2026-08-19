@@ -28,6 +28,7 @@ import (
 	"github.com/nais/unleasherator/internal/o11y"
 	"github.com/nais/unleasherator/internal/resources"
 	"github.com/nais/unleasherator/internal/unleashclient"
+	"github.com/nais/unleasherator/internal/utils"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -41,6 +42,17 @@ const (
 var (
 	// API Token controller timeouts - prefixed to avoid conflicts with other controllers
 	apiTokenRequeueAfter = 1 * time.Hour
+
+	// Poll interval used while the ApiToken is waiting for its Unleash instance
+	// to show up. This controller does not watch Unleash/RemoteUnleash, so the
+	// requeue is the only thing that will ever pick up a late arrival — it must
+	// stay well under the time a team is willing to wait. Ten minutes matches
+	// releaseChannelIdleRequeueInterval, the existing "idle poll" cadence, and
+	// is no slower than the ~16m ceiling of the controller-runtime backoff this
+	// replaces. Jittered because ApiTokens are applied in bulk by a deploy and
+	// would otherwise requeue in lockstep forever.
+	apiTokenMissingInstanceRequeueAfter  = 10 * time.Minute
+	apiTokenMissingInstanceRequeueJitter = 2 * time.Minute
 
 	// apiTokenStatus is a Prometheus metric which will be used to expose the status of the Unleash instances
 	apiTokenStatus = prometheus.NewGaugeVec(
@@ -74,10 +86,24 @@ var (
 		},
 		[]string{"namespace", "name"},
 	)
+
+	// A gauge, not a counter: "the Unleash instance is missing" is a state the
+	// ApiToken is in, not an event that happens. A counter would only tick at
+	// the rate we happen to poll, so its value would measure our requeue
+	// interval rather than the fleet. The question worth alerting on is "how
+	// many ApiTokens are blocked right now, and for how long", which is
+	// exactly what a 0/1 gauge answers.
+	apiTokenWaitingForInstance = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "unleasherator_apitoken_waiting_for_instance",
+			Help: "1 while an ApiToken is waiting for its Unleash instance to exist, 0 once it does",
+		},
+		[]string{"namespace", "name"},
+	)
 )
 
 func init() {
-	metrics.Registry.MustRegister(apiTokenStatus, apiTokenExistingTokens, apiTokenDeletedCounter, apiTokenCreatedCounter)
+	metrics.Registry.MustRegister(apiTokenStatus, apiTokenExistingTokens, apiTokenDeletedCounter, apiTokenCreatedCounter, apiTokenWaitingForInstance)
 }
 
 // ApiTokenReconciler reconciles a ApiToken object
@@ -121,6 +147,7 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			log.Info("ApiToken resource not found. Ignoring since object must be deleted")
 			apiTokenStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.ApiTokenStatusConditionTypeCreated)
 			apiTokenStatus.DeleteLabelValues(req.Namespace, req.Name, unleashv1.ApiTokenStatusConditionTypeFailed)
+			apiTokenWaitingForInstance.DeleteLabelValues(req.Namespace, req.Name)
 			return ctrl.Result{Requeue: false}, nil
 		}
 		log.Error(err, "Failed to get ApiToken")
@@ -243,17 +270,53 @@ func (r *ApiTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	unleash, err := r.getUnleashInstance(ctx, token)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
+			// A missing Unleash instance is a state, not a controller fault.
+			// Teams apply ApiTokens before federation has delivered the
+			// RemoteUnleash, so most ApiTokens pass through here on their way to
+			// working. Returning the error made controller-runtime log its own
+			// "Reconciler error" line on top of ours and fast-retry with
+			// backoff; those two lines per retry were the single largest source
+			// of log volume in this operator. Requeue slowly with a nil error
+			// instead, so a late arrival is still picked up but nothing is
+			// reported as broken.
 			message := fmt.Sprintf("%s resource with name %s not found in namespace %s", token.Spec.UnleashInstance.Kind, token.Spec.UnleashInstance.Name, token.Namespace)
-			if statusErr := r.updateStatusFailed(ctx, token, err, "UnleashNotFound", message); statusErr != nil {
+
+			// Read the condition before writing it: this is the only record of
+			// what we already reported, and setStatusFailed overwrites it.
+			previous := meta.FindStatusCondition(token.Status.Conditions, unleashv1.ApiTokenStatusConditionTypeFailed)
+			alreadyReported := previous != nil &&
+				previous.Status == metav1.ConditionTrue &&
+				previous.Reason == "UnleashNotFound"
+
+			if statusErr := r.setStatusFailed(ctx, token, "UnleashNotFound", message); statusErr != nil {
 				return ctrl.Result{}, statusErr
 			}
 
-			return ctrl.Result{}, err
+			apiTokenWaitingForInstance.WithLabelValues(token.Namespace, token.Name).Set(1.0)
+
+			// The event is emitted every time rather than only on change: the
+			// API server aggregates repeats into a single event with a count,
+			// and events expire, so re-emitting keeps `kubectl describe` useful
+			// for as long as the ApiToken is actually stuck.
+			if r.Recorder != nil {
+				r.Recorder.Event(token, "Warning", "UnleashNotFound", message)
+			}
+
+			if !alreadyReported {
+				log.Info("Unleash instance not found, waiting for it to appear",
+					"kind", token.Spec.UnleashInstance.Kind,
+					"instance", token.Spec.UnleashInstance.Name)
+			}
+
+			return ctrl.Result{RequeueAfter: utils.RequeueAfterWithJitter(apiTokenMissingInstanceRequeueAfter, apiTokenMissingInstanceRequeueJitter)}, nil
 		}
 
 		log.Error(err, "Failed to get Unleash resource")
 		return ctrl.Result{}, err
 	}
+
+	// The instance exists, so the wait is over regardless of what happens next.
+	apiTokenWaitingForInstance.WithLabelValues(token.Namespace, token.Name).Set(0.0)
 
 	// Check if Unleash instance is ready
 	if !unleash.IsReady() {
@@ -508,6 +571,15 @@ func (r *ApiTokenReconciler) updateStatusFailed(ctx context.Context, apiToken *u
 	} else {
 		log.Info(fmt.Sprintf("%s for ApiToken", message))
 	}
+
+	return r.setStatusFailed(ctx, apiToken, reason, message)
+}
+
+// setStatusFailed records the failed condition without logging. It is split out
+// of updateStatusFailed for the states that are expected rather than exceptional
+// and therefore must not log on every reconcile.
+func (r *ApiTokenReconciler) setStatusFailed(ctx context.Context, apiToken *unleashv1.ApiToken, reason, message string) error {
+	log := log.FromContext(ctx).WithName("apitoken")
 
 	apiTokenStatus.WithLabelValues(apiToken.Namespace, apiToken.Name, unleashv1.ApiTokenStatusConditionTypeFailed).Set(1.0)
 
