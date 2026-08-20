@@ -1195,6 +1195,7 @@ func TestUpdateInstanceCounts(t *testing.T) {
 
 func TestReleaseChannelStatusEqual(t *testing.T) {
 	now := metav1.Now()
+	earlier := metav1.NewTime(now.Add(-time.Hour))
 
 	tests := []struct {
 		name     string
@@ -1207,6 +1208,35 @@ func TestReleaseChannelStatusEqual(t *testing.T) {
 			a:        &unleashv1.ReleaseChannelStatus{},
 			b:        &unleashv1.ReleaseChannelStatus{},
 			expected: true,
+		},
+		{
+			// This function decides whether status is written at all, so a field
+			// missing from it is silently dropped and then overwritten from the
+			// API server. Every field that carries state across reconciles has to
+			// be here; these three were each added with a fix that depends on
+			// them surviving the round trip.
+			name:     "differing FailedImage",
+			a:        &unleashv1.ReleaseChannelStatus{FailedImage: "unleash:v1"},
+			b:        &unleashv1.ReleaseChannelStatus{},
+			expected: false,
+		},
+		{
+			name:     "differing ResumeProgress",
+			a:        &unleashv1.ReleaseChannelStatus{ResumeProgress: 7},
+			b:        &unleashv1.ReleaseChannelStatus{},
+			expected: false,
+		},
+		{
+			name:     "LastDeployTime set on one side only",
+			a:        &unleashv1.ReleaseChannelStatus{LastDeployTime: &now},
+			b:        &unleashv1.ReleaseChannelStatus{},
+			expected: false,
+		},
+		{
+			name:     "differing LastDeployTime",
+			a:        &unleashv1.ReleaseChannelStatus{LastDeployTime: &now},
+			b:        &unleashv1.ReleaseChannelStatus{LastDeployTime: &earlier},
+			expected: false,
 		},
 		{
 			name: "identical statuses",

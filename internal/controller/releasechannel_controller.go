@@ -766,6 +766,16 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 		return ctrl.Result{}, nil
 	}
 
+	// Persist before waiting. This path is reached with rollback disabled, and it
+	// was the only one that returned without writing status — so FailedImage, set
+	// in place above, was recomputed and dropped on every pass. A later
+	// spec.image correction was then compared against an empty marker and never
+	// recognised, leaving exactly the channels that cannot roll back with no way
+	// out either.
+	if _, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Stay in failed state and requeue periodically
 	return ctrl.Result{RequeueAfter: releaseChannelFailedRetryDelay}, nil
 }

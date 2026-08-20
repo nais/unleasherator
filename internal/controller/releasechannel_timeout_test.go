@@ -409,3 +409,121 @@ func TestExecuteFailedPhaseStopsARolloutThatIsNotProgressing(t *testing.T) {
 	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, reload().Status.Phase,
 		"a rollout that advanced nothing must stop rather than resume forever")
 }
+
+func TestTimeoutRollsBackOnSpecOnlyRollbackImage(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	// spec.rollback.previousImage is set but nothing was ever tracked in status,
+	// which is the shape an operator creates by declaring a rollback image up
+	// front. releasePhaseOnFailure has to see it, or the channel is sent to
+	// Failed while a perfectly good rollback target sits in spec.
+	startTime := metav1.NewTime(time.Now().Add(-time.Hour))
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image: unleashv1.UnleashImage(newerImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{
+				MaxParallel:    1,
+				MaxUpgradeTime: &metav1.Duration{Duration: time.Minute},
+			},
+			Rollback: unleashv1.RollbackConfig{
+				Enabled:       true,
+				OnFailure:     true,
+				PreviousImage: deployedImage,
+			},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:     unleashv1.ReleaseChannelPhaseRolling,
+			StartTime: &startTime,
+			// Deliberately empty: the tracked baseline is the other half of
+			// rollbackTarget, and reading only it is the bug being pinned.
+			PreviousImage: "",
+		},
+	}
+	instance := instanceRunning("instance-a", deployedImage)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel, &instance).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.executeRollingPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseRollingBack, updated.Status.Phase,
+		"a rollback image in spec is a rollback target, so the failure must route to RollingBack")
+}
+
+func TestExecuteFailedPhaseRetriesOnCorrectedImageWithRollbackDisabled(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	// Rollback disabled, which is how both live channels are configured, and a
+	// failure that is neither transient nor a budget timeout. This lands on the
+	// one path out of the failed phase that waits without writing status, so the
+	// marker recording which image failed has to survive it for a later
+	// spec.image correction to be recognised at all.
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(newerImage),
+			Rollback: unleashv1.RollbackConfig{Enabled: false},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:         unleashv1.ReleaseChannelPhaseFailed,
+			FailureReason: "Rolling deployment failed: image pull backoff",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+	log := ctrl.Log.WithName("test")
+	reload := func() *unleashv1.ReleaseChannel {
+		fresh := &unleashv1.ReleaseChannel{}
+		require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), fresh))
+		return fresh
+	}
+
+	result, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, log)
+	require.NoError(t, err)
+	assert.Equal(t, releaseChannelFailedRetryDelay, result.RequeueAfter,
+		"the failed retry cadence must not change just because status is written")
+
+	current := reload()
+	require.Equal(t, newerImage, current.Status.FailedImage,
+		"the marker has to reach the API server, not just memory")
+
+	current.Spec.Image = unleashv1.UnleashImage(deployedImage)
+	require.NoError(t, reconciler.Update(context.Background(), current))
+
+	// Re-read, as a real reconcile does, so the marker comes from the API server
+	// rather than from whatever the update call left in memory.
+	current = reload()
+	require.Equal(t, newerImage, current.Status.FailedImage)
+
+	_, err = reconciler.executeFailedPhase(context.Background(), current, log)
+	require.NoError(t, err)
+
+	updated := reload()
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"a channel that cannot roll back must still recover from a corrected image")
+	assert.Empty(t, updated.Status.FailureReason)
+}
