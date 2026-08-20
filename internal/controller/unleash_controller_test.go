@@ -692,15 +692,18 @@ var _ = Describe("Unleash Controller", func() {
 			releaseChannel := releaseChannelResource("missing-channel", UnleashNamespace, releaseChannelImage)
 			Expect(k8sClient.Create(ctx, releaseChannel)).Should(Succeed())
 
-			By("By waiting for ReleaseChannel to be ready")
+			By("By waiting for the ReleaseChannel to adopt the instance")
 			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
+			// The channel stays in Rolling until the instance reports ready, and
+			// this instance never gets a working deployment. Adoption — assigning
+			// the instance its image — is what this test is waiting on.
 			// Use coordinationTimeout because this involves multi-controller coordination
-			Eventually(func() bool {
+			Eventually(func() string {
 				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
-					return false
+					return ""
 				}
-				return createdReleaseChannel.Status.Phase == "Idle"
-			}, coordinationTimeout, interval).Should(BeTrue())
+				return createdReleaseChannel.Status.InstanceImages[unleash.Name]
+			}, coordinationTimeout, interval).Should(Equal(releaseChannelImage))
 
 			By("By verifying the Unleash now progresses and uses the ReleaseChannel image")
 			// Use coordinationTimeout because this involves multi-controller coordination

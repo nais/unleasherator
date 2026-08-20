@@ -43,7 +43,6 @@ var (
 	// Prefixed to avoid conflicts with other controllers (vars are overridden in tests)
 	releaseChannelErrorRetryDelay         = 5 * time.Second
 	releaseChannelIdleRequeueInterval     = 10 * time.Minute
-	releaseChannelInitialDeploymentCheck  = 2 * time.Minute
 	releaseChannelValidatingRetryDelay    = 5 * time.Minute
 	releaseChannelValidatingTransition    = 5 * time.Second
 	releaseChannelCanaryWaitDelay         = 30 * time.Second
@@ -552,50 +551,16 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
 	}
 
-	// Check if this is initial deployment vs. actual rollout
-	// If no instances have resolved images AND no PreviousImage is set, this is initial deployment
-	isInitialDeployment := true
-	for _, unleash := range targetInstances {
-		if unleash.Status.ResolvedReleaseChannelImage != "" {
-			isInitialDeployment = false
-			break
-		}
-	}
-
-	if isInitialDeployment {
-		log.Info("Detected initial deployment - populating InstanceImages map for all instances")
-
-		// For initial deployment, populate InstanceImages map - Unleash controller will pull from this
-		// This maintains the unidirectional pull-based model
-		targetImage := string(releaseChannel.Spec.Image)
-
-		// Initialize InstanceImages map if needed
-		if releaseChannel.Status.InstanceImages == nil {
-			releaseChannel.Status.InstanceImages = make(map[string]string)
-		}
-
-		// Populate the map with target image for all instances
-		for _, instance := range targetInstances {
-			if releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] != targetImage {
-				releaseChannel.Status.InstanceImages[instance.ObjectMeta.Name] = targetImage
-				log.Info("Set initial target image in InstanceImages map", "name", instance.ObjectMeta.Name, "image", targetImage)
-			}
-		}
-
-		// Increment generation to signal change
-		releaseChannel.Status.InstanceImagesGeneration++
-
-		// Update instance counts for status tracking
-		r.updateInstanceCounts(releaseChannel, targetInstances)
-		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
-		r.recordMetrics(releaseChannel, labels)
-
-		if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
-			return statusResult, err
-		}
-		// Requeue to check progress - Unleash controllers will poll and pick up the new images
-		return ctrl.Result{RequeueAfter: releaseChannelInitialDeploymentCheck}, nil
-	}
+	// Every rollout goes through the Rolling state machine, first deploy included.
+	// There used to be a shortcut here that wrote the target image for every
+	// matching instance in one pass, with no maxParallel batching and no health
+	// gating. Its trigger was that no instance reported a resolved image, which
+	// is true of a genuine first deploy but equally true after any event that
+	// clears instance status — a status migration, a field rename, a mass
+	// re-create — turning a bookkeeping change into a simultaneous fleet-wide
+	// upgrade. Its comment claimed the guard also required an empty
+	// PreviousImage; the condition never checked that, so the shortcut was
+	// weaker than it read.
 
 	log.Info("Starting rollout", "instancesToUpdate", len(instancesToUpdate))
 

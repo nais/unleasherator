@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jarcoal/httpmock"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
@@ -122,6 +123,13 @@ func releaseChannelResource(name, namespace, image string) *unleashv1.ReleaseCha
 		},
 		Spec: unleashv1.ReleaseChannelSpec{
 			Image: unleashv1.UnleashImage(image),
+			// First deploys run through the batched Rolling state machine like
+			// any other rollout, so they pay the health-check settle delay. The
+			// CRD default of 30s would outlast the test timeouts.
+			HealthChecks: unleashv1.HealthCheckConfig{
+				Enabled:      true,
+				InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+			},
 		},
 	}
 }
