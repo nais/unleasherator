@@ -954,6 +954,16 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		return ctrl.Result{}, err
 	}
 
+	// A rollout that starts here rather than in Idle still needs a rollback
+	// baseline. spec.image can change while the channel is already Rolling — a
+	// first deploy now runs through this phase, and it holds the channel until
+	// every batch is healthy — and Idle is not entered again in between. The
+	// baseline is only captured while the fleet still agrees on the old image,
+	// so calling this once a batch has moved on is a no-op.
+	if _, err := r.ensurePreviousImageTracked(ctx, releaseChannel, targetInstances, log); err != nil {
+		return ctrl.Result{RequeueAfter: releaseChannelErrorRetryDelay}, err
+	}
+
 	if releaseChannel.Status.ActiveBatch == nil {
 		if recoveredBatch := recoverActiveBatch(targetInstances, releaseChannel); recoveredBatch != nil {
 			log.Info("Recovered active batch from existing image assignments", "batchSize", len(recoveredBatch.InstanceNames))

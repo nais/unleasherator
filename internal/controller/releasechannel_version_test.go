@@ -324,3 +324,56 @@ func TestDowngradeFromChecksEveryDeployedImage(t *testing.T) {
 	assert.True(t, refuse)
 	assert.Equal(t, newerImage, from)
 }
+
+func TestExecuteRollingPhaseCapturesRollbackBaseline(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	// spec.image changed while the channel was already Rolling, so Idle never ran
+	// in between. The fleet still agrees on the old image, which is exactly when
+	// the baseline is capturable.
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(newerImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase: unleashv1.ReleaseChannelPhaseRolling,
+			InstanceImages: map[string]string{
+				"instance-a": deployedImage,
+				"instance-b": deployedImage,
+			},
+		},
+	}
+
+	instances := []unleashv1.Unleash{
+		instanceRunning("instance-a", deployedImage),
+		instanceRunning("instance-b", deployedImage),
+	}
+	objects := []client.Object{releaseChannel}
+	for i := range instances {
+		objects = append(objects, &instances[i])
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.executeRollingPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+
+	assert.Equal(t, deployedImage, updated.Status.PreviousImage,
+		"a rollout that starts in Rolling still needs a rollback baseline")
+	require.NotNil(t, updated.Status.LastImageChangeTime)
+}
