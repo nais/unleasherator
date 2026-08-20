@@ -377,6 +377,35 @@ kubectl patch releasechannel stable --type='merge' -p='{\"spec\":{\"image\":\"qu
    kubectl label releasechannel stable reconcile=$(date +%s)
    ```
 
+#### Downgrade Refused
+
+**Symptoms:** `spec.image` was changed but the phase stays `Idle`, with a
+`DowngradeRefused` condition and a warning event.
+
+The controller compares the semantic version embedded in the image tag against
+the version instances already run, and refuses to roll out an older one. A
+yanked or mistyped tag is otherwise indistinguishable from an upgrade, and the
+rollout would complete "successfully" onto the bad image.
+
+**Solutions:**
+
+1. Confirm which version is being refused:
+
+   ```bash
+   kubectl get releasechannel stable -o jsonpath='{.status.conditions[?(@.reason=="DowngradeRefused")].message}'
+   ```
+
+2. If the older image is genuinely the intended target, allow it explicitly:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"allowDowngrade":true}}'
+   ```
+
+   For reverting a bad rollout, prefer `spec.rollback` over `allowDowngrade`.
+
+Tags with no recognisable version — `latest`, digest pins — cannot be ordered
+and are never refused.
+
 #### Rollout Stuck
 
 **Symptoms:** ReleaseChannel shows partial completion
@@ -429,6 +458,7 @@ Use descriptive, environment-specific names:
 2. **Avoid `latest` tags** for production ReleaseChannels
 3. **Test in lower environments** before promoting to production
 4. **Keep a rollback plan** by maintaining previous ReleaseChannel definitions
+5. **Expect downgrades to be refused** — set `spec.allowDowngrade: true` only when an older image really is the intended target
 
 ### Operational Guidelines
 

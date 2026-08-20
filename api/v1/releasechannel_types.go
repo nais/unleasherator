@@ -22,6 +22,15 @@ type ReleaseChannelSpec struct {
 
 	// Rollback defines rollback configuration
 	Rollback RollbackConfig `json:"rollback,omitempty"`
+
+	// AllowDowngrade permits rolling out an image whose version is older than
+	// the one instances already run. Downgrades are refused by default because
+	// an edit to an older or yanked tag is otherwise indistinguishable from an
+	// upgrade, and the rollout would "succeed" onto the bad image. Deliberate
+	// reverts belong in rollback; this is the escape hatch for the rare case
+	// where the older image genuinely is the intended target.
+	// +kubebuilder:default=false
+	AllowDowngrade bool `json:"allowDowngrade,omitempty"`
 }
 
 type ReleaseChannelStrategy struct {

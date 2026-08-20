@@ -518,6 +518,39 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
 	}
 
+	// Refuse to roll out a version older than the fleet already runs. Nothing
+	// else in the pipeline distinguishes a downgrade from an upgrade: a yanked
+	// or stale tag differs from the deployed image by string inequality just
+	// like a new release does, so it would roll out and "complete" successfully.
+	// Automatic rollback only fires on outright deployment failure, which a
+	// working-but-old image never triggers.
+	if !releaseChannel.Spec.AllowDowngrade && currentDeployedImage != "" {
+		if order, comparable := compareImageVersions(currentDeployedImage, string(targetImage)); comparable && order < 0 {
+			message := fmt.Sprintf("Refusing rollout: target image %s is an older version than the deployed image %s; set spec.allowDowngrade to override", string(targetImage), currentDeployedImage)
+			log.Info("Refusing downgrade", "targetImage", string(targetImage), "deployedImage", currentDeployedImage)
+
+			// Stay in Idle rather than failing. Failed would hand the channel to
+			// the rollback machinery, which would start moving instances around
+			// even though nothing has been deployed yet.
+			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+			r.updateInstanceCounts(releaseChannel, targetInstances)
+			labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
+			r.recordMetrics(releaseChannel, labels)
+			meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
+				Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+				Status:  metav1.ConditionFalse,
+				Reason:  "DowngradeRefused",
+				Message: message,
+			})
+			r.Recorder.Event(releaseChannel, "Warning", "DowngradeRefused", message)
+
+			if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+				return statusResult, err
+			}
+			return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
+		}
+	}
+
 	// Check if this is initial deployment vs. actual rollout
 	// If no instances have resolved images AND no PreviousImage is set, this is initial deployment
 	isInitialDeployment := true
