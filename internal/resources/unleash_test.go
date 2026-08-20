@@ -569,3 +569,80 @@ func TestResolveReleaseChannelImage(t *testing.T) {
 		assert.Contains(t, image, "unleash-v4") // Should be the default image
 	})
 }
+
+func TestResolveReleaseChannelImageHoldsUntrackedInstances(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	assert.NoError(t, unleashv1.AddToScheme(testScheme))
+
+	newChannel := func(phase unleashv1.ReleaseChannelPhase) *unleashv1.ReleaseChannel {
+		return &unleashv1.ReleaseChannel{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-channel", Namespace: "test-namespace"},
+			Spec:       unleashv1.ReleaseChannelSpec{Image: "test:v2"},
+			Status: unleashv1.ReleaseChannelStatus{
+				Phase:          phase,
+				InstanceImages: map[string]string{"tracked-instance": "test:v2"},
+			},
+		}
+	}
+
+	newInstance := func(resolvedImage string) *unleashv1.Unleash {
+		return &unleashv1.Unleash{
+			ObjectMeta: metav1.ObjectMeta{Name: "untracked-instance", Namespace: "test-namespace"},
+			Spec: unleashv1.UnleashSpec{
+				ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: "test-channel"},
+			},
+			Status: unleashv1.UnleashStatus{ResolvedReleaseChannelImage: resolvedImage},
+		}
+	}
+
+	// spec.image changes before the phase leaves Idle, and instances reconcile on
+	// their own schedule. An untracked instance reconciling in that window must
+	// not take the new target ahead of its batch.
+	phases := []unleashv1.ReleaseChannelPhase{
+		unleashv1.ReleaseChannelPhaseIdle,
+		unleashv1.ReleaseChannelPhaseCompleted,
+		unleashv1.ReleaseChannelPhaseValidating,
+		unleashv1.ReleaseChannelPhaseFailed,
+	}
+
+	for _, phase := range phases {
+		t.Run("holds its own image during "+string(phase), func(t *testing.T) {
+			k8sClient := fake.NewClientBuilder().
+				WithScheme(testScheme).
+				WithObjects(newChannel(phase)).
+				Build()
+
+			image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, newInstance("test:v1"))
+			assert.NoError(t, err)
+			assert.False(t, modified)
+			assert.Equal(t, "test:v1", image)
+		})
+	}
+
+	t.Run("an instance that never resolved an image still gets the target", func(t *testing.T) {
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(newChannel(unleashv1.ReleaseChannelPhaseIdle)).
+			Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, newInstance(""))
+		assert.NoError(t, err)
+		assert.False(t, modified)
+		assert.Equal(t, "test:v2", image)
+	})
+
+	t.Run("a tracked instance still resolves from the map", func(t *testing.T) {
+		tracked := newInstance("test:v1")
+		tracked.Name = "tracked-instance"
+
+		k8sClient := fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(newChannel(unleashv1.ReleaseChannelPhaseIdle)).
+			Build()
+
+		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, tracked)
+		assert.NoError(t, err)
+		assert.False(t, modified)
+		assert.Equal(t, "test:v2", image)
+	})
+}

@@ -124,3 +124,56 @@ func TestClearedInstanceStatusDoesNotBypassBatching(t *testing.T) {
 	assert.Equal(t, 1, advanced,
 		"clearing instance status must not push the target image to the whole fleet at once")
 }
+
+func TestUpToDateInstancesAreAdoptedIntoInstanceImages(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	// A channel that finished its rollout, plus an instance that reached the
+	// target image without ever being batched — it joined after the rollout and
+	// resolved through the fallback. No rollout will ever pick it up, because
+	// rollouts only assign instances that still need updating.
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(deployedImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:          unleashv1.ReleaseChannelPhaseIdle,
+			InstanceImages: map[string]string{"tracked": deployedImage},
+		},
+	}
+
+	instances := []unleashv1.Unleash{
+		instanceRunning("tracked", deployedImage),
+		instanceRunning("joined-later", deployedImage),
+	}
+
+	objects := []client.Object{releaseChannel}
+	for i := range instances {
+		objects = append(objects, &instances[i])
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.executeIdlePhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+
+	assert.Equal(t, deployedImage, updated.Status.InstanceImages["joined-later"],
+		"joining a channel must get an instance into InstanceImages")
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"adoption records what is already true and must not start a rollout")
+}

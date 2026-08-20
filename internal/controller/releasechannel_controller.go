@@ -506,6 +506,13 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 
 	if len(instancesToUpdate) == 0 {
 		log.Info("All instances are up to date")
+		// Adopt instances that reached the target without ever being batched —
+		// they joined the channel after its last rollout, and nothing else adds
+		// them to InstanceImages: rollouts only ever assign instances that need
+		// updating, and these already match. Left untracked they would resolve
+		// through the fallback in ResolveReleaseChannelImage forever instead of
+		// from the map that is meant to be the source of truth.
+		r.adoptUpToDateInstances(releaseChannel, targetInstances, log)
 		// Update instance counts even when no updates are needed to maintain accurate status
 		r.updateInstanceCounts(releaseChannel, targetInstances)
 		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
@@ -1190,6 +1197,34 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	// Record metrics for successful rollback completion
 	r.recordMetrics(releaseChannel, labels)
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
+}
+
+// adoptUpToDateInstances records instances that already run the target image but
+// have no InstanceImages entry, so the map covers every instance the channel
+// manages. Entries that already exist are never touched — an in-flight batch owns
+// those — and instances that still need updating are left to the rollout.
+func (r *ReleaseChannelReconciler) adoptUpToDateInstances(
+	releaseChannel *unleashv1.ReleaseChannel,
+	targetInstances []unleashv1.Unleash,
+	log logr.Logger,
+) {
+	targetImage := string(releaseChannel.Spec.Image)
+
+	for _, instance := range targetInstances {
+		if instance.Status.ResolvedReleaseChannelImage != targetImage {
+			continue
+		}
+		if _, tracked := releaseChannel.Status.InstanceImages[instance.Name]; tracked {
+			continue
+		}
+
+		if releaseChannel.Status.InstanceImages == nil {
+			releaseChannel.Status.InstanceImages = make(map[string]string)
+		}
+		releaseChannel.Status.InstanceImages[instance.Name] = targetImage
+		releaseChannel.Status.InstanceImagesGeneration++
+		log.Info("Adopted untracked instance into InstanceImages", "instance", instance.Name, "image", targetImage)
+	}
 }
 
 // ensurePreviousImageTracked captures the currently deployed image before starting a rollout.

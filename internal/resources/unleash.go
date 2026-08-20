@@ -587,8 +587,19 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 			}
 		}
 
-		// Completed rollouts and initial deployment may use the target image when
-		// an instance has no explicit assignment.
+		// Outside a rollout an instance missing from InstanceImages still has to
+		// be held where it is. spec.image changes before the phase leaves Idle,
+		// and instances reconcile on their own schedule, so one reconciling in
+		// that window would take the new target with no batch slot and no health
+		// gating — the same bypass the Canary and Rolling fallbacks above close,
+		// through a phase they do not cover. Its own last resolved image is the
+		// only assignment it ever received; hold it until a batch moves it.
+		if unleash.Status.ResolvedReleaseChannelImage != "" {
+			return unleash.Status.ResolvedReleaseChannelImage, false, nil
+		}
+
+		// An instance that has never resolved an image has nothing to hold and no
+		// running workload to protect, so the target is safe for it.
 		if releaseChannel.Spec.Image != "" {
 			return string(releaseChannel.Spec.Image), false, nil
 		}
