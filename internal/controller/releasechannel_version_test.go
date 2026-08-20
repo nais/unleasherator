@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -309,21 +310,70 @@ func TestEnsurePreviousImageTrackedCapturesUnanimousBaseline(t *testing.T) {
 		"an agreed-upon deployed image is still captured for rollback")
 }
 
-func TestDowngradeFromChecksEveryDeployedImage(t *testing.T) {
+func TestDowngradeFromComparesAgainstTheFleetImage(t *testing.T) {
 	reconciler := &ReleaseChannelReconciler{}
-	releaseChannel := &unleashv1.ReleaseChannel{
-		Spec: unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(olderImage)},
+
+	fleetOf := func(image string, count int) []unleashv1.Unleash {
+		instances := make([]unleashv1.Unleash, 0, count)
+		for i := 0; i < count; i++ {
+			instances = append(instances, instanceRunning(fmt.Sprintf("%s-%d", image[len(image)-7:], i), image))
+		}
+		return instances
 	}
 
-	// The fleet disagrees, so there is no rollback baseline — the downgrade must
-	// still be caught against the instances that are ahead of the target.
-	from, refuse := reconciler.downgradeFrom(releaseChannel, []unleashv1.Unleash{
-		instanceRunning("instance-a", olderImage),
-		instanceRunning("instance-b", newerImage),
+	t.Run("one instance ahead does not veto the fleet", func(t *testing.T) {
+		// Thirty on the old image, one straggler that ended up ahead — the shape
+		// left behind by instances outside instanceImages holding what they last
+		// resolved. Upgrading the thirty must not be refused on account of the one.
+		instances := append(fleetOf(deployedImage, 30), instanceRunning("ahead", newerImage))
+
+		releaseChannel := &unleashv1.ReleaseChannel{
+			Spec: unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(newerImage)},
+		}
+		_, _, refuse := reconciler.downgradeFrom(releaseChannel, instances)
+		assert.False(t, refuse, "the fleet is moving forwards")
+
+		// And the same fleet asked to move to something between the two: still an
+		// upgrade for the thirty, so still not a downgrade.
+		releaseChannel.Spec.Image = unleashv1.UnleashImage(
+			"europe-north1-docker.pkg.dev/nais-io/nais/images/unleash-v7:v7-7.5.5-abcdef0")
+		_, _, refuse = reconciler.downgradeFrom(releaseChannel, instances)
+		assert.False(t, refuse, "one instance ahead must not hold the other thirty hostage")
 	})
 
-	assert.True(t, refuse)
-	assert.Equal(t, newerImage, from)
+	t.Run("rolling the fleet backwards is still refused", func(t *testing.T) {
+		instances := append(fleetOf(newerImage, 30), instanceRunning("behind", olderImage))
+
+		releaseChannel := &unleashv1.ReleaseChannel{
+			Spec: unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(olderImage)},
+		}
+		from, count, refuse := reconciler.downgradeFrom(releaseChannel, instances)
+		assert.True(t, refuse)
+		assert.Equal(t, newerImage, from)
+		assert.Equal(t, 30, count, "the message has to say how much of the fleet is on it")
+	})
+
+	t.Run("an even split resolves to the newer image", func(t *testing.T) {
+		instances := append(fleetOf(newerImage, 3), fleetOf(deployedImage, 3)...)
+
+		releaseChannel := &unleashv1.ReleaseChannel{
+			Spec: unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(deployedImage)},
+		}
+		from, _, refuse := reconciler.downgradeFrom(releaseChannel, instances)
+		assert.True(t, refuse, "with no majority the cautious answer wins")
+		assert.Equal(t, newerImage, from)
+	})
+
+	t.Run("allowDowngrade still disables the guard", func(t *testing.T) {
+		releaseChannel := &unleashv1.ReleaseChannel{
+			Spec: unleashv1.ReleaseChannelSpec{
+				Image:          unleashv1.UnleashImage(olderImage),
+				AllowDowngrade: true,
+			},
+		}
+		_, _, refuse := reconciler.downgradeFrom(releaseChannel, fleetOf(newerImage, 3))
+		assert.False(t, refuse)
+	})
 }
 
 func TestExecuteRollingPhaseCapturesRollbackBaseline(t *testing.T) {
@@ -459,4 +509,94 @@ func TestDeployToInstancesStampsLastDeployTime(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), updated.Status.LastDeployTime.Time, time.Minute)
 	assert.Equal(t, updated.Status.LastDeployTime, settleReference(updated),
 		"the settle delay must run from this batch, not from the rollout start")
+}
+
+// runPhaseWithDowngrade drives one phase of a channel whose fleet is on
+// deployedImage while spec.image has been edited to something older.
+func runPhaseWithDowngrade(t *testing.T, phase unleashv1.ReleaseChannelPhase) *unleashv1.ReleaseChannel {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(olderImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase: phase,
+			InstanceImages: map[string]string{
+				"instance-a": deployedImage,
+				"instance-b": deployedImage,
+			},
+		},
+	}
+
+	instances := []unleashv1.Unleash{
+		instanceRunning("instance-a", deployedImage),
+		instanceRunning("instance-b", deployedImage),
+	}
+	objects := []client.Object{releaseChannel}
+	for i := range instances {
+		objects = append(objects, &instances[i])
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	log := ctrl.Log.WithName("test")
+	var err error
+	switch phase {
+	case unleashv1.ReleaseChannelPhaseRolling:
+		_, err = reconciler.executeRollingPhase(context.Background(), releaseChannel, log)
+	case unleashv1.ReleaseChannelPhaseCanary:
+		_, err = reconciler.executeCanaryPhase(context.Background(), releaseChannel, log)
+	case unleashv1.ReleaseChannelPhaseValidating:
+		_, err = reconciler.executeValidatingPhase(context.Background(), releaseChannel, log)
+	}
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	return updated
+}
+
+func TestDowngradeIsRefusedInEveryRolloutPhase(t *testing.T) {
+	// A rollout occupies the channel for as long as it takes to batch through the
+	// fleet, so editing spec.image while one is running is reachable — and it is
+	// the natural reaction to a rollout that looks stuck.
+	phases := []unleashv1.ReleaseChannelPhase{
+		unleashv1.ReleaseChannelPhaseRolling,
+		unleashv1.ReleaseChannelPhaseCanary,
+		unleashv1.ReleaseChannelPhaseValidating,
+	}
+
+	for _, phase := range phases {
+		t.Run("refused during "+string(phase), func(t *testing.T) {
+			updated := runPhaseWithDowngrade(t, phase)
+
+			condition := meta.FindStatusCondition(updated.Status.Conditions, unleashv1.ReleaseChannelStatusConditionTypeReconciled)
+			require.NotNil(t, condition)
+			assert.Equal(t, "DowngradeRefused", condition.Reason)
+
+			for name, image := range updated.Status.InstanceImages {
+				assert.Equal(t, deployedImage, image,
+					"no instance may be assigned the older target: %s", name)
+			}
+			assert.Nil(t, updated.Status.ActiveBatch,
+				"no batch may be left holding the refused target")
+			assert.NotEqual(t, olderImage, updated.Status.PreviousImage,
+				"the refused rollout must not leave a rollback baseline behind")
+		})
+	}
 }

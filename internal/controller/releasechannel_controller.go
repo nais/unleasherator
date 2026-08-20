@@ -539,38 +539,8 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
 	}
 
-	// Refuse to roll out a version older than the fleet already runs. Nothing
-	// else in the pipeline distinguishes a downgrade from an upgrade: a yanked
-	// or stale tag differs from the deployed image by string inequality just
-	// like a new release does, so it would roll out and "complete" successfully.
-	// Automatic rollback only fires on outright deployment failure, which a
-	// working-but-old image never triggers.
-	// Checked against every deployed image rather than the rollback baseline: a
-	// fleet that disagrees has no baseline, and that must not be the reason a
-	// downgrade slips through.
-	if downgradedFrom, refuse := r.downgradeFrom(releaseChannel, targetInstances); refuse {
-		message := fmt.Sprintf("Refusing rollout: target image %s is an older version than the deployed image %s; set spec.allowDowngrade to override", string(targetImage), downgradedFrom)
-		log.Info("Refusing downgrade", "targetImage", string(targetImage), "deployedImage", downgradedFrom)
-
-		// Stay in Idle rather than failing. Failed would hand the channel to
-		// the rollback machinery, which would start moving instances around
-		// even though nothing has been deployed yet.
-		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
-		r.updateInstanceCounts(releaseChannel, targetInstances)
-		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
-		r.recordMetrics(releaseChannel, labels)
-		meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
-			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
-			Status:  metav1.ConditionFalse,
-			Reason:  "DowngradeRefused",
-			Message: message,
-		})
-		r.Recorder.Event(releaseChannel, "Warning", "DowngradeRefused", message)
-
-		if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
-			return statusResult, err
-		}
-		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
+	if result, refused, err := r.refuseDowngrade(ctx, releaseChannel, targetInstances, log); refused {
+		return result, err
 	}
 
 	// Every rollout goes through the Rolling state machine, first deploy included.
@@ -897,6 +867,10 @@ func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, r
 		return ctrl.Result{RequeueAfter: releaseChannelValidatingRetryDelay}, nil
 	}
 
+	if result, refused, err := r.refuseDowngrade(ctx, releaseChannel, targetInstances, log); refused {
+		return result, err
+	}
+
 	// Update status and determine next phase
 	r.updateInstanceCounts(releaseChannel, targetInstances)
 
@@ -943,6 +917,10 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Failed to get target instances: %v", err)
 		return ctrl.Result{}, err
+	}
+
+	if result, refused, err := r.refuseDowngrade(ctx, releaseChannel, targetInstances, log); refused {
+		return result, err
 	}
 
 	// Check for target image changes during canary phase and track previous image
@@ -1060,6 +1038,10 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 			log.V(1).Info("Failed to update ReleaseChannel status after error", "error", statusErr)
 		}
 		return ctrl.Result{}, err
+	}
+
+	if result, refused, err := r.refuseDowngrade(ctx, releaseChannel, targetInstances, log); refused {
+		return result, err
 	}
 
 	// A rollout that starts here rather than in Idle still needs a rollback
@@ -1328,6 +1310,61 @@ func (r *ReleaseChannelReconciler) adoptUpToDateInstances(
 		releaseChannel.Status.InstanceImagesGeneration++
 		log.Info("Adopted untracked instance into InstanceImages", "instance", instance.Name, "image", targetImage)
 	}
+}
+
+// refuseDowngrade stops a rollout whose target is an older version than the fleet
+// already runs, and reports whether it handled the channel — the caller must
+// return immediately when it did.
+//
+// Nothing else in the pipeline distinguishes a downgrade from an upgrade: a
+// yanked or stale tag differs from the deployed image by string inequality just
+// like a new release does, so it would roll out and "complete" successfully.
+// Automatic rollback only fires on outright deployment failure, which a
+// working-but-old image never triggers.
+//
+// Every phase that can start or continue moving instances checks this, not just
+// Idle. A rollout occupies the channel for as long as it takes to batch through
+// the fleet, and editing spec.image is the natural reaction to one that looks
+// stuck — which is exactly when a downgrade would otherwise be assigned to the
+// next batch, and recorded as a rollback baseline on the way past.
+func (r *ReleaseChannelReconciler) refuseDowngrade(
+	ctx context.Context,
+	releaseChannel *unleashv1.ReleaseChannel,
+	targetInstances []unleashv1.Unleash,
+	log logr.Logger,
+) (ctrl.Result, bool, error) {
+	downgradedFrom, onFleetImage, refuse := r.downgradeFrom(releaseChannel, targetInstances)
+	if !refuse {
+		return ctrl.Result{}, false, nil
+	}
+
+	targetImage := string(releaseChannel.Spec.Image)
+	message := fmt.Sprintf("Refusing rollout: target image %s is an older version than %s, which %d of %d instance(s) run; set spec.allowDowngrade to override",
+		targetImage, downgradedFrom, onFleetImage, len(targetInstances))
+	log.Info("Refusing downgrade", "targetImage", targetImage, "fleetImage", downgradedFrom, "instancesOnFleetImage", onFleetImage, "phase", releaseChannel.Status.Phase)
+
+	// Back to Idle rather than Failed. Failed would hand the channel to the
+	// rollback machinery over an edit that has deployed nothing. Any batch in
+	// flight is dropped so no further instance is moved onto this target;
+	// instances already moved stay where they are, and the refusal says so.
+	releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+	releaseChannel.Status.ActiveBatch = nil
+	// updateInstanceCounts rewrites the condition, so it has to run before the
+	// refusal is recorded rather than after.
+	r.updateInstanceCounts(releaseChannel, targetInstances)
+	r.recordMetrics(releaseChannel, []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name})
+	meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
+		Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+		Status:  metav1.ConditionFalse,
+		Reason:  "DowngradeRefused",
+		Message: message,
+	})
+	r.Recorder.Event(releaseChannel, "Warning", "DowngradeRefused", message)
+
+	if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+		return statusResult, true, err
+	}
+	return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, true, nil
 }
 
 // ensurePreviousImageTracked captures the currently deployed image before starting a rollout.

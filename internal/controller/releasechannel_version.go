@@ -122,33 +122,61 @@ func rollbackBaseline(instances []unleashv1.Unleash) string {
 	return images[0]
 }
 
-// downgradeFrom reports whether the channel's target image is an older version
-// than something the fleet already runs, and which image it would move back
-// from. Every deployed image is checked, not just the rollback baseline: a fleet
-// that disagrees has no baseline, and that must not be the reason a downgrade
-// gets through. The oldest image the target undercuts is reported, since that is
-// the largest step backwards being asked for.
-func (r *ReleaseChannelReconciler) downgradeFrom(releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash) (string, bool) {
+// fleetImage returns the image the largest number of instances run, and that
+// count. It is the fleet's version in the only sense that matters to a rollout:
+// what most of it is on right now.
+//
+// Ties go to the newer image, which is the more cautious answer — it makes a
+// downgrade more likely to be spotted, not less.
+func fleetImage(instances []unleashv1.Unleash) (string, int) {
+	counts := make(map[string]int, len(instances))
+	for _, instance := range instances {
+		if image := instance.Status.ResolvedReleaseChannelImage; image != "" {
+			counts[image]++
+		}
+	}
+
+	best := ""
+	bestCount := 0
+	for _, image := range deployedImages(instances) {
+		count := counts[image]
+		if count > bestCount {
+			best, bestCount = image, count
+			continue
+		}
+		if count == bestCount && best != "" {
+			if order, comparable := compareImageVersions(best, image); comparable && order > 0 {
+				best = image
+			}
+		}
+	}
+
+	return best, bestCount
+}
+
+// downgradeFrom reports whether the channel's target image is older than what the
+// fleet is running, which image that is, and how many instances are on it.
+//
+// The comparison is against the image most instances run, not against every
+// image any instance runs. Checking them all meant a single straggler that had
+// somehow ended up ahead — and instances outside instanceImages now hold
+// whatever they last resolved — refused the rollout for everyone else, with
+// allowDowngrade the only way out and it switches the guard off entirely. The
+// job here is to stop the fleet being rolled backwards, not to let one instance
+// veto it going forwards. Instances ahead of the fleet image are moved back to
+// it; that is inherent in a channel having one target.
+func (r *ReleaseChannelReconciler) downgradeFrom(releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash) (string, int, bool) {
 	if releaseChannel.Spec.AllowDowngrade {
-		return "", false
+		return "", 0, false
 	}
 
-	target := string(releaseChannel.Spec.Image)
-	oldest := ""
-
-	for _, deployed := range deployedImages(instances) {
-		order, comparable := compareImageVersions(deployed, target)
-		if !comparable || order >= 0 {
-			continue
-		}
-		if oldest == "" {
-			oldest = deployed
-			continue
-		}
-		if order, comparable := compareImageVersions(oldest, deployed); comparable && order < 0 {
-			oldest = deployed
-		}
+	deployed, count := fleetImage(instances)
+	if deployed == "" {
+		return "", 0, false
 	}
 
-	return oldest, oldest != ""
+	if order, comparable := compareImageVersions(deployed, string(releaseChannel.Spec.Image)); comparable && order < 0 {
+		return deployed, count, true
+	}
+	return "", 0, false
 }

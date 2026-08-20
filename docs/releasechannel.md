@@ -379,13 +379,23 @@ kubectl patch releasechannel stable --type='merge' -p='{\"spec\":{\"image\":\"qu
 
 #### Downgrade Refused
 
-**Symptoms:** `spec.image` was changed but the phase stays `Idle`, with a
+**Symptoms:** `spec.image` was changed but the phase returns to `Idle`, with a
 `DowngradeRefused` condition and a warning event.
 
 The controller compares the semantic version embedded in the image tag against
 the version instances already run, and refuses to roll out an older one. A
 yanked or mistyped tag is otherwise indistinguishable from an upgrade, and the
 rollout would complete "successfully" onto the bad image.
+
+The comparison is against the image **most instances run**, so a single instance
+that has ended up ahead of the fleet does not block everyone else from upgrading.
+Instances ahead of that image are moved back onto it, which is inherent in a
+channel having one target.
+
+Every phase that can move instances checks this, not just `Idle`. Editing
+`spec.image` during a rollout stops it: any batch in flight is dropped so no
+further instance is assigned the older target, and the channel returns to `Idle`.
+Instances already moved stay where they are.
 
 **Solutions:**
 
