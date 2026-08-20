@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	unleashv1 "github.com/nais/unleasherator/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -376,4 +377,86 @@ func TestExecuteRollingPhaseCapturesRollbackBaseline(t *testing.T) {
 	assert.Equal(t, deployedImage, updated.Status.PreviousImage,
 		"a rollout that starts in Rolling still needs a rollback baseline")
 	require.NotNil(t, updated.Status.LastImageChangeTime)
+}
+
+func TestSettleReferenceTracksTheLastDeploy(t *testing.T) {
+	rolloutStart := metav1.NewTime(time.Now().Add(-time.Hour))
+	lastDeploy := metav1.NewTime(time.Now().Add(-time.Second))
+
+	tests := []struct {
+		name     string
+		status   unleashv1.ReleaseChannelStatus
+		expected *metav1.Time
+	}{
+		{
+			// Measuring from the rollout start let every deploy after the first
+			// clear the settle delay instantly, however recently its pods rolled.
+			name:     "prefers the last deploy over the rollout start",
+			status:   unleashv1.ReleaseChannelStatus{StartTime: &rolloutStart, LastDeployTime: &lastDeploy},
+			expected: &lastDeploy,
+		},
+		{
+			name:     "falls back to the rollout start for in-flight rollouts",
+			status:   unleashv1.ReleaseChannelStatus{StartTime: &rolloutStart},
+			expected: &rolloutStart,
+		},
+		{
+			name:     "nothing to measure from",
+			status:   unleashv1.ReleaseChannelStatus{},
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, settleReference(&unleashv1.ReleaseChannel{Status: tt.status}))
+		})
+	}
+}
+
+func TestDeployToInstancesStampsLastDeployTime(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	// A rollout that started an hour ago and is now assigning a later batch. The
+	// settle delay has to run from this assignment, not from the rollout start.
+	rolloutStart := metav1.NewTime(time.Now().Add(-time.Hour))
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(newerImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:          unleashv1.ReleaseChannelPhaseRolling,
+			StartTime:      &rolloutStart,
+			PreviousImage:  deployedImage,
+			InstanceImages: map[string]string{"instance-b": deployedImage},
+		},
+	}
+	instance := instanceRunning("instance-b", deployedImage)
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel, &instance).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.deployToInstances(context.Background(), releaseChannel,
+		[]unleashv1.Unleash{instance}, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+
+	require.NotNil(t, updated.Status.LastDeployTime,
+		"assigning a batch its image must stamp when that happened")
+	assert.WithinDuration(t, time.Now(), updated.Status.LastDeployTime.Time, time.Minute)
+	assert.Equal(t, updated.Status.LastDeployTime, settleReference(updated),
+		"the settle delay must run from this batch, not from the rollout start")
 }

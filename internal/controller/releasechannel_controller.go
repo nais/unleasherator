@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-logr/logr"
 	unleashv1 "github.com/nais/unleasherator/api/v1"
-	"github.com/nais/unleasherator/internal/statemachine"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -65,10 +64,9 @@ var (
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
 type ReleaseChannelReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Recorder       record.EventRecorder
-	Tracer         trace.Tracer
-	DecisionEngine *statemachine.DecisionEngine
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
+	Tracer   trace.Tracer
 }
 
 var (
@@ -899,7 +897,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 
 	// Perform health checks on canary instances
 	if releaseChannel.Spec.HealthChecks.Enabled {
-		healthy, err := r.performHealthChecks(ctx, canaryInstances, releaseChannel, releaseChannel.Status.StartTime, log)
+		healthy, err := r.performHealthChecks(ctx, canaryInstances, releaseChannel, settleReference(releaseChannel), log)
 		if err != nil {
 			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 			r.recordPhaseTransition(releaseChannel, newPhase)
@@ -1008,6 +1006,8 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		}
 
 		if releaseChannel.Spec.HealthChecks.Enabled {
+			// The batch carries its own clock, which is more precise than
+			// LastDeployTime for this path and survives operator restarts.
 			healthy, err := r.performHealthChecks(
 				ctx,
 				batch,
@@ -1051,7 +1051,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 			return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
 		}
 		if releaseChannel.Spec.HealthChecks.Enabled {
-			healthy, err := r.performHealthChecks(ctx, targetInstances, releaseChannel, releaseChannel.Status.StartTime, log)
+			healthy, err := r.performHealthChecks(ctx, targetInstances, releaseChannel, settleReference(releaseChannel), log)
 			if err != nil {
 				newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
 				r.recordPhaseTransition(releaseChannel, newPhase)
@@ -1479,6 +1479,11 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 		// Increment generation if changes were made
 		if changesDetected {
 			fresh.Status.InstanceImagesGeneration++
+			// Stamp when these instances were handed their image. The health
+			// check settle delay is measured from here so it applies to every
+			// deploy, not just the first one of a rollout.
+			now := metav1.Now()
+			fresh.Status.LastDeployTime = &now
 			log.Info("Incremented InstanceImagesGeneration", "generation", fresh.Status.InstanceImagesGeneration)
 		}
 
@@ -1614,6 +1619,17 @@ func instanceConnected(instance *unleashv1.Unleash) bool {
 		}
 	}
 	return false
+}
+
+// settleReference returns the timestamp the health check settle delay is measured
+// from: when instances were last handed a new image. It falls back to the start
+// of the rollout for rollouts that were already in flight when this field was
+// introduced, so an operator upgrade does not drop the guard entirely.
+func settleReference(releaseChannel *unleashv1.ReleaseChannel) *metav1.Time {
+	if releaseChannel.Status.LastDeployTime != nil {
+		return releaseChannel.Status.LastDeployTime
+	}
+	return releaseChannel.Status.StartTime
 }
 
 func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel, startTime *metav1.Time, log logr.Logger) (bool, error) {
@@ -1897,11 +1913,6 @@ func (r *ReleaseChannelReconciler) updateReleaseChannelStatus(ctx context.Contex
 
 func (r *ReleaseChannelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Tracer = otel.Tracer("github.com/nais/unleasherator/internal/controller")
-
-	// Initialize decision engine with real time provider
-	if r.DecisionEngine == nil {
-		r.DecisionEngine = statemachine.NewDecisionEngineWithDefaults(&statemachine.RealTimeProvider{})
-	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&unleashv1.ReleaseChannel{}).

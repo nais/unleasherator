@@ -175,6 +175,11 @@ type ReleaseChannelStatus struct {
 	// ActiveBatch tracks the instances currently being rolled out. A batch remains
 	// active until every instance is ready, connected, and passes health checks.
 	ActiveBatch *ReleaseChannelActiveBatch `json:"activeBatch,omitempty"`
+
+	// LastDeployTime is when instances were last assigned a new image. The health
+	// check settle delay is measured from it so each set of instances waits for
+	// its own pods, rather than inheriting the start time of the whole rollout.
+	LastDeployTime *metav1.Time `json:"lastDeployTime,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout

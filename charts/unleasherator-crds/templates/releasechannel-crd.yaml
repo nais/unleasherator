@@ -346,6 +346,13 @@ spec:
                 description: InstancesUpToDate is the number of instances that are up
                   to date.
                 type: integer
+              lastDeployTime:
+                description: |-
+                  LastDeployTime is when instances were last assigned a new image. The health
+                  check settle delay is measured from it so each set of instances waits for
+                  its own pods, rather than inheriting the start time of the whole rollout.
+                format: date-time
+                type: string
               lastFailureTime:
                 description: LastFailureTime records when the current failure first
                   occurred
