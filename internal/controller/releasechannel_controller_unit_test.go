@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -1908,6 +1909,94 @@ func TestExecuteFailedPhaseTransientRetry(t *testing.T) {
 			} else {
 				assert.NotNil(t, updated.Status.LastFailureTime, "LastFailureTime should not be nil")
 			}
+		})
+	}
+}
+
+// nonZeroValue builds a value distinguishable from the zero value, for the kinds
+// ReleaseChannelStatus actually uses. It aims only to differ — nothing here is
+// meaningful data, because the test only needs two statuses that are not equal.
+func nonZeroValue(t reflect.Type) (reflect.Value, bool) {
+	switch t.Kind() {
+	case reflect.String:
+		return reflect.ValueOf("mutated").Convert(t), true
+	case reflect.Bool:
+		return reflect.ValueOf(true), true
+	case reflect.Int, reflect.Int32, reflect.Int64:
+		return reflect.ValueOf(int64(7)).Convert(t), true
+	case reflect.Pointer:
+		// Non-nil against nil. Every pointer comparison in the function checks
+		// that before looking at the value, so the zero element is enough.
+		return reflect.New(t.Elem()), true
+	case reflect.Slice:
+		// One zero element against none. Both slice comparisons check length.
+		return reflect.MakeSlice(t, 1, 1), true
+	case reflect.Map:
+		key, ok := nonZeroValue(t.Key())
+		if !ok {
+			return reflect.Value{}, false
+		}
+		value, ok := nonZeroValue(t.Elem())
+		if !ok {
+			return reflect.Value{}, false
+		}
+		m := reflect.MakeMap(t)
+		m.SetMapIndex(key, value)
+		return m, true
+	}
+	return reflect.Value{}, false
+}
+
+// TestReleaseChannelStatusEqualComparesEveryField walks ReleaseChannelStatus and
+// asserts that changing any one field on its own is enough to make
+// releaseChannelStatusEqual report a difference.
+//
+// The table above documents intent and gives readable failures, but it only
+// catches a comparison being removed. The hazard that actually produced two bugs
+// in this controller is a field being added to the struct and forgotten in the
+// function: the table stays green because nobody writes a case for a field
+// nobody remembered. Reflection has no list to forget.
+//
+// It matters because releaseChannelStatusEqual decides whether status is written
+// at all. A field it does not compare is dropped from every write and then
+// overwritten in memory from the API server, so the value never survives a
+// reconcile.
+func TestReleaseChannelStatusEqualComparesEveryField(t *testing.T) {
+	// Fields deliberately left out of the comparison. Everything in here is a
+	// decision a reviewer should be able to challenge; everything not in here
+	// must be compared.
+	excluded := map[string]string{
+		"LastReconcileTime": "by design a per-reconcile timestamp. Comparing it would make every " +
+			"reconcile write status, and a status write schedules the next reconcile. It is in " +
+			"fact never written today (#812), so the exclusion rests on what the field is for " +
+			"rather than on what it currently does.",
+	}
+
+	statusType := reflect.TypeOf(unleashv1.ReleaseChannelStatus{})
+	for i := 0; i < statusType.NumField(); i++ {
+		field := statusType.Field(i)
+
+		t.Run(field.Name, func(t *testing.T) {
+			if reason, excludedField := excluded[field.Name]; excludedField {
+				t.Logf("%s is deliberately not compared: %s", field.Name, reason)
+				return
+			}
+
+			value, ok := nonZeroValue(field.Type)
+			if !ok {
+				// Failing rather than skipping: a kind this helper cannot build
+				// is a field nothing is checking, and a skip is exactly the
+				// silence this test exists to remove.
+				t.Fatalf("no non-zero value for %s of kind %s — teach nonZeroValue about it, "+
+					"or add the field to the excluded map with a reason", field.Name, field.Type.Kind())
+			}
+
+			mutated := &unleashv1.ReleaseChannelStatus{}
+			reflect.ValueOf(mutated).Elem().Field(i).Set(value)
+
+			assert.False(t, releaseChannelStatusEqual(&unleashv1.ReleaseChannelStatus{}, mutated),
+				"%s is not compared by releaseChannelStatusEqual, so a status update that only "+
+					"changes it is silently dropped", field.Name)
 		})
 	}
 }

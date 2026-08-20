@@ -2270,9 +2270,14 @@ func conditionsEqual(a, b []metav1.Condition) bool {
 }
 
 // releaseChannelStatusEqual compares status objects for change detection.
-// Ignores volatile time fields (LastReconcileTime, StartTime, EstimatedCompletion) which change
-// frequently but don't represent meaningful state. LastImageChangeTime IS compared since it
-// represents a significant event (spec.image change).
+//
+// Every field of ReleaseChannelStatus is compared except LastReconcileTime; see
+// the exclusion note at the end for why that one is left out. This matters more
+// than it looks: the result decides whether status is written at all, so a field
+// missing from here is dropped from every write and then overwritten in memory
+// from the API server, and its value never survives a reconcile.
+// TestReleaseChannelStatusEqualComparesEveryField walks the struct reflectively
+// to keep this honest as fields are added.
 func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	// Compare all non-time fields
 	if a.Phase != b.Phase {
@@ -2365,7 +2370,27 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 			return false
 		}
 	}
-	// Deliberately ignore time fields: LastReconcileTime, StartTime, EstimatedCompletion
-	// These change frequently and don't represent meaningful state changes
+	if (a.StartTime == nil) != (b.StartTime == nil) {
+		return false
+	}
+	if a.StartTime != nil && b.StartTime != nil {
+		if !a.StartTime.Equal(b.StartTime) {
+			return false
+		}
+	}
+	if (a.EstimatedCompletion == nil) != (b.EstimatedCompletion == nil) {
+		return false
+	}
+	if a.EstimatedCompletion != nil && b.EstimatedCompletion != nil {
+		if !a.EstimatedCompletion.Equal(b.EstimatedCompletion) {
+			return false
+		}
+	}
+
+	// LastReconcileTime is the only field deliberately left out. It is meant to
+	// change on every reconcile, and a status write schedules the next one, so
+	// comparing it would spin. It is in fact never written today — see #812 —
+	// but the exclusion is about what the field is for, not what it currently
+	// does.
 	return true
 }
