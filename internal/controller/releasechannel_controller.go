@@ -56,9 +56,16 @@ var (
 	releaseChannelDeletionCheckInterval   = 30 * time.Second
 	releaseChannelHealthCheckInitialDelay = 30 * time.Second
 	releaseChannelDefaultMaxUpgradeTime   = 10 * time.Minute
-	releaseChannelHealthCheckTimeout      = 5 * time.Second
-	releaseChannelTransientRetryBase      = 30 * time.Second
-	releaseChannelMaxTransientRetries     = 5
+	// Mirrors the CRD default for spec.healthChecks.timeout, used when the field
+	// is unset.
+	releaseChannelDefaultHealthCheckTimeout = 5 * time.Minute
+	// Ceiling on a derived upgrade budget. Without it the derivation grows with
+	// fleet size until a wedged rollout would hang for the better part of a day,
+	// which is the opposite of what this timeout exists for.
+	releaseChannelMaxDerivedUpgradeTime = 2 * time.Hour
+	releaseChannelHealthCheckTimeout    = 5 * time.Second
+	releaseChannelTransientRetryBase    = 30 * time.Second
+	releaseChannelMaxTransientRetries   = 5
 )
 
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
@@ -685,14 +692,31 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 				fmt.Sprintf("Automatic rollback triggered due to: %s", releaseChannel.Status.FailureReason))
 			return r.updateReleaseChannelStatus(ctx, releaseChannel)
 		}
-		// No PreviousImage means no baseline was ever captured — either nothing
-		// was deployed before this rollout, or instances disagreed on what they
-		// ran, in which case rollbackBaseline deliberately refused to pick one.
-		// Guessing here would move instances to a version they never ran, so the
-		// channel stays Failed and waits for an operator.
-		log.Info("Automatic rollback enabled but no previous image available")
-		r.Recorder.Event(releaseChannel, "Warning", "RollbackUnavailable",
-			"Automatic rollback is enabled but no rollback baseline was captured; set spec.rollback.previousImage to roll back explicitly")
+		// No baseline was ever captured — either nothing was deployed before this
+		// rollout, or instances disagreed on what they ran and rollbackBaseline
+		// deliberately refused to pick one. Guessing would move instances to a
+		// version they never ran, so this is terminal: nothing the controller can
+		// do on its own will change it, and requeueing forever only reprints the
+		// same warning. A spec change wakes the channel through its own watch.
+		condition := meta.FindStatusCondition(releaseChannel.Status.Conditions, unleashv1.ReleaseChannelStatusConditionTypeReconciled)
+		if condition != nil && condition.Reason == "RollbackUnavailable" {
+			log.V(1).Info("Rollout failed with no rollback baseline, waiting for operator")
+			return ctrl.Result{}, nil
+		}
+
+		message := fmt.Sprintf("Rollout failed and cannot be rolled back automatically: no rollback baseline was captured. Original failure: %s. Set spec.rollback.previousImage to roll back explicitly, or correct spec.image.", releaseChannel.Status.FailureReason)
+		log.Info("Automatic rollback enabled but no previous image available", "failureReason", releaseChannel.Status.FailureReason)
+		meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionFalse,
+			Reason:  "RollbackUnavailable",
+			Message: message,
+		})
+		r.Recorder.Event(releaseChannel, "Warning", "RollbackUnavailable", message)
+		if _, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
 
 	// Stay in failed state and requeue periodically
@@ -827,8 +851,9 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 
 	// Check if we've exceeded maxUpgradeTime
 	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
-		log.Info("Canary phase exceeded maxUpgradeTime", "reason", reason)
-		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		budget, derivation := upgradeTimeBudget(releaseChannel)
+		log.Info("Canary phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
+		newPhase := releasePhaseOnFailure(releaseChannel)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.FailureReason = reason
@@ -866,7 +891,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{}, err
 		}
-		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		newPhase := releasePhaseOnFailure(releaseChannel)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.FailureReason = fmt.Sprintf("Canary deployment failed: %v", err)
@@ -899,7 +924,7 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	if releaseChannel.Spec.HealthChecks.Enabled {
 		healthy, err := r.performHealthChecks(ctx, canaryInstances, releaseChannel, settleReference(releaseChannel), log)
 		if err != nil {
-			newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+			newPhase := releasePhaseOnFailure(releaseChannel)
 			r.recordPhaseTransition(releaseChannel, newPhase)
 			releaseChannel.Status.Phase = newPhase
 			releaseChannel.Status.FailureReason = fmt.Sprintf("Canary health check failed: %v", err)
@@ -933,8 +958,9 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 
 	// Check if we've exceeded maxUpgradeTime
 	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
-		log.Info("Rolling phase exceeded maxUpgradeTime", "reason", reason)
-		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		budget, derivation := upgradeTimeBudget(releaseChannel)
+		log.Info("Rolling phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
+		newPhase := releasePhaseOnFailure(releaseChannel)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.ActiveBatch = nil
@@ -1016,7 +1042,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 				log,
 			)
 			if err != nil {
-				newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+				newPhase := releasePhaseOnFailure(releaseChannel)
 				r.recordPhaseTransition(releaseChannel, newPhase)
 				releaseChannel.Status.Phase = newPhase
 				releaseChannel.Status.ActiveBatch = nil
@@ -1053,7 +1079,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		if releaseChannel.Spec.HealthChecks.Enabled {
 			healthy, err := r.performHealthChecks(ctx, targetInstances, releaseChannel, settleReference(releaseChannel), log)
 			if err != nil {
-				newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+				newPhase := releasePhaseOnFailure(releaseChannel)
 				r.recordPhaseTransition(releaseChannel, newPhase)
 				releaseChannel.Status.Phase = newPhase
 				releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment health check failed: %v", err)
@@ -1093,7 +1119,7 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{}, err
 		}
-		newPhase := releasePhaseOnFailure(releaseChannel.Spec.Rollback.Enabled, releaseChannel.Spec.Rollback.OnFailure)
+		newPhase := releasePhaseOnFailure(releaseChannel)
 		r.recordPhaseTransition(releaseChannel, newPhase)
 		releaseChannel.Status.Phase = newPhase
 		releaseChannel.Status.ActiveBatch = nil
@@ -1826,11 +1852,93 @@ func (r *ReleaseChannelReconciler) matchesLabelSelector(instance unleashv1.Unlea
 	return sel.Matches(instanceLabels)
 }
 
-func releasePhaseOnFailure(rollbackEnabled, onFailure bool) unleashv1.ReleaseChannelPhase {
-	if rollbackEnabled && onFailure {
+// rollbackTarget returns the image a rollback would move instances to, or "" when
+// there is none. Resolution order matches executeRollingBackPhase.
+func rollbackTarget(releaseChannel *unleashv1.ReleaseChannel) string {
+	if releaseChannel.Spec.Rollback.PreviousImage != "" {
+		return releaseChannel.Spec.Rollback.PreviousImage
+	}
+	return releaseChannel.Status.PreviousImage
+}
+
+// releasePhaseOnFailure picks the phase a failed rollout moves to. Rollback is
+// only chosen when there is somewhere to roll back to: routing a channel with no
+// baseline into RollingBack sent it somewhere it could not act, and the failure
+// it reported on arrival replaced the reason the rollout actually failed.
+func releasePhaseOnFailure(releaseChannel *unleashv1.ReleaseChannel) unleashv1.ReleaseChannelPhase {
+	if releaseChannel.Spec.Rollback.Enabled &&
+		releaseChannel.Spec.Rollback.OnFailure &&
+		rollbackTarget(releaseChannel) != "" {
 		return unleashv1.ReleaseChannelPhaseRollingBack
 	}
 	return unleashv1.ReleaseChannelPhaseFailed
+}
+
+// batchAllowance is how long a single batch is given. It is the sum of what a
+// batch actually waits for: the settle delay before health checks start, the
+// operator's own bound on how long verifying a batch may take, and the pause
+// before the next batch begins. Summing the maxima makes this a worst case,
+// which is what a timeout budget wants — too tight fails healthy rollouts,
+// while too generous only delays detection, and the cap bounds that.
+func batchAllowance(releaseChannel *unleashv1.ReleaseChannel) time.Duration {
+	settle := releaseChannelHealthCheckInitialDelay
+	if releaseChannel.Spec.HealthChecks.InitialDelay != nil {
+		settle = releaseChannel.Spec.HealthChecks.InitialDelay.Duration
+	}
+
+	// Applied even when health checks are disabled: instances still have to
+	// become ready and connected before a batch completes, and this is the only
+	// bound an operator declares on how long one batch may take.
+	verify := releaseChannelDefaultHealthCheckTimeout
+	if releaseChannel.Spec.HealthChecks.Timeout != nil {
+		verify = releaseChannel.Spec.HealthChecks.Timeout.Duration
+	}
+
+	interval := releaseChannelBatchInterval
+	if releaseChannel.Spec.Strategy.BatchInterval != nil {
+		interval = releaseChannel.Spec.Strategy.BatchInterval.Duration
+	}
+
+	return settle + verify + interval
+}
+
+// upgradeTimeBudget returns how long a rollout has to finish, and how that
+// number was arrived at. An empty derivation means the operator pinned the
+// value in spec.strategy.maxUpgradeTime and it is used exactly as given.
+//
+// Otherwise the budget scales with the work: a flat wall clock is wrong the
+// moment fleet size or maxParallel changes, since the same setting is generous
+// for three instances and impossible for sixty-five. It is floored at the old
+// flat default so small fleets never get a tighter budget than before, and
+// capped so a large fleet cannot make the timeout effectively infinite.
+func upgradeTimeBudget(releaseChannel *unleashv1.ReleaseChannel) (time.Duration, string) {
+	if releaseChannel.Spec.Strategy.MaxUpgradeTime != nil {
+		return releaseChannel.Spec.Strategy.MaxUpgradeTime.Duration, ""
+	}
+
+	maxParallel := releaseChannel.Spec.Strategy.MaxParallel
+	if maxParallel <= 0 {
+		maxParallel = 1
+	}
+
+	instances := releaseChannel.Status.Instances
+	if instances < 0 {
+		instances = 0
+	}
+	batches := (instances + maxParallel - 1) / maxParallel
+
+	allowance := batchAllowance(releaseChannel)
+	budget := time.Duration(batches) * allowance
+
+	if budget < releaseChannelDefaultMaxUpgradeTime {
+		budget = releaseChannelDefaultMaxUpgradeTime
+	}
+	if budget > releaseChannelMaxDerivedUpgradeTime {
+		budget = releaseChannelMaxDerivedUpgradeTime
+	}
+
+	return budget, fmt.Sprintf("derived from %d batch(es) of %s for %d instance(s) at maxParallel %d, capped at %s",
+		batches, allowance, instances, maxParallel, releaseChannelMaxDerivedUpgradeTime)
 }
 
 func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *unleashv1.ReleaseChannel) (bool, string) {
@@ -1838,17 +1946,20 @@ func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *u
 		return false, ""
 	}
 
-	maxUpgradeTime := releaseChannelDefaultMaxUpgradeTime
-	if releaseChannel.Spec.Strategy.MaxUpgradeTime != nil {
-		maxUpgradeTime = releaseChannel.Spec.Strategy.MaxUpgradeTime.Duration
-	}
+	maxUpgradeTime, derivation := upgradeTimeBudget(releaseChannel)
 
 	elapsed := time.Since(releaseChannel.Status.StartTime.Time)
-	if elapsed > maxUpgradeTime {
-		return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s)", elapsed.Round(time.Second), maxUpgradeTime)
+	if elapsed <= maxUpgradeTime {
+		return false, ""
 	}
 
-	return false, ""
+	// An operator looking at a limit they never configured needs to see where
+	// the number came from, and how to pin it if the answer is wrong.
+	if derivation != "" {
+		return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s %s; set spec.strategy.maxUpgradeTime to override)",
+			elapsed.Round(time.Second), maxUpgradeTime, derivation)
+	}
+	return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s)", elapsed.Round(time.Second), maxUpgradeTime)
 }
 
 func min(a, b int) int {

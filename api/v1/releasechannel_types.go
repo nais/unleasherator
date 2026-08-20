@@ -47,8 +47,11 @@ type ReleaseChannelStrategy struct {
 	// +kubebuilder:default="30s"
 	BatchInterval *metav1.Duration `json:"batchInterval,omitempty"`
 
-	// MaxUpgradeTime defines maximum time to wait for all upgrades to complete
-	// +kubebuilder:default="10m"
+	// MaxUpgradeTime is a hard ceiling on how long a rollout may take. Leave it
+	// unset and the controller derives a budget from the number of batches the
+	// rollout actually has to run and what each batch waits for, so the same
+	// configuration does not mean "generous" for three instances and
+	// "impossible" for sixty-five. Set it to pin an exact limit instead.
 	MaxUpgradeTime *metav1.Duration `json:"maxUpgradeTime,omitempty"`
 }
 

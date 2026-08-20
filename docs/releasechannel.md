@@ -406,6 +406,63 @@ rollout would complete "successfully" onto the bad image.
 Tags with no recognisable version — `latest`, digest pins — cannot be ordered
 and are never refused.
 
+#### Rollout Failed on maxUpgradeTime
+
+**Symptoms:** the rollout failed with `Rollout exceeded maxUpgradeTime`, naming a
+limit nobody configured.
+
+When `spec.strategy.maxUpgradeTime` is unset the budget is derived from the work
+the rollout actually has to do: `ceil(instances / maxParallel)` batches, each
+allowed `healthChecks.initialDelay + healthChecks.timeout + strategy.batchInterval`
+(6 minutes on the defaults). A flat wall clock is generous for three instances and
+impossible for sixty-five, which is why it scales.
+
+The derivation is floored at 10 minutes so small fleets never get less budget than
+before, and capped at 2 hours so a wedged rollout is still caught rather than
+hanging for most of a day. The failure message spells out the arithmetic.
+
+**Solutions:**
+
+1. See what the rollout was given and why:
+
+   ```bash
+   kubectl get releasechannel stable -o jsonpath='{.status.failureReason}'
+   ```
+
+2. Raise `maxParallel` — fewer batches means a larger budget and a faster rollout:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxParallel":5}}}'
+   ```
+
+3. Or pin an exact ceiling, which is used as given and never derived:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxUpgradeTime":"3h"}}}'
+   ```
+
+#### Rollout Cannot Be Rolled Back
+
+**Symptoms:** a failed rollout sits in `Failed` with a `RollbackUnavailable`
+condition even though `spec.rollback.enabled` is true.
+
+No rollback baseline was captured — either nothing was deployed before this
+rollout, or instances disagreed about what they were running and the controller
+refused to pick one of several images to send everyone back to. The condition
+message keeps the original failure reason so the actual cause is not lost.
+
+This state is terminal; the controller will not retry on its own.
+
+**Solutions:**
+
+1. Roll back explicitly, if you know the good image:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"rollback":{"previousImage":"quay.io/unleash/unleash-server:6.3.0"}}}'
+   ```
+
+2. Or correct `spec.image` and let the rollout proceed forward instead.
+
 #### Rollout Stuck
 
 **Symptoms:** ReleaseChannel shows partial completion
@@ -681,7 +738,7 @@ The following features are production-ready and fully tested:
 - ✅ Deployment readiness monitoring
 - ✅ Graceful handling of missing ReleaseChannels
 - ✅ Status reporting and progress tracking
-- ✅ `maxUpgradeTime` enforcement - fails rollout if exceeded
+- ✅ `maxUpgradeTime` enforcement - fails rollout if exceeded (derived from batch count when unset, see below)
 - ✅ Automatic rollback on failure (`spec.rollback.enabled` + `spec.rollback.onFailure`)
 
 **Observability:**

@@ -182,9 +182,12 @@ spec:
                     minimum: 1
                     type: integer
                   maxUpgradeTime:
-                    default: 10m
-                    description: MaxUpgradeTime defines maximum time to wait for all
-                      upgrades to complete
+                    description: |-
+                      MaxUpgradeTime is a hard ceiling on how long a rollout may take. Leave it
+                      unset and the controller derives a budget from the number of batches the
+                      rollout actually has to run and what each batch waits for, so the same
+                      configuration does not mean "generous" for three instances and
+                      "impossible" for sixty-five. Set it to pin an exact limit instead.
                     type: string
                 type: object
             required:
