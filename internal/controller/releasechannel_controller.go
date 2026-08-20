@@ -486,7 +486,6 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	}
 
 	var instancesToUpdate []unleashv1.Unleash
-	var currentDeployedImage string
 	for _, unleash := range targetInstances {
 		currentImage := unleash.Status.ResolvedReleaseChannelImage
 		log.Info("Instance status", "name", unleash.Name, "currentImage", currentImage, "targetImage", string(targetImage))
@@ -497,11 +496,12 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 		if currentImage != expectedImage {
 			instancesToUpdate = append(instancesToUpdate, unleash)
 		}
-		// Capture the currently deployed image for PreviousImage tracking
-		if currentImage != "" && currentDeployedImage == "" {
-			currentDeployedImage = currentImage
-		}
 	}
+
+	// The rollback baseline is only meaningful when instances agree; see
+	// rollbackBaseline. When they disagree this stays empty and no PreviousImage
+	// is recorded, so a later rollback refuses instead of guessing a target.
+	currentDeployedImage := rollbackBaseline(targetInstances)
 
 	log.Info("Image tracking state", "currentDeployedImage", currentDeployedImage, "previousImage", releaseChannel.Status.PreviousImage, "targetImage", string(targetImage))
 
@@ -524,31 +524,32 @@ func (r *ReleaseChannelReconciler) executeIdlePhase(ctx context.Context, release
 	// like a new release does, so it would roll out and "complete" successfully.
 	// Automatic rollback only fires on outright deployment failure, which a
 	// working-but-old image never triggers.
-	if !releaseChannel.Spec.AllowDowngrade && currentDeployedImage != "" {
-		if order, comparable := compareImageVersions(currentDeployedImage, string(targetImage)); comparable && order < 0 {
-			message := fmt.Sprintf("Refusing rollout: target image %s is an older version than the deployed image %s; set spec.allowDowngrade to override", string(targetImage), currentDeployedImage)
-			log.Info("Refusing downgrade", "targetImage", string(targetImage), "deployedImage", currentDeployedImage)
+	// Checked against every deployed image rather than the rollback baseline: a
+	// fleet that disagrees has no baseline, and that must not be the reason a
+	// downgrade slips through.
+	if downgradedFrom, refuse := r.downgradeFrom(releaseChannel, targetInstances); refuse {
+		message := fmt.Sprintf("Refusing rollout: target image %s is an older version than the deployed image %s; set spec.allowDowngrade to override", string(targetImage), downgradedFrom)
+		log.Info("Refusing downgrade", "targetImage", string(targetImage), "deployedImage", downgradedFrom)
 
-			// Stay in Idle rather than failing. Failed would hand the channel to
-			// the rollback machinery, which would start moving instances around
-			// even though nothing has been deployed yet.
-			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
-			r.updateInstanceCounts(releaseChannel, targetInstances)
-			labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
-			r.recordMetrics(releaseChannel, labels)
-			meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
-				Status:  metav1.ConditionFalse,
-				Reason:  "DowngradeRefused",
-				Message: message,
-			})
-			r.Recorder.Event(releaseChannel, "Warning", "DowngradeRefused", message)
+		// Stay in Idle rather than failing. Failed would hand the channel to
+		// the rollback machinery, which would start moving instances around
+		// even though nothing has been deployed yet.
+		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+		r.updateInstanceCounts(releaseChannel, targetInstances)
+		labels := []string{releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name}
+		r.recordMetrics(releaseChannel, labels)
+		meta.SetStatusCondition(&releaseChannel.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.ReleaseChannelStatusConditionTypeReconciled,
+			Status:  metav1.ConditionFalse,
+			Reason:  "DowngradeRefused",
+			Message: message,
+		})
+		r.Recorder.Event(releaseChannel, "Warning", "DowngradeRefused", message)
 
-			if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
-				return statusResult, err
-			}
-			return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
+		if statusResult, err := r.updateReleaseChannelStatus(ctx, releaseChannel); err != nil {
+			return statusResult, err
 		}
+		return ctrl.Result{RequeueAfter: releaseChannelIdleRequeueInterval}, nil
 	}
 
 	// Check if this is initial deployment vs. actual rollout
@@ -714,7 +715,14 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 				fmt.Sprintf("Automatic rollback triggered due to: %s", releaseChannel.Status.FailureReason))
 			return r.updateReleaseChannelStatus(ctx, releaseChannel)
 		}
+		// No PreviousImage means no baseline was ever captured — either nothing
+		// was deployed before this rollout, or instances disagreed on what they
+		// ran, in which case rollbackBaseline deliberately refused to pick one.
+		// Guessing here would move instances to a version they never ran, so the
+		// channel stays Failed and waits for an operator.
 		log.Info("Automatic rollback enabled but no previous image available")
+		r.Recorder.Event(releaseChannel, "Warning", "RollbackUnavailable",
+			"Automatic rollback is enabled but no rollback baseline was captured; set spec.rollback.previousImage to roll back explicitly")
 	}
 
 	// Stay in failed state and requeue periodically
@@ -1224,16 +1232,15 @@ func (r *ReleaseChannelReconciler) ensurePreviousImageTracked(
 		return false, nil
 	}
 
-	// Find the currently deployed image from any instance
-	var currentDeployedImage string
-	for _, unleash := range targetInstances {
-		if unleash.Status.ResolvedReleaseChannelImage != "" {
-			currentDeployedImage = unleash.Status.ResolvedReleaseChannelImage
-			log.V(1).Info("Found instance with resolved image",
-				"instance", unleash.Name,
-				"resolvedImage", unleash.Status.ResolvedReleaseChannelImage)
-			break
-		}
+	// Only an image the whole fleet agrees on is a usable rollback baseline.
+	// Taking the first resolved image out of an unordered List picked a baseline
+	// by List order whenever instances disagreed, which could send every instance
+	// back to a version most of them never ran.
+	currentDeployedImage := rollbackBaseline(targetInstances)
+	if currentDeployedImage == "" && len(deployedImages(targetInstances)) > 1 {
+		log.Info("Instances disagree on their deployed image, not capturing a rollback baseline",
+			"deployedImages", deployedImages(targetInstances))
+		return false, nil
 	}
 
 	log.V(1).Info("Image change detection",

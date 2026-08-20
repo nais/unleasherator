@@ -2,9 +2,11 @@ package controller
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	unleashv1 "github.com/nais/unleasherator/api/v1"
 )
 
 // semverCore matches the MAJOR.MINOR.PATCH core of a version. Release tags in
@@ -79,4 +81,74 @@ func compareImageVersions(current, target string) (int, bool) {
 	}
 
 	return targetVersion.Compare(currentVersion), true
+}
+
+// deployedImages returns the distinct images the given instances report running,
+// in a stable order. An empty result means nothing has been deployed yet; more
+// than one entry means the fleet disagrees about what it is running.
+func deployedImages(instances []unleashv1.Unleash) []string {
+	seen := make(map[string]struct{}, len(instances))
+	images := make([]string, 0, len(instances))
+
+	for _, instance := range instances {
+		image := instance.Status.ResolvedReleaseChannelImage
+		if image == "" {
+			continue
+		}
+		if _, ok := seen[image]; ok {
+			continue
+		}
+		seen[image] = struct{}{}
+		images = append(images, image)
+	}
+
+	sort.Strings(images)
+	return images
+}
+
+// rollbackBaseline returns the one image the whole fleet runs, which is the only
+// image a rollback can defensibly send instances back to.
+//
+// It returns "" when instances disagree. Picking one of several deployed images
+// would move instances to a version they were never on, and the pick would come
+// down to List order — which says nothing about which image is correct. An empty
+// baseline means no PreviousImage is captured, and rollback then refuses outright
+// rather than guessing.
+func rollbackBaseline(instances []unleashv1.Unleash) string {
+	images := deployedImages(instances)
+	if len(images) != 1 {
+		return ""
+	}
+	return images[0]
+}
+
+// downgradeFrom reports whether the channel's target image is an older version
+// than something the fleet already runs, and which image it would move back
+// from. Every deployed image is checked, not just the rollback baseline: a fleet
+// that disagrees has no baseline, and that must not be the reason a downgrade
+// gets through. The oldest image the target undercuts is reported, since that is
+// the largest step backwards being asked for.
+func (r *ReleaseChannelReconciler) downgradeFrom(releaseChannel *unleashv1.ReleaseChannel, instances []unleashv1.Unleash) (string, bool) {
+	if releaseChannel.Spec.AllowDowngrade {
+		return "", false
+	}
+
+	target := string(releaseChannel.Spec.Image)
+	oldest := ""
+
+	for _, deployed := range deployedImages(instances) {
+		order, comparable := compareImageVersions(deployed, target)
+		if !comparable || order >= 0 {
+			continue
+		}
+		if oldest == "" {
+			oldest = deployed
+			continue
+		}
+		if order, comparable := compareImageVersions(oldest, deployed); comparable && order < 0 {
+			oldest = deployed
+		}
+	}
+
+	return oldest, oldest != ""
 }

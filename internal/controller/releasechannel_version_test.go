@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -191,4 +192,135 @@ func TestExecuteIdlePhaseAllowsUpgrade(t *testing.T) {
 
 	assert.Equal(t, unleashv1.ReleaseChannelPhaseRolling, updated.Status.Phase,
 		"a newer target must still roll out")
+}
+
+func instanceRunning(name, image string) unleashv1.Unleash {
+	return unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: unleashv1.UnleashSpec{
+			ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: "test-rc"},
+		},
+		Status: unleashv1.UnleashStatus{ResolvedReleaseChannelImage: image},
+	}
+}
+
+func TestRollbackBaseline(t *testing.T) {
+	tests := []struct {
+		name      string
+		instances []unleashv1.Unleash
+		expected  string
+	}{
+		{
+			name:     "no instances",
+			expected: "",
+		},
+		{
+			name:      "nothing deployed yet",
+			instances: []unleashv1.Unleash{instanceRunning("a", ""), instanceRunning("b", "")},
+			expected:  "",
+		},
+		{
+			name:      "fleet agrees",
+			instances: []unleashv1.Unleash{instanceRunning("a", deployedImage), instanceRunning("b", deployedImage)},
+			expected:  deployedImage,
+		},
+		{
+			name:      "unresolved instances do not create disagreement",
+			instances: []unleashv1.Unleash{instanceRunning("a", deployedImage), instanceRunning("b", "")},
+			expected:  deployedImage,
+		},
+		{
+			name:      "fleet disagrees",
+			instances: []unleashv1.Unleash{instanceRunning("a", deployedImage), instanceRunning("b", olderImage)},
+			expected:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, rollbackBaseline(tt.instances))
+		})
+	}
+}
+
+// runEnsurePreviousImageTracked applies the tracker to a channel targeting
+// newerImage and returns the PreviousImage it persisted.
+func runEnsurePreviousImageTracked(t *testing.T, instances []unleashv1.Unleash) string {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec:       unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(newerImage)},
+		Status:     unleashv1.ReleaseChannelStatus{Phase: unleashv1.ReleaseChannelPhaseIdle},
+	}
+
+	objects := []client.Object{releaseChannel}
+	for i := range instances {
+		objects = append(objects, &instances[i])
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := reconciler.ensurePreviousImageTracked(context.Background(), releaseChannel, instances, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	return updated.Status.PreviousImage
+}
+
+func TestEnsurePreviousImageTrackedRefusesAmbiguousBaseline(t *testing.T) {
+	// Same fleet, opposite List order. Selecting the first resolved image made
+	// the rollback target depend on which instance the API server happened to
+	// return first; neither answer is more correct than the other.
+	forward := runEnsurePreviousImageTracked(t, []unleashv1.Unleash{
+		instanceRunning("instance-a", deployedImage),
+		instanceRunning("instance-b", olderImage),
+	})
+	reverse := runEnsurePreviousImageTracked(t, []unleashv1.Unleash{
+		instanceRunning("instance-b", olderImage),
+		instanceRunning("instance-a", deployedImage),
+	})
+
+	assert.Empty(t, forward, "a fleet that disagrees must not produce a rollback baseline")
+	assert.Equal(t, forward, reverse, "the rollback baseline must not depend on List order")
+}
+
+func TestEnsurePreviousImageTrackedCapturesUnanimousBaseline(t *testing.T) {
+	previous := runEnsurePreviousImageTracked(t, []unleashv1.Unleash{
+		instanceRunning("instance-a", deployedImage),
+		instanceRunning("instance-b", deployedImage),
+	})
+
+	assert.Equal(t, deployedImage, previous,
+		"an agreed-upon deployed image is still captured for rollback")
+}
+
+func TestDowngradeFromChecksEveryDeployedImage(t *testing.T) {
+	reconciler := &ReleaseChannelReconciler{}
+	releaseChannel := &unleashv1.ReleaseChannel{
+		Spec: unleashv1.ReleaseChannelSpec{Image: unleashv1.UnleashImage(olderImage)},
+	}
+
+	// The fleet disagrees, so there is no rollback baseline — the downgrade must
+	// still be caught against the instances that are ahead of the target.
+	from, refuse := reconciler.downgradeFrom(releaseChannel, []unleashv1.Unleash{
+		instanceRunning("instance-a", olderImage),
+		instanceRunning("instance-b", newerImage),
+	})
+
+	assert.True(t, refuse)
+	assert.Equal(t, newerImage, from)
 }
