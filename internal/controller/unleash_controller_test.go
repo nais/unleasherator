@@ -694,9 +694,13 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By waiting for the ReleaseChannel to adopt the instance")
 			createdReleaseChannel := &unleashv1.ReleaseChannel{ObjectMeta: releaseChannel.ObjectMeta}
-			// The channel stays in Rolling until the instance reports ready, and
-			// this instance never gets a working deployment. Adoption — assigning
-			// the instance its image — is what this test is waiting on.
+			// Not Status.Phase == Idle. This instance deliberately never gets a
+			// working deployment, so its batch never completes and the channel
+			// stays in Rolling until the upgrade budget runs out — a minimum of
+			// ten minutes, against a thirty second window. Verified: restoring the
+			// phase assertion times out after 2450 reconciles in Rolling.
+			// Adoption, assigning the instance its image, is what this is waiting
+			// on and what the test is actually about.
 			// Use coordinationTimeout because this involves multi-controller coordination
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, releaseChannel.NamespacedName(), createdReleaseChannel); err != nil {
