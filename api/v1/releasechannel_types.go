@@ -179,6 +179,12 @@ type ReleaseChannelStatus struct {
 	// active until every instance is ready, connected, and passes health checks.
 	ActiveBatch *ReleaseChannelActiveBatch `json:"activeBatch,omitempty"`
 
+	// ResumeProgress is how many instances were already on the target image the
+	// last time a rollout was resumed after running out of budget. A resume only
+	// happens when that number has grown, so a rollout that is still moving
+	// carries on and one that is genuinely wedged stops.
+	ResumeProgress int `json:"resumeProgress,omitempty"`
+
 	// FailedImage is the image that was being rolled out when the rollout failed.
 	// A rollout that fails is only recoverable if the controller can tell that
 	// the operator has since pointed spec.image somewhere else.

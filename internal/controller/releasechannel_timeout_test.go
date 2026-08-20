@@ -313,3 +313,99 @@ func TestExecuteFailedPhaseStaysPutWhenNothingChanged(t *testing.T) {
 	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, reload().Status.Phase,
 		"an untouched failure must not churn")
 }
+
+func TestUpgradeTimeBudgetTreatsStoredLegacyDefaultAsUnset(t *testing.T) {
+	// What both live channels carry: a 10m that came from the CRD default, not
+	// from anyone choosing it. Removing the default does not strip it, and no
+	// field manager owns it so no apply prunes it.
+	stored := newBudgetChannel(31, 1, &metav1.Duration{Duration: releaseChannelLegacyDefaultMaxUpgradeTime})
+
+	budget, derivation := upgradeTimeBudget(stored)
+
+	assert.Greater(t, budget, releaseChannelLegacyDefaultMaxUpgradeTime,
+		"a 31 batch migration cannot run inside the budget nobody chose")
+	assert.Equal(t, releaseChannelMaxDerivedUpgradeTime, budget)
+	assert.Contains(t, derivation, "removed CRD default",
+		"the operator has to be able to see why their stored value was ignored")
+}
+
+func TestUpgradeTimeBudgetHonoursADeliberateValue(t *testing.T) {
+	// Any value other than the legacy default is a choice and is used as given,
+	// including one far tighter than the derivation would produce.
+	deliberate := newBudgetChannel(31, 1, &metav1.Duration{Duration: 9 * time.Minute})
+
+	budget, derivation := upgradeTimeBudget(deliberate)
+
+	assert.Equal(t, 9*time.Minute, budget)
+	assert.Empty(t, derivation)
+}
+
+// timedOutChannel is a rollout that ran out of budget partway through a
+// migration, with rollback off, as the live channels are configured.
+func timedOutChannel(t *testing.T, instancesUpToDate, resumeProgress int) (*ReleaseChannelReconciler, *unleashv1.ReleaseChannel, func() *unleashv1.ReleaseChannel) {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	startTime := metav1.NewTime(time.Now().Add(-time.Hour))
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(newerImage),
+			Rollback: unleashv1.RollbackConfig{Enabled: false},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:             unleashv1.ReleaseChannelPhaseFailed,
+			FailureReason:     upgradeTimeoutReasonPrefix + " (11m0s elapsed, limit 10m)",
+			Instances:         31,
+			InstancesUpToDate: instancesUpToDate,
+			ResumeProgress:    resumeProgress,
+			StartTime:         &startTime,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+	reload := func() *unleashv1.ReleaseChannel {
+		fresh := &unleashv1.ReleaseChannel{}
+		require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), fresh))
+		return fresh
+	}
+	return reconciler, releaseChannel, reload
+}
+
+func TestExecuteFailedPhaseResumesAProgressingRollout(t *testing.T) {
+	reconciler, releaseChannel, reload := timedOutChannel(t, 7, 0)
+
+	_, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := reload()
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"seven instances moved, so the rollout is slow rather than wedged and must carry on")
+	assert.Empty(t, updated.Status.FailureReason)
+	assert.Equal(t, 7, updated.Status.ResumeProgress,
+		"the mark advances so the next timeout is judged against this attempt")
+	assert.Nil(t, updated.Status.StartTime, "a fresh attempt gets a fresh budget")
+}
+
+func TestExecuteFailedPhaseStopsARolloutThatIsNotProgressing(t *testing.T) {
+	// Same number of instances updated as when it was last resumed: the extra
+	// budget bought nothing, so this one really is stuck.
+	reconciler, releaseChannel, reload := timedOutChannel(t, 7, 7)
+
+	_, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, reload().Status.Phase,
+		"a rollout that advanced nothing must stop rather than resume forever")
+}

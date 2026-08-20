@@ -421,6 +421,22 @@ The derivation is floored at 10 minutes so small fleets never get less budget th
 before, and capped at 2 hours so a wedged rollout is still caught rather than
 hanging for most of a day. The failure message spells out the arithmetic.
 
+`maxUpgradeTime` used to carry a CRD default of `10m`. Removing that default does
+not strip the value from channels that already stored it, and a defaulted field
+is owned by no field manager so no apply prunes it either. A stored `10m` is
+therefore indistinguishable from a channel that never chose a limit, and is
+treated as unset. Any other value is a deliberate choice and is used exactly as
+given. The derivation is floored at `10m`, so this can only ever grant more time
+than the stored value, never less.
+
+Running out of budget does not necessarily strand a rollout. If the attempt moved
+instances onto the target image, the rollout is slow rather than wedged: the
+channel returns to `Idle` and starts again, resuming from whatever already
+migrated, with `status.resumeProgress` recording how far it had got. An attempt
+that advances no instance at all stops. Channels with `spec.rollback.enabled` and
+a known baseline roll back on a timeout instead, which is what that setting asks
+for.
+
 **Solutions:**
 
 1. See what the rollout was given and why:

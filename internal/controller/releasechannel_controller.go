@@ -36,6 +36,10 @@ import (
 
 const (
 	ReleaseChannelFinalizer = "releasechannel.unleash.nais.io/finalizer"
+
+	// upgradeTimeoutReasonPrefix opens every failure reason written when the
+	// upgrade budget runs out, and is how that cause is recognised later.
+	upgradeTimeoutReasonPrefix = "Rollout exceeded maxUpgradeTime"
 )
 
 var (
@@ -63,9 +67,15 @@ var (
 	// fleet size until a wedged rollout would hang for the better part of a day,
 	// which is the opposite of what this timeout exists for.
 	releaseChannelMaxDerivedUpgradeTime = 2 * time.Hour
-	releaseChannelHealthCheckTimeout    = 5 * time.Second
-	releaseChannelTransientRetryBase    = 30 * time.Second
-	releaseChannelMaxTransientRetries   = 5
+	// The value spec.strategy.maxUpgradeTime used to be defaulted to by the CRD.
+	// Removing a default does not strip it from stored objects, and a defaulted
+	// field is owned by no field manager so neither server-side nor client-side
+	// apply prunes it. Channels that never chose a limit therefore carry this
+	// value forever, and it is treated as the absence of a choice.
+	releaseChannelLegacyDefaultMaxUpgradeTime = 10 * time.Minute
+	releaseChannelHealthCheckTimeout          = 5 * time.Second
+	releaseChannelTransientRetryBase          = 30 * time.Second
+	releaseChannelMaxTransientRetries         = 5
 )
 
 // ReleaseChannelReconciler reconciles a ReleaseChannel object
@@ -628,6 +638,7 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 	releaseChannel.Status.LastFailureTime = nil
 	releaseChannel.Status.ActiveBatch = nil
 	releaseChannel.Status.FailedImage = ""
+	releaseChannel.Status.ResumeProgress = 0
 	// Note: PreviousImage is kept for potential future rollback reference
 
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -668,6 +679,40 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	// branch below that settles the channel writes status.
 	if releaseChannel.Status.FailedImage == "" {
 		releaseChannel.Status.FailedImage = string(releaseChannel.Spec.Image)
+	}
+
+	// Running out of budget is not proof a rollout is wedged — a large fleet can
+	// simply need more batches than the budget covered. Resume it when it moved
+	// instances onto the target since the last attempt, so a migration continues
+	// from where it got to rather than stranding the fleet half done, and stop
+	// when it did not. Progress bounds this: there are only so many instances to
+	// advance, and a rollout that advances none stops on the first attempt.
+	//
+	// Channels with rollback enabled and a baseline never reach here on a
+	// timeout — releasePhaseOnFailure sends those to RollingBack, which is the
+	// behaviour they asked for.
+	if isUpgradeTimeout(releaseChannel.Status.FailureReason) {
+		if releaseChannel.Status.InstancesUpToDate > releaseChannel.Status.ResumeProgress {
+			log.Info("Resuming rollout that ran out of budget but is still progressing",
+				"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
+				"progressAtLastResume", releaseChannel.Status.ResumeProgress,
+				"reason", releaseChannel.Status.FailureReason)
+			r.Recorder.Event(releaseChannel, "Warning", "RolloutResumed",
+				fmt.Sprintf("Rollout ran out of budget with %d/%d instances updated and is being resumed: %s",
+					releaseChannel.Status.InstancesUpToDate, releaseChannel.Status.Instances, releaseChannel.Status.FailureReason))
+			releaseChannel.Status.ResumeProgress = releaseChannel.Status.InstancesUpToDate
+			r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseIdle)
+			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+			releaseChannel.Status.FailureReason = ""
+			releaseChannel.Status.FailedImage = ""
+			// A fresh attempt gets a fresh budget; StartTime is set again when
+			// the idle phase starts the next rollout.
+			releaseChannel.Status.StartTime = nil
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
+		log.Info("Rollout ran out of budget without advancing any instance",
+			"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
+			"progressAtLastResume", releaseChannel.Status.ResumeProgress)
 	}
 
 	// Auto-retry transient errors before considering rollback
@@ -1944,8 +1989,15 @@ func batchAllowance(releaseChannel *unleashv1.ReleaseChannel) time.Duration {
 // flat default so small fleets never get a tighter budget than before, and
 // capped so a large fleet cannot make the timeout effectively infinite.
 func upgradeTimeBudget(releaseChannel *unleashv1.ReleaseChannel) (time.Duration, string) {
-	if releaseChannel.Spec.Strategy.MaxUpgradeTime != nil {
-		return releaseChannel.Spec.Strategy.MaxUpgradeTime.Duration, ""
+	legacyDefault := false
+	if configured := releaseChannel.Spec.Strategy.MaxUpgradeTime; configured != nil {
+		if configured.Duration != releaseChannelLegacyDefaultMaxUpgradeTime {
+			return configured.Duration, ""
+		}
+		// Indistinguishable from a channel that was never configured, and the
+		// derivation is floored at this value, so honouring it can only ever be
+		// the more restrictive reading of an intent nobody expressed.
+		legacyDefault = true
 	}
 
 	maxParallel := releaseChannel.Spec.Strategy.MaxParallel
@@ -1969,8 +2021,19 @@ func upgradeTimeBudget(releaseChannel *unleashv1.ReleaseChannel) (time.Duration,
 		budget = releaseChannelMaxDerivedUpgradeTime
 	}
 
-	return budget, fmt.Sprintf("derived from %d batch(es) of %s for %d instance(s) at maxParallel %d, capped at %s",
+	derivation := fmt.Sprintf("derived from %d batch(es) of %s for %d instance(s) at maxParallel %d, capped at %s",
 		batches, allowance, instances, maxParallel, releaseChannelMaxDerivedUpgradeTime)
+	if legacyDefault {
+		derivation += fmt.Sprintf("; the stored %s came from a removed CRD default and was treated as unset", releaseChannelLegacyDefaultMaxUpgradeTime)
+	}
+	return budget, derivation
+}
+
+// isUpgradeTimeout reports whether a failure reason came from the upgrade budget
+// running out. Matched on the message because that is the only place the cause
+// is recorded; checkMaxUpgradeTimeExceeded is the sole writer of this prefix.
+func isUpgradeTimeout(reason string) bool {
+	return strings.HasPrefix(reason, upgradeTimeoutReasonPrefix)
 }
 
 func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *unleashv1.ReleaseChannel) (bool, string) {
@@ -1988,10 +2051,10 @@ func (r *ReleaseChannelReconciler) checkMaxUpgradeTimeExceeded(releaseChannel *u
 	// An operator looking at a limit they never configured needs to see where
 	// the number came from, and how to pin it if the answer is wrong.
 	if derivation != "" {
-		return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s %s; set spec.strategy.maxUpgradeTime to override)",
-			elapsed.Round(time.Second), maxUpgradeTime, derivation)
+		return true, fmt.Sprintf("%s (%s elapsed, limit %s %s; set spec.strategy.maxUpgradeTime to override)",
+			upgradeTimeoutReasonPrefix, elapsed.Round(time.Second), maxUpgradeTime, derivation)
 	}
-	return true, fmt.Sprintf("Rollout exceeded maxUpgradeTime (%s elapsed, limit %s)", elapsed.Round(time.Second), maxUpgradeTime)
+	return true, fmt.Sprintf("%s (%s elapsed, limit %s)", upgradeTimeoutReasonPrefix, elapsed.Round(time.Second), maxUpgradeTime)
 }
 
 func min(a, b int) int {
@@ -2208,6 +2271,9 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 		return false
 	}
 	if a.FailedImage != b.FailedImage {
+		return false
+	}
+	if a.ResumeProgress != b.ResumeProgress {
 		return false
 	}
 	// LastDeployTime is compared despite being a timestamp: it drives the health

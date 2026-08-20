@@ -395,6 +395,13 @@ spec:
                 maximum: 100
                 minimum: 0
                 type: integer
+              resumeProgress:
+                description: |-
+                  ResumeProgress is how many instances were already on the target image the
+                  last time a rollout was resumed after running out of budget. A resume only
+                  happens when that number has grown, so a rollout that is still moving
+                  carries on and one that is genuinely wedged stops.
+                type: integer
               retryCount:
                 default: 0
                 description: RetryCount tracks consecutive retry attempts for transient
