@@ -627,6 +627,7 @@ func (r *ReleaseChannelReconciler) executeCompletedPhase(ctx context.Context, re
 	releaseChannel.Status.RetryCount = 0
 	releaseChannel.Status.LastFailureTime = nil
 	releaseChannel.Status.ActiveBatch = nil
+	releaseChannel.Status.FailedImage = ""
 	// Note: PreviousImage is kept for potential future rollback reference
 
 	return r.updateReleaseChannelStatus(ctx, releaseChannel)
@@ -639,6 +640,34 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	if releaseChannel.Status.ActiveBatch != nil {
 		releaseChannel.Status.ActiveBatch = nil
 		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
+	// Pointing spec.image somewhere else is an operator saying "not that one,
+	// try this instead". It is the only way out of a failure that has nothing to
+	// roll back to, so it has to be checked before the branches that give up.
+	if releaseChannel.Status.FailedImage != "" &&
+		string(releaseChannel.Spec.Image) != releaseChannel.Status.FailedImage {
+		log.Info("Target image changed since the rollout failed, retrying",
+			"failedImage", releaseChannel.Status.FailedImage,
+			"newImage", string(releaseChannel.Spec.Image))
+		r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseIdle)
+		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+		releaseChannel.Status.FailureReason = ""
+		releaseChannel.Status.FailedImage = ""
+		releaseChannel.Status.RetryCount = 0
+		releaseChannel.Status.LastFailureTime = nil
+		r.Recorder.Event(releaseChannel, "Normal", "RetryAfterImageChange",
+			fmt.Sprintf("Retrying rollout with %s after failure on %s", string(releaseChannel.Spec.Image), releaseChannel.Status.FailedImage))
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
+	// Record which image failed, so a later pass can tell that spec.image has
+	// moved. Nothing has edited it yet on the pass that first lands here, so it
+	// is still the image the rollout was on. Set in place rather than persisted
+	// on its own, to avoid spending a reconcile before anything is handled; every
+	// branch below that settles the channel writes status.
+	if releaseChannel.Status.FailedImage == "" {
+		releaseChannel.Status.FailedImage = string(releaseChannel.Spec.Image)
 	}
 
 	// Auto-retry transient errors before considering rollback
@@ -680,10 +709,13 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 
 	// Automatic rollback when enabled and onFailure is set (or defaults to true)
 	if releaseChannel.Spec.Rollback.Enabled && releaseChannel.Spec.Rollback.OnFailure {
-		// Only rollback if we have a previous image to rollback to
-		if releaseChannel.Status.PreviousImage != "" {
+		// Same resolution as executeRollingBackPhase and releasePhaseOnFailure.
+		// Reading only the tracked baseline here made spec.rollback.previousImage
+		// inert from this phase, which is exactly where an operator reaches for
+		// it: the condition message tells them to set it.
+		if rollbackImage := rollbackTarget(releaseChannel); rollbackImage != "" {
 			log.Info("Automatic rollback triggered",
-				"previousImage", releaseChannel.Status.PreviousImage,
+				"previousImage", rollbackImage,
 				"failureReason", releaseChannel.Status.FailureReason)
 			r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseRollingBack)
 			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseRollingBack
@@ -2174,6 +2206,21 @@ func releaseChannelStatusEqual(a, b *unleashv1.ReleaseChannelStatus) bool {
 	}
 	if a.PreviousImage != b.PreviousImage {
 		return false
+	}
+	if a.FailedImage != b.FailedImage {
+		return false
+	}
+	// LastDeployTime is compared despite being a timestamp: it drives the health
+	// check settle delay, so treating a status that only changes it as unchanged
+	// would skip the write and then overwrite the in-memory value with the stale
+	// one from the API server.
+	if (a.LastDeployTime == nil) != (b.LastDeployTime == nil) {
+		return false
+	}
+	if a.LastDeployTime != nil && b.LastDeployTime != nil {
+		if !a.LastDeployTime.Equal(b.LastDeployTime) {
+			return false
+		}
 	}
 	if !reflect.DeepEqual(a.ActiveBatch, b.ActiveBatch) {
 		return false

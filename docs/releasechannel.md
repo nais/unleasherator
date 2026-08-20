@@ -451,17 +451,27 @@ rollout, or instances disagreed about what they were running and the controller
 refused to pick one of several images to send everyone back to. The condition
 message keeps the original failure reason so the actual cause is not lost.
 
-This state is terminal; the controller will not retry on its own.
+The controller will not retry on its own, but either edit below is picked up
+immediately through the channel's own watch.
 
 **Solutions:**
 
-1. Roll back explicitly, if you know the good image:
+1. Roll back explicitly, if you know the good image. The channel moves to
+   `RollingBack` on the next reconcile:
 
    ```bash
    kubectl patch releasechannel stable --type='merge' -p='{"spec":{"rollback":{"previousImage":"quay.io/unleash/unleash-server:6.3.0"}}}'
    ```
 
-2. Or correct `spec.image` and let the rollout proceed forward instead.
+2. Or point `spec.image` somewhere else and let the rollout go forward instead.
+   Changing it to any image other than the one that failed returns the channel to
+   `Idle` and starts a fresh rollout, resuming from whatever already migrated:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"image":"quay.io/unleash/unleash-server:6.4.1"}}'
+   ```
+
+   `status.failedImage` records which image the failure was on.
 
 #### Rollout Stuck
 

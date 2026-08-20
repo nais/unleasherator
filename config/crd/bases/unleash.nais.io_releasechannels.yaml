@@ -293,6 +293,12 @@ spec:
                 description: EstimatedCompletion is the estimated completion time
                 format: date-time
                 type: string
+              failedImage:
+                description: |-
+                  FailedImage is the image that was being rolled out when the rollout failed.
+                  A rollout that fails is only recoverable if the controller can tell that
+                  the operator has since pointed spec.image somewhere else.
+                type: string
               failureReason:
                 description: FailureReason contains the reason for rollout failure
                 type: string

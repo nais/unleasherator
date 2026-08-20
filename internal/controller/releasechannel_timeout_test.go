@@ -146,14 +146,10 @@ func TestReleasePhaseOnFailureRequiresRollbackTarget(t *testing.T) {
 			"RollingBack with nothing to roll back to only loses the real failure reason")
 	})
 
-	t.Run("an explicit rollback image is a target", func(t *testing.T) {
-		spec := rollbackOn
-		spec.PreviousImage = deployedImage
-		phase := releasePhaseOnFailure(&unleashv1.ReleaseChannel{
-			Spec: unleashv1.ReleaseChannelSpec{Rollback: spec},
-		})
-		assert.Equal(t, unleashv1.ReleaseChannelPhaseRollingBack, phase)
-	})
+	// spec.rollback.previousImage is deliberately not covered here. Asserting the
+	// helper honoured it while the only caller read status.previousImage instead
+	// is what hid that the documented remedy did nothing; it is verified against
+	// the caller in TestExecuteFailedPhaseRollsBackOnExplicitPreviousImage.
 
 	t.Run("a tracked baseline is a target", func(t *testing.T) {
 		phase := releasePhaseOnFailure(&unleashv1.ReleaseChannel{
@@ -217,4 +213,103 @@ func TestExecuteFailedPhaseTerminatesWithoutRollbackBaseline(t *testing.T) {
 	require.NoError(t, err)
 	assert.Zero(t, result.RequeueAfter)
 	assert.Len(t, recorder.Events, drained, "the warning is not repeated on every pass")
+}
+
+// failedChannelFixture is a channel that failed with nothing to roll back to,
+// which is where both documented remedies have to work.
+func failedChannelFixture(t *testing.T) (*ReleaseChannelReconciler, *unleashv1.ReleaseChannel, func() *unleashv1.ReleaseChannel) {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:    unleashv1.UnleashImage(newerImage),
+			Rollback: unleashv1.RollbackConfig{Enabled: true, OnFailure: true},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:         unleashv1.ReleaseChannelPhaseFailed,
+			FailureReason: "Rollout exceeded maxUpgradeTime (31m0s elapsed, limit 30m)",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	reload := func() *unleashv1.ReleaseChannel {
+		fresh := &unleashv1.ReleaseChannel{}
+		require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), fresh))
+		return fresh
+	}
+	return reconciler, releaseChannel, reload
+}
+
+// settleIntoTerminalFailure runs the failed phase until it stops changing, which
+// is the state an operator actually finds the channel in.
+func settleIntoTerminalFailure(t *testing.T, r *ReleaseChannelReconciler, rc *unleashv1.ReleaseChannel, reload func() *unleashv1.ReleaseChannel) *unleashv1.ReleaseChannel {
+	t.Helper()
+
+	current := rc
+	for i := 0; i < 4; i++ {
+		_, err := r.executeFailedPhase(context.Background(), current, ctrl.Log.WithName("test"))
+		require.NoError(t, err)
+		current = reload()
+	}
+	require.Equal(t, unleashv1.ReleaseChannelPhaseFailed, current.Status.Phase)
+	return current
+}
+
+func TestExecuteFailedPhaseRollsBackOnExplicitPreviousImage(t *testing.T) {
+	reconciler, releaseChannel, reload := failedChannelFixture(t)
+	current := settleIntoTerminalFailure(t, reconciler, releaseChannel, reload)
+
+	// The condition tells the operator to do exactly this.
+	current.Spec.Rollback.PreviousImage = deployedImage
+	require.NoError(t, reconciler.Update(context.Background(), current))
+
+	_, err := reconciler.executeFailedPhase(context.Background(), current, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseRollingBack, reload().Status.Phase,
+		"setting spec.rollback.previousImage must actually start a rollback")
+}
+
+func TestExecuteFailedPhaseRetriesOnCorrectedImage(t *testing.T) {
+	reconciler, releaseChannel, reload := failedChannelFixture(t)
+	current := settleIntoTerminalFailure(t, reconciler, releaseChannel, reload)
+	require.Equal(t, newerImage, current.Status.FailedImage)
+
+	// The other remedy the condition offers: point spec.image somewhere else.
+	current.Spec.Image = unleashv1.UnleashImage(deployedImage)
+	require.NoError(t, reconciler.Update(context.Background(), current))
+
+	_, err := reconciler.executeFailedPhase(context.Background(), current, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := reload()
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"correcting spec.image must let the channel try again")
+	assert.Empty(t, updated.Status.FailureReason)
+	assert.Empty(t, updated.Status.FailedImage)
+}
+
+func TestExecuteFailedPhaseStaysPutWhenNothingChanged(t *testing.T) {
+	reconciler, releaseChannel, reload := failedChannelFixture(t)
+	current := settleIntoTerminalFailure(t, reconciler, releaseChannel, reload)
+
+	result, err := reconciler.executeFailedPhase(context.Background(), current, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+	assert.Zero(t, result.RequeueAfter)
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, reload().Status.Phase,
+		"an untouched failure must not churn")
 }

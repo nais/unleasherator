@@ -179,6 +179,11 @@ type ReleaseChannelStatus struct {
 	// active until every instance is ready, connected, and passes health checks.
 	ActiveBatch *ReleaseChannelActiveBatch `json:"activeBatch,omitempty"`
 
+	// FailedImage is the image that was being rolled out when the rollout failed.
+	// A rollout that fails is only recoverable if the controller can tell that
+	// the operator has since pointed spec.image somewhere else.
+	FailedImage string `json:"failedImage,omitempty"`
+
 	// LastDeployTime is when instances were last assigned a new image. The health
 	// check settle delay is measured from it so each set of instances waits for
 	// its own pods, rather than inheriting the start time of the whole rollout.
