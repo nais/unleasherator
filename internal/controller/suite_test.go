@@ -70,7 +70,6 @@ var _ = BeforeSuite(func() {
 	// Release Channel controller timeouts
 	releaseChannelErrorRetryDelay = time.Millisecond * 50
 	releaseChannelIdleRequeueInterval = time.Millisecond * 100
-	releaseChannelInitialDeploymentCheck = time.Millisecond * 100
 	releaseChannelValidatingRetryDelay = time.Millisecond * 200
 	releaseChannelValidatingTransition = time.Millisecond * 50
 	releaseChannelCanaryWaitDelay = time.Millisecond * 100

@@ -58,6 +58,16 @@ spec:
           spec:
             description: ReleaseChannelSpec defines the desired state of ReleaseChannel
             properties:
+              allowDowngrade:
+                default: false
+                description: |-
+                  AllowDowngrade permits rolling out an image whose version is older than
+                  the one instances already run. Downgrades are refused by default because
+                  an edit to an older or yanked tag is otherwise indistinguishable from an
+                  upgrade, and the rollout would "succeed" onto the bad image. Deliberate
+                  reverts belong in rollback; this is the escape hatch for the rare case
+                  where the older image genuinely is the intended target.
+                type: boolean
               healthChecks:
                 description: HealthChecks defines health validation configuration
                 properties:
@@ -172,9 +182,12 @@ spec:
                     minimum: 1
                     type: integer
                   maxUpgradeTime:
-                    default: 10m
-                    description: MaxUpgradeTime defines maximum time to wait for all
-                      upgrades to complete
+                    description: |-
+                      MaxUpgradeTime is a hard ceiling on how long a rollout may take. Leave it
+                      unset and the controller derives a budget from the number of batches the
+                      rollout actually has to run and what each batch waits for, so the same
+                      configuration does not mean "generous" for three instances and
+                      "impossible" for sixty-five. Set it to pin an exact limit instead.
                     type: string
                 type: object
             required:
@@ -280,6 +293,12 @@ spec:
                 description: EstimatedCompletion is the estimated completion time
                 format: date-time
                 type: string
+              failedImage:
+                description: |-
+                  FailedImage is the image that was being rolled out when the rollout failed.
+                  A rollout that fails is only recoverable if the controller can tell that
+                  the operator has since pointed spec.image somewhere else.
+                type: string
               failureReason:
                 description: FailureReason contains the reason for rollout failure
                 type: string
@@ -336,6 +355,13 @@ spec:
                 description: InstancesUpToDate is the number of instances that are
                   up to date.
                 type: integer
+              lastDeployTime:
+                description: |-
+                  LastDeployTime is when instances were last assigned a new image. The health
+                  check settle delay is measured from it so each set of instances waits for
+                  its own pods, rather than inheriting the start time of the whole rollout.
+                format: date-time
+                type: string
               lastFailureTime:
                 description: LastFailureTime records when the current failure first
                   occurred
@@ -370,6 +396,13 @@ spec:
                   (0-100)
                 maximum: 100
                 minimum: 0
+                type: integer
+              resumeProgress:
+                description: |-
+                  ResumeProgress is how many instances were already on the target image the
+                  last time a rollout was resumed after running out of budget. A resume only
+                  happens when that number has grown, so a rollout that is still moving
+                  carries on and one that is genuinely wedged stops.
                 type: integer
               retryCount:
                 default: 0

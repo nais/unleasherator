@@ -222,7 +222,17 @@ func TestReleasePhaseOnFailure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			phase := releasePhaseOnFailure(tt.rollbackEnabled, tt.onFailure)
+			phase := releasePhaseOnFailure(&unleashv1.ReleaseChannel{
+				Spec: unleashv1.ReleaseChannelSpec{
+					Rollback: unleashv1.RollbackConfig{
+						Enabled:   tt.rollbackEnabled,
+						OnFailure: tt.onFailure,
+					},
+				},
+				// A baseline has to exist for rollback to be reachable at all;
+				// the no-baseline case is covered separately.
+				Status: unleashv1.ReleaseChannelStatus{PreviousImage: "test:v1"},
+			})
 			assert.Equal(t, tt.expectedPhase, phase)
 		})
 	}

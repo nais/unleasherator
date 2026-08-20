@@ -377,6 +377,128 @@ kubectl patch releasechannel stable --type='merge' -p='{\"spec\":{\"image\":\"qu
    kubectl label releasechannel stable reconcile=$(date +%s)
    ```
 
+#### Downgrade Refused
+
+**Symptoms:** `spec.image` was changed but the phase returns to `Idle`, with a
+`DowngradeRefused` condition and a warning event.
+
+The controller compares the semantic version embedded in the image tag against
+the version instances already run, and refuses to roll out an older one. A
+yanked or mistyped tag is otherwise indistinguishable from an upgrade, and the
+rollout would complete "successfully" onto the bad image.
+
+The comparison is against the image **most instances run**, so a single instance
+that has ended up ahead of the fleet does not block everyone else from upgrading.
+Instances ahead of that image are moved back onto it, which is inherent in a
+channel having one target.
+
+Every phase that can move instances checks this, not just `Idle`. Editing
+`spec.image` during a rollout stops it: any batch in flight is dropped so no
+further instance is assigned the older target, and the channel returns to `Idle`.
+Instances already moved stay where they are.
+
+**Solutions:**
+
+1. Confirm which version is being refused:
+
+   ```bash
+   kubectl get releasechannel stable -o jsonpath='{.status.conditions[?(@.reason=="DowngradeRefused")].message}'
+   ```
+
+2. If the older image is genuinely the intended target, allow it explicitly:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"allowDowngrade":true}}'
+   ```
+
+   For reverting a bad rollout, prefer `spec.rollback` over `allowDowngrade`.
+
+Tags with no recognisable version — `latest`, digest pins — cannot be ordered
+and are never refused.
+
+#### Rollout Failed on maxUpgradeTime
+
+**Symptoms:** the rollout failed with `Rollout exceeded maxUpgradeTime`, naming a
+limit nobody configured.
+
+When `spec.strategy.maxUpgradeTime` is unset the budget is derived from the work
+the rollout actually has to do: `ceil(instances / maxParallel)` batches, each
+allowed `healthChecks.initialDelay + healthChecks.timeout + strategy.batchInterval`
+(6 minutes on the defaults). A flat wall clock is generous for three instances and
+impossible for sixty-five, which is why it scales.
+
+The derivation is floored at 10 minutes so small fleets never get less budget than
+before, and capped at 2 hours so a wedged rollout is still caught rather than
+hanging for most of a day. The failure message spells out the arithmetic.
+
+`maxUpgradeTime` used to carry a CRD default of `10m`. Removing that default does
+not strip the value from channels that already stored it, and a defaulted field
+is owned by no field manager so no apply prunes it either. A stored `10m` is
+therefore indistinguishable from a channel that never chose a limit, and is
+treated as unset. Any other value is a deliberate choice and is used exactly as
+given. The derivation is floored at `10m`, so this can only ever grant more time
+than the stored value, never less.
+
+Running out of budget does not necessarily strand a rollout. If the attempt moved
+instances onto the target image, the rollout is slow rather than wedged: the
+channel returns to `Idle` and starts again, resuming from whatever already
+migrated, with `status.resumeProgress` recording how far it had got. An attempt
+that advances no instance at all stops. Channels with `spec.rollback.enabled` and
+a known baseline roll back on a timeout instead, which is what that setting asks
+for.
+
+**Solutions:**
+
+1. See what the rollout was given and why:
+
+   ```bash
+   kubectl get releasechannel stable -o jsonpath='{.status.failureReason}'
+   ```
+
+2. Raise `maxParallel` — fewer batches means a larger budget and a faster rollout:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxParallel":5}}}'
+   ```
+
+3. Or pin an exact ceiling, which is used as given and never derived:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxUpgradeTime":"3h"}}}'
+   ```
+
+#### Rollout Cannot Be Rolled Back
+
+**Symptoms:** a failed rollout sits in `Failed` with a `RollbackUnavailable`
+condition even though `spec.rollback.enabled` is true.
+
+No rollback baseline was captured — either nothing was deployed before this
+rollout, or instances disagreed about what they were running and the controller
+refused to pick one of several images to send everyone back to. The condition
+message keeps the original failure reason so the actual cause is not lost.
+
+The controller will not retry on its own, but either edit below is picked up
+immediately through the channel's own watch.
+
+**Solutions:**
+
+1. Roll back explicitly, if you know the good image. The channel moves to
+   `RollingBack` on the next reconcile:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"rollback":{"previousImage":"quay.io/unleash/unleash-server:6.3.0"}}}'
+   ```
+
+2. Or point `spec.image` somewhere else and let the rollout go forward instead.
+   Changing it to any image other than the one that failed returns the channel to
+   `Idle` and starts a fresh rollout, resuming from whatever already migrated:
+
+   ```bash
+   kubectl patch releasechannel stable --type='merge' -p='{"spec":{"image":"quay.io/unleash/unleash-server:6.4.1"}}'
+   ```
+
+   `status.failedImage` records which image the failure was on.
+
 #### Rollout Stuck
 
 **Symptoms:** ReleaseChannel shows partial completion
@@ -429,6 +551,7 @@ Use descriptive, environment-specific names:
 2. **Avoid `latest` tags** for production ReleaseChannels
 3. **Test in lower environments** before promoting to production
 4. **Keep a rollback plan** by maintaining previous ReleaseChannel definitions
+5. **Expect downgrades to be refused** — set `spec.allowDowngrade: true` only when an older image really is the intended target
 
 ### Operational Guidelines
 
@@ -651,7 +774,7 @@ The following features are production-ready and fully tested:
 - ✅ Deployment readiness monitoring
 - ✅ Graceful handling of missing ReleaseChannels
 - ✅ Status reporting and progress tracking
-- ✅ `maxUpgradeTime` enforcement - fails rollout if exceeded
+- ✅ `maxUpgradeTime` enforcement - fails rollout if exceeded (derived from batch count when unset, see below)
 - ✅ Automatic rollback on failure (`spec.rollback.enabled` + `spec.rollback.onFailure`)
 
 **Observability:**

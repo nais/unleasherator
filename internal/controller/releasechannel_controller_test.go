@@ -206,6 +206,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "test-image:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -233,6 +239,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "single-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -262,6 +274,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "update-test:v1",
+					// Two rollouts back to back: the first has to clear its
+					// health-check settle delay before the second can start.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -299,6 +317,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "channel-image:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -657,6 +681,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "starttime-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -705,6 +735,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 						Enabled:   true,
 						OnFailure: true,
 					},
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -729,6 +765,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 					Image: "timeout-config-test:v1",
 					Strategy: unleashv1.ReleaseChannelStrategy{
 						MaxUpgradeTime: &customTimeout,
+					},
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
 					},
 				},
 			}
@@ -783,6 +825,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "clear-state-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -837,6 +885,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "orphan-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -912,6 +966,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "orphan-free:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -947,6 +1007,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "orphan-custom:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1007,6 +1073,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "image-change-test:v1",
+					// The initial deploy is a batched rollout now, so it has to
+					// clear its settle delay before a second image change can be
+					// picked up from the Idle phase.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1061,6 +1134,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "version-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1095,6 +1174,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "rollout-flag-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1137,6 +1222,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "condition-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1171,6 +1262,12 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "no-instances-test:v1",
+					// Rollouts, first deploy included, are batched and health gated;
+					// the CRD default settle delay of 30s outlasts the test timeouts.
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 
@@ -1206,6 +1303,13 @@ var _ = Describe("ReleaseChannel Controller", func() {
 				},
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image: "cleanup-test:v1",
+					// Both instances have to land in InstanceImages for the stale
+					// entry cleanup to be observable, so they share one batch.
+					Strategy: unleashv1.ReleaseChannelStrategy{MaxParallel: 2},
+					HealthChecks: unleashv1.HealthCheckConfig{
+						Enabled:      true,
+						InitialDelay: &metav1.Duration{Duration: 10 * time.Millisecond},
+					},
 				},
 			}
 

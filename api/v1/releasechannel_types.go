@@ -22,6 +22,15 @@ type ReleaseChannelSpec struct {
 
 	// Rollback defines rollback configuration
 	Rollback RollbackConfig `json:"rollback,omitempty"`
+
+	// AllowDowngrade permits rolling out an image whose version is older than
+	// the one instances already run. Downgrades are refused by default because
+	// an edit to an older or yanked tag is otherwise indistinguishable from an
+	// upgrade, and the rollout would "succeed" onto the bad image. Deliberate
+	// reverts belong in rollback; this is the escape hatch for the rare case
+	// where the older image genuinely is the intended target.
+	// +kubebuilder:default=false
+	AllowDowngrade bool `json:"allowDowngrade,omitempty"`
 }
 
 type ReleaseChannelStrategy struct {
@@ -38,8 +47,11 @@ type ReleaseChannelStrategy struct {
 	// +kubebuilder:default="30s"
 	BatchInterval *metav1.Duration `json:"batchInterval,omitempty"`
 
-	// MaxUpgradeTime defines maximum time to wait for all upgrades to complete
-	// +kubebuilder:default="10m"
+	// MaxUpgradeTime is a hard ceiling on how long a rollout may take. Leave it
+	// unset and the controller derives a budget from the number of batches the
+	// rollout actually has to run and what each batch waits for, so the same
+	// configuration does not mean "generous" for three instances and
+	// "impossible" for sixty-five. Set it to pin an exact limit instead.
 	MaxUpgradeTime *metav1.Duration `json:"maxUpgradeTime,omitempty"`
 }
 
@@ -166,6 +178,22 @@ type ReleaseChannelStatus struct {
 	// ActiveBatch tracks the instances currently being rolled out. A batch remains
 	// active until every instance is ready, connected, and passes health checks.
 	ActiveBatch *ReleaseChannelActiveBatch `json:"activeBatch,omitempty"`
+
+	// ResumeProgress is how many instances were already on the target image the
+	// last time a rollout was resumed after running out of budget. A resume only
+	// happens when that number has grown, so a rollout that is still moving
+	// carries on and one that is genuinely wedged stops.
+	ResumeProgress int `json:"resumeProgress,omitempty"`
+
+	// FailedImage is the image that was being rolled out when the rollout failed.
+	// A rollout that fails is only recoverable if the controller can tell that
+	// the operator has since pointed spec.image somewhere else.
+	FailedImage string `json:"failedImage,omitempty"`
+
+	// LastDeployTime is when instances were last assigned a new image. The health
+	// check settle delay is measured from it so each set of instances waits for
+	// its own pods, rather than inheriting the start time of the whole rollout.
+	LastDeployTime *metav1.Time `json:"lastDeployTime,omitempty"`
 }
 
 // ReleaseChannelPhase represents the current phase of rollout
