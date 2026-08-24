@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	cloud.google.com/go/pubsub v1.51.0
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
@@ -22,7 +23,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.45.0
 	google.golang.org/api v0.292.0
 	google.golang.org/grpc v1.83.0
-	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
+	google.golang.org/protobuf v1.36.12
 	k8s.io/api v0.35.7
 	k8s.io/apimachinery v0.36.3
 	k8s.io/client-go v0.35.7
@@ -39,7 +40,6 @@ require (
 	github.com/Antonboom/testifylint v1.5.2 // indirect
 	github.com/Crocmagnon/fatcontext v0.7.1 // indirect
 	github.com/GaijinEntertainment/go-exhaustruct/v3 v3.3.1 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/alecthomas/go-check-sumtype v0.3.1 // indirect
 	github.com/alingse/nilnesserr v0.1.2 // indirect
 	github.com/bombsimon/wsl/v4 v4.5.0 // indirect
