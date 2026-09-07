@@ -811,7 +811,6 @@
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Bifrost reconciliation",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -820,84 +819,84 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 24,
-                      "height": 4,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-2"
                       },
+                      "height": 4,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 0
                     }
                   },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 4,
-                      "width": 24,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-3"
                       },
+                      "height": 5,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 4
                     }
                   },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 9,
-                      "width": 24,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-4"
                       },
+                      "height": 5,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 9
                     }
                   },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 14,
-                      "width": 24,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-5"
                       },
+                      "height": 5,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 14
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Bifrost reconciliation"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Unleasherator rollout health",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -906,60 +905,61 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 24,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-7"
                       },
+                      "height": 5,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 0
                     }
                   },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 5,
-                      "width": 24,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-8"
                       },
+                      "height": 7,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 5
                     }
                   },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 12,
-                      "width": 24,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-9"
                       },
+                      "height": 7,
                       "repeat": {
+                        "maxPerRow": 4,
                         "mode": "variable",
-                        "value": "tenant",
-                        "maxPerRow": 4
-                      }
+                        "value": "tenant"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 12
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Unleasherator rollout health"
           }
         }
       ]
