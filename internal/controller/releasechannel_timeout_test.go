@@ -363,7 +363,7 @@ func timedOutChannel(t *testing.T, instancesUpToDate, resumeProgress int) (*Rele
 		Spec: unleashv1.ReleaseChannelSpec{
 			Image: unleashv1.UnleashImage(newerImage),
 			Strategy: unleashv1.ReleaseChannelStrategy{
-				MaxUpgradeTime: &metav1.Duration{Duration: releaseChannelLegacyDefaultMaxUpgradeTime},
+				MaxUpgradeTime: &metav1.Duration{Duration: 9 * time.Minute},
 			},
 			Rollback: unleashv1.RollbackConfig{Enabled: false},
 		},
