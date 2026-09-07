@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	cloud.google.com/go/pubsub v1.51.0
-	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golangci/golangci-lint v1.64.8
 	github.com/google/uuid v1.6.0
