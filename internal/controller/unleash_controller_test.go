@@ -49,6 +49,7 @@ func getDeployment(k8sClient client.Client, ctx context.Context, namespacedName 
 }
 
 func setDeploymentStatusFailed(deployment *appsv1.Deployment) {
+	deployment.Status.ObservedGeneration = deployment.Generation
 	deployment.Status.Conditions = []appsv1.DeploymentCondition{
 		{
 			Type:    appsv1.DeploymentProgressing,
@@ -66,6 +67,16 @@ func setDeploymentStatusFailed(deployment *appsv1.Deployment) {
 }
 
 func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
+	deployment.Status.ObservedGeneration = deployment.Generation
+	deployment.Status.Replicas = replicas
+	deployment.Status.UpdatedReplicas = replicas
+	deployment.Status.ReadyReplicas = replicas
+	deployment.Status.AvailableReplicas = replicas
+	deployment.Status.UnavailableReplicas = 0
 	deployment.Status.Conditions = []appsv1.DeploymentCondition{
 		{
 			Type:    appsv1.DeploymentProgressing,
@@ -229,7 +240,7 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
-		It("Should fail if Deployment rollout is not complete", func() {
+		It("Should report a terminal Deployment failure without blocking a worker", func() {
 			ctx := context.Background()
 
 			By("By creating a new Unleash")
@@ -252,8 +263,8 @@ var _ = Describe("Unleash Controller", func() {
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
-				Reason:  "Reconciling",
-				Message: "Deployment rollout timed out after 1s",
+				Reason:  "Failed",
+				Message: "Deployment rollout failed: Progress deadline exceeded.",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 			Expect(createdUnleash.Status.Reconciled).To(BeFalse())
@@ -323,8 +334,8 @@ var _ = Describe("Unleash Controller", func() {
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
-			// Reconciled metric uses "unknown" version because stats is nil during reconcile status update
-			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, "unknown", "none")
+			// Reconciliation now completes after the connection check, so it carries the resolved version.
+			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, UnleashVersion, "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
@@ -411,43 +422,50 @@ var _ = Describe("Unleash Controller", func() {
 			})
 			Expect(k8sClient.Create(ctx, unleash)).Should(Succeed())
 
-			By("By verifying ReleaseChannel controller does NOT interfere during initial creation")
+			By("By verifying the Deployment receives the ReleaseChannel image")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
-			// Wait for initial reconciliation to complete
-			// Use coordinationTimeout because in CI, controller workqueues can get backed up
+			createdDeployment := &appsv1.Deployment{}
 			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
+				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdDeployment); err != nil {
 					return false
 				}
-				return createdUnleash.Status.ResolvedReleaseChannelImage != ""
+				return createdDeployment.Spec.Template.Spec.Containers[0].Image == releaseChannelImage
 			}, coordinationTimeout, interval).Should(BeTrue())
 
-			// In the new status-based architecture, coordination happens through status fields
-			// rather than annotations, so we expect no coordination-related annotations
+			By("By checking that the pending assignment invalidates stale readiness")
+			Eventually(getUnleash, coordinationTimeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "DeploymentProgressing",
+				Message: "Waiting for the current Deployment generation to become available",
+			}))
+			Expect(createdUnleash.Status.Connected).To(BeFalse())
+
+			// Coordination happens through status fields rather than annotations.
 			if createdUnleash.Annotations != nil {
-				// Check that no legacy ReleaseChannel coordination annotations exist
 				for key := range createdUnleash.Annotations {
 					Expect(key).ToNot(ContainSubstring("releasechannel.unleash.nais.io/"),
 						"Legacy ReleaseChannel coordination annotations should not be present")
 				}
 			}
 
-			By("By checking that the Unleash has the resolved ReleaseChannel image in status")
+			By("By faking Deployment status as available")
+			setDeploymentStatusAvailable(createdDeployment)
+			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
+
+			By("By checking that the ready Deployment is reflected in ReleaseChannel status")
 			Eventually(func() string {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
+				if !createdUnleash.Status.Reconciled || !createdUnleash.Status.Connected {
+					return ""
+				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage
-			}, timeout, interval).Should(Equal(releaseChannelImage))
+			}, coordinationTimeout, interval).Should(Equal(releaseChannelImage))
 
 			By("By verifying CustomImage is NOT set during initial creation")
 			Expect(createdUnleash.Spec.CustomImage).Should(BeEmpty(), "CustomImage should not be set during initial creation")
-
-			By("By faking Deployment status as available")
-			createdDeployment := &appsv1.Deployment{}
-			Eventually(getDeployment, timeout, interval).WithArguments(k8sClient, ctx, unleash.NamespacedName(), createdDeployment).Should(Succeed())
-			setDeploymentStatusAvailable(createdDeployment)
-			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
 
 			By("By checking that the deployment uses the ReleaseChannel image")
 			Eventually(func() string {
