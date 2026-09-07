@@ -54,9 +54,8 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	// Speed up tests by setting shorter timeouts for all package-level timeout variables
-	// Keep some timeouts at expected values to match test assertions
-	unleashDeploymentTimeout = time.Second * 1 // Test expects "timed out after 1s"
+	// Speed up tests by setting shorter timeouts for all package-level timing variables.
+	unleashDeploymentRequeueAfter = time.Millisecond * 10
 	unleashControllerRequeueAfter = time.Millisecond * 100
 	unleashConnectionRetryDelay = time.Millisecond * 50
 

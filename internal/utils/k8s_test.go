@@ -7,6 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestRemoveEmptyErrs(t *testing.T) {
@@ -115,7 +116,13 @@ func TestDeploymentIsReady(t *testing.T) {
 		{
 			name: "Deployment is ready",
 			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
+					ObservedGeneration:  2,
+					UpdatedReplicas:     1,
+					ReadyReplicas:       1,
+					AvailableReplicas:   1,
+					UnavailableReplicas: 0,
 					Conditions: []appsv1.DeploymentCondition{
 						{
 							Type:   appsv1.DeploymentProgressing,
@@ -128,9 +135,14 @@ func TestDeploymentIsReady(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "Deployment is not ready",
+			name: "Deployment has stale observed generation",
 			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
+					ObservedGeneration: 1,
+					UpdatedReplicas:    1,
+					ReadyReplicas:      1,
+					AvailableReplicas:  1,
 					Conditions: []appsv1.DeploymentCondition{
 						{
 							Type:   appsv1.DeploymentProgressing,
@@ -145,7 +157,9 @@ func TestDeploymentIsReady(t *testing.T) {
 		{
 			name: "Deployment failed",
 			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
+					ObservedGeneration: 2,
 					Conditions: []appsv1.DeploymentCondition{
 						{
 							Type:   appsv1.DeploymentProgressing,
@@ -158,10 +172,15 @@ func TestDeploymentIsReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "No conditions",
+			name: "Deployment has not updated all replicas",
 			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
-					Conditions: []appsv1.DeploymentCondition{},
+					ObservedGeneration:  2,
+					UpdatedReplicas:     1,
+					ReadyReplicas:       1,
+					AvailableReplicas:   1,
+					UnavailableReplicas: 1,
 				},
 			},
 			expected: false,

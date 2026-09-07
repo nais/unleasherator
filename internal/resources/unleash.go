@@ -598,8 +598,17 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 			return unleash.Status.ResolvedReleaseChannelImage, false, nil
 		}
 
-		// An instance that has never resolved an image has nothing to hold and no
-		// running workload to protect, so the target is safe for it.
+		// An unassigned instance must not take the target during an active
+		// rollout. This includes a first rollout, where PreviousImage is empty:
+		// otherwise every newly reconciled instance bypasses maxParallel.
+		if releaseChannel.Status.Phase != unleashv1.ReleaseChannelPhaseIdle &&
+			releaseChannel.Status.Phase != unleashv1.ReleaseChannelPhaseCompleted {
+			return "", false, fmt.Errorf("ReleaseChannel %s has not assigned an image to %s during %s",
+				releaseChannel.Name, unleash.Name, releaseChannel.Status.Phase)
+		}
+
+		// Outside a rollout an instance that has never resolved an image has
+		// nothing to hold, so the current target is safe.
 		if releaseChannel.Spec.Image != "" {
 			return string(releaseChannel.Spec.Image), false, nil
 		}

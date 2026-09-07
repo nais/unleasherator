@@ -36,12 +36,19 @@ func SecretEnvVar(name, secretName, secretKey string) corev1.EnvVar {
 
 // DeploymentIsReady returns true if the rollout of the given deployment has completed successfully.
 func DeploymentIsReady(deployment *appsv1.Deployment) bool {
-	for _, condition := range deployment.Status.Conditions {
-		if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionTrue && condition.Reason == "NewReplicaSetAvailable" {
-			return true
-		}
+	if deployment.Status.ObservedGeneration < deployment.Generation {
+		return false
 	}
-	return false
+
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
+
+	return deployment.Status.UpdatedReplicas == replicas &&
+		deployment.Status.ReadyReplicas == replicas &&
+		deployment.Status.AvailableReplicas == replicas &&
+		deployment.Status.UnavailableReplicas == 0
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.
