@@ -1,0 +1,109 @@
+{
+  "title": "Nais Tenant Overview",
+  "uid": "nais-tenant-overview",
+  "editable": true,
+  "schemaVersion": 41,
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "label": "Tenant",
+        "type": "datasource",
+        "query": "prometheus",
+        "pluginId": "prometheus",
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": ["atil-metrics", "ldir-metrics", "nav-metrics", "ssb-metrics"],
+          "value": ["PF7D5629ECC453C64", "P73126C2103EBFC69", "P91A6F0B3584B90E7", "PE607B8DC11CE4E99"]
+        },
+        "description": "Select tenants. Panels repeat once per selected Mimir datasource."
+      },
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${tenant}" },
+        "query": "label_values(up, k8s_cluster_name)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": ["prod"], "value": ["prod"] },
+        "description": "Filter by Kubernetes cluster."
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "row", "title": "Bifrost reconciler", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": []
+    },
+    {
+      "id": 2, "type": "stat", "title": "Census age", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "time() - max(bifrost_reconciler_instances_updated_timestamp_seconds{k8s_cluster_name=~\"$cluster\"})", "legendFormat": "{{__field.name}}" }],
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }, { "color": "yellow", "value": 900 }, { "color": "red", "value": 1800 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Managed and unmanaged instances", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 7, "w": 8, "x": 4, "y": 1 },
+      "targets": [
+        { "refId": "A", "expr": "bifrost_reconciler_managed_instances{k8s_cluster_name=~\"$cluster\"}", "legendFormat": "managed" },
+        { "refId": "B", "expr": "bifrost_reconciler_unmanaged_instances{k8s_cluster_name=~\"$cluster\"}", "legendFormat": "unmanaged" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Adoption halted", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "max(bifrost_reconciler_adoption_halted{k8s_cluster_name=~\"$cluster\"})" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "Running", "color": "green" }, "1": { "text": "Halted", "color": "red" } } }] }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Reconciler actions by reason", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 1 },
+      "targets": [{ "refId": "A", "expr": "sum by (action, reason) (rate(bifrost_reconciler_actions_total{k8s_cluster_name=~\"$cluster\"}[5m]))", "legendFormat": "{{action}} / {{reason}}" }],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 6, "type": "row", "title": "Unleasherator rollouts", "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 }, "panels": []
+    },
+    {
+      "id": 7, "type": "stat", "title": "ReleaseChannel health", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 9 },
+      "targets": [{ "refId": "A", "expr": "min(unleasherator_releasechannel_status{k8s_cluster_name=~\"$cluster\"})" }],
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "Failed", "color": "red" }, "0.5": { "text": "Rolling", "color": "yellow" }, "1": { "text": "Healthy", "color": "green" } } }] }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "values": false }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "ReleaseChannel progress", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 7, "w": 8, "x": 4, "y": 9 },
+      "targets": [
+        { "refId": "A", "expr": "sum(unleasherator_releasechannel_instances_up_to_date{k8s_cluster_name=~\"$cluster\"})", "legendFormat": "up to date" },
+        { "refId": "B", "expr": "sum(unleasherator_releasechannel_instances_total{k8s_cluster_name=~\"$cluster\"})", "legendFormat": "total" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Controller workqueue depth", "repeat": "tenant",
+      "datasource": { "type": "prometheus", "uid": "${tenant}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 9 },
+      "targets": [{ "refId": "A", "expr": "max by (name) (workqueue_depth{name=~\".*unleash.*|.*releasechannel.*\", k8s_cluster_name=~\"$cluster\"})", "legendFormat": "{{name}}" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi" } }
+    }
+  ]
+}
