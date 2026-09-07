@@ -301,6 +301,27 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 			expectedImage:        "test:v1.5",
 			releaseChannelExists: true,
 		},
+		{
+			name: "rollback phase takes precedence over break glass",
+			instance: &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-unleash", Namespace: "default"},
+				Spec: unleashv1.UnleashSpec{
+					ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: "test-channel"},
+				},
+			},
+			targetImage: "test:v2",
+			releaseChannel: &unleashv1.ReleaseChannel{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-channel", Namespace: "default"},
+				Spec: unleashv1.ReleaseChannelSpec{
+					Image:           "test:v2",
+					BreakGlassImage: "test:v2",
+					Rollback:       unleashv1.RollbackConfig{PreviousImage: "test:v1.5"},
+				},
+				Status: unleashv1.ReleaseChannelStatus{Phase: unleashv1.ReleaseChannelPhaseRollingBack},
+			},
+			expectedImage:        "test:v1.5",
+			releaseChannelExists: true,
+		},
 	}
 
 	for _, tt := range tests {

@@ -1769,13 +1769,13 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 		return targetImage
 	}
 
-	if breakGlassEnabled(releaseChannel) {
-		return targetImage
-	}
-
 	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack &&
 		releaseChannel.Spec.Rollback.PreviousImage != "" {
 		return releaseChannel.Spec.Rollback.PreviousImage
+	}
+
+	if breakGlassEnabled(releaseChannel) {
+		return targetImage
 	}
 
 	previousImage := string(releaseChannel.Status.PreviousImage)
