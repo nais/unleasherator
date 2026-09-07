@@ -46,9 +46,30 @@ func DeploymentIsReady(deployment *appsv1.Deployment) bool {
 	}
 
 	return deployment.Status.UpdatedReplicas == replicas &&
+		deployment.Status.Replicas == replicas &&
 		deployment.Status.ReadyReplicas == replicas &&
 		deployment.Status.AvailableReplicas == replicas &&
 		deployment.Status.UnavailableReplicas == 0
+}
+
+// DeploymentFailure returns terminal failure reported for the current deployment generation.
+func DeploymentFailure(deployment *appsv1.Deployment) (string, bool) {
+	if deployment.Status.ObservedGeneration < deployment.Generation {
+		return "", false
+	}
+
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == appsv1.DeploymentProgressing &&
+			condition.Status == corev1.ConditionFalse &&
+			condition.Reason == "ProgressDeadlineExceeded" {
+			return condition.Message, true
+		}
+		if condition.Type == appsv1.DeploymentReplicaFailure && condition.Status == corev1.ConditionTrue {
+			return condition.Message, true
+		}
+	}
+
+	return "", false
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.

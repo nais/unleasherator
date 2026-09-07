@@ -340,6 +340,13 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return ctrl.Result{}, err
 	}
+	if failureReason, failed := r.deploymentFailure(ctx, req.NamespacedName); failed {
+		failure := fmt.Errorf("deployment reported failure: %s", failureReason)
+		if err := r.updateStatusReconcileFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+	}
 	if !ready {
 		if err := r.updateStatusReconcileProgressing(ctx, unleash); err != nil {
 			return ctrl.Result{}, err
@@ -862,7 +869,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: unleashDeploymentRequeueAfter}, nil
 	} else if getErr != nil {
 		log.Error(getErr, "Failed to get Deployment")
 		return ctrl.Result{}, getErr
@@ -877,7 +884,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: unleashDeploymentRequeueAfter}, nil
 	} else {
 		log.Info("Skip reconcile: Deployment already up to date", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 		return ctrl.Result{}, nil
@@ -929,6 +936,15 @@ func (r *UnleashReconciler) deploymentIsReady(ctx context.Context, key types.Nam
 	}
 
 	return utils.DeploymentIsReady(deployment), nil
+}
+
+func (r *UnleashReconciler) deploymentFailure(ctx context.Context, key types.NamespacedName) (string, bool) {
+	deployment := &appsv1.Deployment{}
+	if err := r.Client.Get(ctx, key, deployment); err != nil {
+		return "", false
+	}
+
+	return utils.DeploymentFailure(deployment)
 }
 
 // testConnection tests the connection to the Unleash instance with a single attempt.

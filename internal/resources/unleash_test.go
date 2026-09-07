@@ -619,19 +619,9 @@ func TestResolveReleaseChannelImageHoldsUntrackedInstances(t *testing.T) {
 		})
 	}
 
-	t.Run("an instance that never resolved an image still gets the target", func(t *testing.T) {
-		k8sClient := fake.NewClientBuilder().
-			WithScheme(testScheme).
-			WithObjects(newChannel(unleashv1.ReleaseChannelPhaseIdle)).
-			Build()
-
-		image, modified, err := ResolveReleaseChannelImage(context.Background(), k8sClient, newInstance(""))
-		assert.NoError(t, err)
-		assert.False(t, modified)
-		assert.Equal(t, "test:v2", image)
-	})
-
 	for _, phase := range []unleashv1.ReleaseChannelPhase{
+		unleashv1.ReleaseChannelPhaseIdle,
+		unleashv1.ReleaseChannelPhaseCompleted,
 		unleashv1.ReleaseChannelPhaseValidating,
 		unleashv1.ReleaseChannelPhaseCanary,
 		unleashv1.ReleaseChannelPhaseRolling,

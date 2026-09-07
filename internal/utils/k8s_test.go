@@ -119,6 +119,7 @@ func TestDeploymentIsReady(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
 					ObservedGeneration:  2,
+					Replicas:            1,
 					UpdatedReplicas:     1,
 					ReadyReplicas:       1,
 					AvailableReplicas:   1,
@@ -140,6 +141,7 @@ func TestDeploymentIsReady(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
 					ObservedGeneration: 1,
+					Replicas:           1,
 					UpdatedReplicas:    1,
 					ReadyReplicas:      1,
 					AvailableReplicas:  1,
@@ -160,6 +162,7 @@ func TestDeploymentIsReady(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
 					ObservedGeneration: 2,
+					Replicas:           1,
 					Conditions: []appsv1.DeploymentCondition{
 						{
 							Type:   appsv1.DeploymentProgressing,
@@ -177,6 +180,7 @@ func TestDeploymentIsReady(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: appsv1.DeploymentStatus{
 					ObservedGeneration:  2,
+					Replicas:            2,
 					UpdatedReplicas:     1,
 					ReadyReplicas:       1,
 					AvailableReplicas:   1,
@@ -192,6 +196,55 @@ func TestDeploymentIsReady(t *testing.T) {
 			got := DeploymentIsReady(tt.deployment)
 			if got != tt.expected {
 				t.Errorf("DeploymentIsReady() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDeploymentFailure(t *testing.T) {
+	tests := []struct {
+		name       string
+		deployment *appsv1.Deployment
+		expected   bool
+	}{
+		{
+			name: "progress deadline for current generation",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status: appsv1.DeploymentStatus{
+					ObservedGeneration: 2,
+					Conditions: []appsv1.DeploymentCondition{{
+						Type:    appsv1.DeploymentProgressing,
+						Status:  corev1.ConditionFalse,
+						Reason:  "ProgressDeadlineExceeded",
+						Message: "progress deadline exceeded",
+					}},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "failure from stale generation",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status: appsv1.DeploymentStatus{
+					ObservedGeneration: 1,
+					Conditions: []appsv1.DeploymentCondition{{
+						Type:   appsv1.DeploymentProgressing,
+						Status: corev1.ConditionFalse,
+						Reason: "ProgressDeadlineExceeded",
+					}},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := DeploymentFailure(tt.deployment)
+			if got != tt.expected {
+				t.Errorf("DeploymentFailure() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

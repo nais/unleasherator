@@ -49,6 +49,7 @@ func getDeployment(k8sClient client.Client, ctx context.Context, namespacedName 
 }
 
 func setDeploymentStatusFailed(deployment *appsv1.Deployment) {
+	deployment.Status.ObservedGeneration = deployment.Generation
 	deployment.Status.Conditions = []appsv1.DeploymentCondition{
 		{
 			Type:    appsv1.DeploymentProgressing,
@@ -238,7 +239,7 @@ var _ = Describe("Unleash Controller", func() {
 			Expect(k8sClient.Delete(ctx, createdUnleash)).Should(Succeed())
 		})
 
-		It("Should report a progressing Deployment without blocking a worker", func() {
+		It("Should report a terminal Deployment failure without blocking a worker", func() {
 			ctx := context.Background()
 
 			By("By creating a new Unleash")
@@ -256,13 +257,13 @@ var _ = Describe("Unleash Controller", func() {
 			setDeploymentStatusFailed(createdDeployment)
 			Expect(k8sClient.Status().Update(ctx, createdDeployment)).Should(Succeed())
 
-			By("By checking that Unleash is progressing")
+			By("By checking that Unleash is failed")
 			createdUnleash := &unleashv1.Unleash{ObjectMeta: unleash.ObjectMeta}
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "DeploymentProgressing",
-				Message: "Waiting for the current Deployment generation to become available",
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: "Deployment rollout failed: Progress deadline exceeded.",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
 			Expect(createdUnleash.Status.Reconciled).To(BeFalse())
