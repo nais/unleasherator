@@ -95,7 +95,7 @@ var (
 			Name: "unleasherator_releasechannel_status",
 			Help: "Status of ReleaseChannel resources (1=healthy, 0.5=in-progress, 0=failed)",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelInstances = prometheus.NewGaugeVec(
@@ -103,7 +103,7 @@ var (
 			Name: "unleasherator_releasechannel_instances_total",
 			Help: "Total number of Unleash instances managed by ReleaseChannel",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelInstancesUpToDate = prometheus.NewGaugeVec(
@@ -111,7 +111,7 @@ var (
 			Name: "unleasherator_releasechannel_instances_up_to_date",
 			Help: "Number of Unleash instances running the target image",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelRollouts = prometheus.NewCounterVec(
@@ -119,7 +119,7 @@ var (
 			Name: "unleasherator_releasechannel_rollouts_total",
 			Help: "Total number of ReleaseChannel rollout events",
 		},
-		[]string{"namespace", "name", "result"},
+		[]string{"resource_namespace", "name", "result"},
 	)
 
 	releaseChannelRolloutDuration = prometheus.NewHistogramVec(
@@ -128,7 +128,7 @@ var (
 			Help:    "Duration of ReleaseChannel rollouts in seconds",
 			Buckets: prometheus.ExponentialBuckets(1, 2, 10), // 1s to ~17 minutes
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelConflicts = prometheus.NewCounterVec(
@@ -136,7 +136,7 @@ var (
 			Name: "unleasherator_releasechannel_conflicts_total",
 			Help: "Total number of resource conflicts encountered during rollouts",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelTransientRetries = prometheus.NewCounterVec(
@@ -144,7 +144,7 @@ var (
 			Name: "unleasherator_releasechannel_transient_retries_total",
 			Help: "Total number of automatic retries for transient failures",
 		},
-		[]string{"namespace", "name"},
+		[]string{"resource_namespace", "name"},
 	)
 
 	releaseChannelPhaseTransitions = prometheus.NewCounterVec(
@@ -152,7 +152,7 @@ var (
 			Name: "unleasherator_releasechannel_phase_transitions_total",
 			Help: "Total number of phase transitions for ReleaseChannels",
 		},
-		[]string{"namespace", "name", "phase"},
+		[]string{"resource_namespace", "name", "phase"},
 	)
 
 	releaseChannelHealthChecks = prometheus.NewCounterVec(
@@ -160,7 +160,7 @@ var (
 			Name: "unleasherator_releasechannel_health_checks_total",
 			Help: "Total number of health check attempts",
 		},
-		[]string{"namespace", "name", "result"},
+		[]string{"resource_namespace", "name", "result"},
 	)
 )
 

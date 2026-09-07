@@ -39,9 +39,9 @@ spec:
           for: {{ $alerts.failed.for }}
           labels:
             severity: {{ $alerts.failed.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
+            summary: "ApiToken {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} is in failed state"
             consequence: "Applications depending on this API token will not be able to authenticate with Unleash. Feature flag evaluations may fail or return defaults."
             action: "Check Unleasherator logs for token creation errors. Verify the target Unleash instance is accessible and the admin token has sufficient permissions."
             runbook_url: {{ $at.runbookUrl | quote }}
@@ -51,13 +51,13 @@ spec:
         - alert: ApiTokenNotCreated
           expr: |
             unleasherator_apitoken_status{status="Created"} == 0
-            unless on(namespace, name) unleasherator_apitoken_status{status="Failed"} == 1
+            unless on(resource_namespace, name) unleasherator_apitoken_status{status="Failed"} == 1
           for: {{ $alerts.notCreated.for }}
           labels:
             severity: {{ $alerts.notCreated.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} not created"
+            summary: "ApiToken {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} not created"
             consequence: "The API token has not been provisioned. Applications waiting for this token cannot connect to Unleash."
             action: "Check if the ApiToken CR is valid and the referenced Unleash instance exists. Review controller logs for pending operations."
             runbook_url: {{ $at.runbookUrl | quote }}
@@ -68,16 +68,16 @@ spec:
         - alert: ApiTokenHighChurn
           expr: |
             (
-              sum by (namespace, name) (rate(unleasherator_apitoken_created_total[15m]))
+              sum by (resource_namespace, name) (rate(unleasherator_apitoken_created_total[15m]))
               +
-              sum by (namespace, name) (rate(unleasherator_apitoken_deleted_total[15m]))
+              sum by (resource_namespace, name) (rate(unleasherator_apitoken_deleted_total[15m]))
             ) > {{ $alerts.highChurn.threshold }}
           for: {{ $alerts.highChurn.for }}
           labels:
             severity: {{ $alerts.highChurn.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanize {{ "}}" }} token operations/sec"
+            summary: "ApiToken {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value | humanize {{ "}}" }} token operations/sec"
             consequence: "Tokens are being created and deleted rapidly. This may cause authentication failures for applications and unnecessary load on Unleash."
             action: "Check for reconciliation loops, competing controllers, or misconfigured ApiToken specs. Review controller logs for repeated create/delete operations."
             runbook_url: {{ $at.runbookUrl | quote }}
@@ -91,9 +91,9 @@ spec:
           for: {{ $alerts.excessiveTokens.for }}
           labels:
             severity: {{ $alerts.excessiveTokens.severity }}
-            namespace: "{{ "{{" }} $labels.exported_namespace {{ "}}" }}"
+            namespace: "{{ "{{" }} $labels.resource_namespace {{ "}}" }}"
           annotations:
-            summary: "ApiToken {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} tokens in {{ "{{" }} $labels.environment {{ "}}" }}"
+            summary: "ApiToken {{ "{{" }} $labels.resource_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} has {{ "{{" }} $value {{ "}}" }} tokens in {{ "{{" }} $labels.environment {{ "}}" }}"
             consequence: "An unexpectedly high number of tokens exist for this environment. This may indicate token cleanup issues or duplicate token creation."
             action: "Review existing tokens in Unleash for this environment. Check if old tokens should be cleaned up or if the threshold should be adjusted."
             runbook_url: {{ $at.runbookUrl | quote }}
