@@ -125,6 +125,95 @@ func TestClearedInstanceStatusDoesNotBypassBatching(t *testing.T) {
 		"clearing instance status must not push the target image to the whole fleet at once")
 }
 
+func TestBreakGlassAssignsTargetToEntireFleet(t *testing.T) {
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:           unleashv1.UnleashImage(newerImage),
+			BreakGlassImage: unleashv1.UnleashImage(newerImage),
+			Strategy:        unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase: unleashv1.ReleaseChannelPhaseIdle,
+		},
+	}
+
+	updated := runIdleThenRolling(t, releaseChannel, newUnresolvedFleet(3))
+
+	assert.Len(t, updated.Status.InstanceImages, 3)
+	for _, image := range updated.Status.InstanceImages {
+		assert.Equal(t, newerImage, image)
+	}
+	require.NotNil(t, updated.Status.ActiveBatch)
+	assert.Len(t, updated.Status.ActiveBatch.InstanceNames, 3)
+}
+
+func TestBreakGlassReplacesActiveBatch(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:           unleashv1.UnleashImage(newerImage),
+			BreakGlassImage: unleashv1.UnleashImage(newerImage),
+			Strategy:        unleashv1.ReleaseChannelStrategy{MaxParallel: 1},
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase: unleashv1.ReleaseChannelPhaseRolling,
+			InstanceImages: map[string]string{
+				"instance-0": deployedImage,
+				"instance-1": deployedImage,
+				"instance-2": deployedImage,
+			},
+			ActiveBatch: &unleashv1.ReleaseChannelActiveBatch{
+				InstanceNames: []string{"instance-0"},
+				TargetImage:   deployedImage,
+				StartTime:     metav1.Now(),
+			},
+		},
+	}
+	instances := newUnresolvedFleet(3)
+	objects := []client.Object{releaseChannel}
+	for i := range instances {
+		objects = append(objects, &instances[i])
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.executeRollingPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	assert.Len(t, updated.Status.InstanceImages, 3)
+	for _, image := range updated.Status.InstanceImages {
+		assert.Equal(t, newerImage, image)
+	}
+	require.NotNil(t, updated.Status.ActiveBatch)
+	assert.Len(t, updated.Status.ActiveBatch.InstanceNames, 3)
+	assert.Equal(t, newerImage, updated.Status.ActiveBatch.TargetImage)
+}
+
+func TestBreakGlassDoesNotPermitDowngrade(t *testing.T) {
+	releaseChannel, instance := newDowngradeFixture(olderImage, false)
+	releaseChannel.Spec.BreakGlassImage = unleashv1.UnleashImage(olderImage)
+
+	updated := runIdleThenRolling(t, releaseChannel, []unleashv1.Unleash{*instance})
+
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"downgrade protection refuses the rollout and returns the channel to Idle")
+	assert.NotEqual(t, olderImage, updated.Status.InstanceImages[instance.Name])
+}
+
 func TestUpToDateInstancesAreAdoptedIntoInstanceImages(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, unleashv1.AddToScheme(scheme))

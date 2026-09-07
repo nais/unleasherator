@@ -69,6 +69,15 @@ spec:
                   reverts belong in rollback; this is the escape hatch for the rare case
                   where the older image genuinely is the intended target.
                 type: boolean
+              breakGlassImage:
+                description: |-
+                  BreakGlassImage assigns this exact target image to every remaining
+                  instance immediately, bypassing canary, maxParallel, batch interval, and
+                  health gates between assignments. Readiness and health status are still
+                  observed after assignment. The value must equal spec.image, which binds
+                  the emergency approval to one image and prevents it carrying into the
+                  next rollout. Clear it after the fleet has recovered.
+                type: string
               healthChecks:
                 description: HealthChecks defines health validation configuration
                 properties:

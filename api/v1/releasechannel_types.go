@@ -31,6 +31,14 @@ type ReleaseChannelSpec struct {
 	// where the older image genuinely is the intended target.
 	// +kubebuilder:default=false
 	AllowDowngrade bool `json:"allowDowngrade,omitempty"`
+
+	// BreakGlassImage assigns this exact target image to every remaining
+	// instance immediately, bypassing canary, maxParallel, batch interval, and
+	// health gates between assignments. Readiness and health status are still
+	// observed after assignment. The value must equal spec.image, which binds
+	// the emergency approval to one image and prevents it carrying into the
+	// next rollout. Clear it after the fleet has recovered.
+	BreakGlassImage UnleashImage `json:"breakGlassImage,omitempty"`
 }
 
 type ReleaseChannelStrategy struct {
@@ -289,7 +297,8 @@ func (rc *ReleaseChannel) ValidateUpdate(old runtime.Object) error {
 	if oldRC.Status.Phase != ReleaseChannelPhaseIdle &&
 		oldRC.Status.Phase != ReleaseChannelPhaseCompleted &&
 		oldRC.Status.Phase != ReleaseChannelPhaseFailed &&
-		rc.Spec.Image != oldRC.Spec.Image {
+		rc.Spec.Image != oldRC.Spec.Image &&
+		(rc.Spec.BreakGlassImage == "" || rc.Spec.BreakGlassImage != rc.Spec.Image) {
 		return fmt.Errorf("cannot change image during active rollout (current phase: %s)", oldRC.Status.Phase)
 	}
 
@@ -315,6 +324,10 @@ func (rc *ReleaseChannel) validate() error {
 	// Validate image format (basic validation)
 	if string(rc.Spec.Image) == "" {
 		return fmt.Errorf("image cannot be empty")
+	}
+
+	if rc.Spec.BreakGlassImage != "" && rc.Spec.BreakGlassImage != rc.Spec.Image {
+		return fmt.Errorf("breakGlassImage must equal image")
 	}
 
 	// Validate maxParallel bounds

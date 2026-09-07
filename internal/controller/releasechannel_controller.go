@@ -40,6 +40,9 @@ const (
 	// upgradeTimeoutReasonPrefix opens every failure reason written when the
 	// upgrade budget runs out, and is how that cause is recognised later.
 	upgradeTimeoutReasonPrefix = "Rollout exceeded maxUpgradeTime"
+	// releaseChannelReconciliationAllowance leaves room for one normal
+	// controller wake-up per batch and one final completion observation.
+	releaseChannelReconciliationAllowance = 30 * time.Second
 )
 
 var (
@@ -662,6 +665,24 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 	// timeout — releasePhaseOnFailure sends those to RollingBack, which is the
 	// behaviour they asked for.
 	if isUpgradeTimeout(releaseChannel.Status.FailureReason) {
+		if releaseChannel.Status.StartTime != nil {
+			if exceeded, _ := r.checkMaxUpgradeTimeExceeded(releaseChannel); !exceeded {
+				log.Info("Resuming rollout after upgrade budget was increased",
+					"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
+					"previousFailure", releaseChannel.Status.FailureReason)
+				r.Recorder.Event(releaseChannel, "Normal", "RolloutBudgetIncreased",
+					"Resuming rollout because spec.strategy.maxUpgradeTime now exceeds the elapsed rollout time")
+				r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseIdle)
+				releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+				releaseChannel.Status.FailureReason = ""
+				releaseChannel.Status.FailedImage = ""
+				releaseChannel.Status.RetryCount = 0
+				releaseChannel.Status.LastFailureTime = nil
+				releaseChannel.Status.StartTime = nil
+				return r.updateReleaseChannelStatus(ctx, releaseChannel)
+			}
+		}
+
 		if releaseChannel.Status.InstancesUpToDate > releaseChannel.Status.ResumeProgress {
 			log.Info("Resuming rollout that ran out of budget but is still progressing",
 				"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
@@ -910,18 +931,6 @@ func (r *ReleaseChannelReconciler) executeValidatingPhase(ctx context.Context, r
 func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing canary phase")
 
-	// Check if we've exceeded maxUpgradeTime
-	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
-		budget, derivation := upgradeTimeBudget(releaseChannel)
-		log.Info("Canary phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
-		newPhase := releasePhaseOnFailure(releaseChannel)
-		r.recordPhaseTransition(releaseChannel, newPhase)
-		releaseChannel.Status.Phase = newPhase
-		releaseChannel.Status.FailureReason = reason
-		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
-		return r.updateReleaseChannelStatus(ctx, releaseChannel)
-	}
-
 	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
 	if err != nil {
 		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
@@ -933,9 +942,30 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 		return result, err
 	}
 
+	// Break glass bypasses the timeout only until every pending assignment is made.
+	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded && !breakGlassAssignmentsNeeded(targetInstances, releaseChannel) {
+		budget, derivation := upgradeTimeBudget(releaseChannel)
+		log.Info("Canary phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
+		newPhase := releasePhaseOnFailure(releaseChannel)
+		r.recordPhaseTransition(releaseChannel, newPhase)
+		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.FailureReason = reason
+		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
 	// Check for target image changes during canary phase and track previous image
 	if _, err := r.ensurePreviousImageTracked(ctx, releaseChannel, targetInstances, log); err != nil {
 		return ctrl.Result{RequeueAfter: releaseChannelErrorRetryDelay}, err
+	}
+
+	if breakGlassAssignmentsNeeded(targetInstances, releaseChannel) {
+		log.Info("Break-glass rollout requested during canary; assigning target image to every remaining instance",
+			"targetImage", releaseChannel.Spec.Image,
+			"instances", len(targetInstances))
+		r.Recorder.Event(releaseChannel, "Warning", "BreakGlassRollout",
+			fmt.Sprintf("Assigning %s to all %d instances without progressive rollout gates", releaseChannel.Spec.Image, len(targetInstances)))
+		return r.deployToInstances(ctx, releaseChannel, targetInstances, log)
 	}
 
 	// Identify canary instances
@@ -1021,19 +1051,6 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, releaseChannel *unleashv1.ReleaseChannel, log logr.Logger) (ctrl.Result, error) {
 	log.Info("Executing rolling phase")
 
-	// Check if we've exceeded maxUpgradeTime
-	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded {
-		budget, derivation := upgradeTimeBudget(releaseChannel)
-		log.Info("Rolling phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
-		newPhase := releasePhaseOnFailure(releaseChannel)
-		r.recordPhaseTransition(releaseChannel, newPhase)
-		releaseChannel.Status.Phase = newPhase
-		releaseChannel.Status.ActiveBatch = nil
-		releaseChannel.Status.FailureReason = reason
-		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
-		return r.updateReleaseChannelStatus(ctx, releaseChannel)
-	}
-
 	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
 	if err != nil {
 		newPhase := unleashv1.ReleaseChannelPhaseFailed
@@ -1054,6 +1071,19 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		return result, err
 	}
 
+	// Break glass bypasses the timeout only until every pending assignment is made.
+	if exceeded, reason := r.checkMaxUpgradeTimeExceeded(releaseChannel); exceeded && !breakGlassAssignmentsNeeded(targetInstances, releaseChannel) {
+		budget, derivation := upgradeTimeBudget(releaseChannel)
+		log.Info("Rolling phase exceeded maxUpgradeTime", "reason", reason, "budget", budget, "derivation", derivation)
+		newPhase := releasePhaseOnFailure(releaseChannel)
+		r.recordPhaseTransition(releaseChannel, newPhase)
+		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.ActiveBatch = nil
+		releaseChannel.Status.FailureReason = reason
+		r.Recorder.Event(releaseChannel, "Warning", "RolloutTimeout", reason)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
 	// A rollout that starts here rather than in Idle still needs a rollback
 	// baseline. spec.image can change while the channel is already Rolling — a
 	// first deploy now runs through this phase, and it holds the channel until
@@ -1062,6 +1092,15 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	// so calling this once a batch has moved on is a no-op.
 	if _, err := r.ensurePreviousImageTracked(ctx, releaseChannel, targetInstances, log); err != nil {
 		return ctrl.Result{RequeueAfter: releaseChannelErrorRetryDelay}, err
+	}
+
+	if breakGlassAssignmentsNeeded(targetInstances, releaseChannel) {
+		log.Info("Break-glass rollout requested; assigning target image to every remaining instance",
+			"targetImage", releaseChannel.Spec.Image,
+			"instances", len(targetInstances))
+		r.Recorder.Event(releaseChannel, "Warning", "BreakGlassRollout",
+			fmt.Sprintf("Assigning %s to all %d instances without rollout gates", releaseChannel.Spec.Image, len(targetInstances)))
+		return r.deployToInstances(ctx, releaseChannel, targetInstances, log)
 	}
 
 	if releaseChannel.Status.ActiveBatch == nil {
@@ -1544,6 +1583,24 @@ func activeBatchInstances(instances []unleashv1.Unleash, batch *unleashv1.Releas
 	return active
 }
 
+func breakGlassEnabled(releaseChannel *unleashv1.ReleaseChannel) bool {
+	return releaseChannel.Spec.BreakGlassImage != "" &&
+		releaseChannel.Spec.BreakGlassImage == releaseChannel.Spec.Image
+}
+
+func breakGlassAssignmentsNeeded(instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) bool {
+	if !breakGlassEnabled(releaseChannel) {
+		return false
+	}
+	targetImage := string(releaseChannel.Spec.Image)
+	for _, instance := range instances {
+		if releaseChannel.Status.InstanceImages[instance.Name] != targetImage {
+			return true
+		}
+	}
+	return false
+}
+
 // recoverActiveBatch preserves rollout safety when upgrading from a controller
 // version that assigned InstanceImages before ActiveBatch existed.
 func recoverActiveBatch(instances []unleashv1.Unleash, releaseChannel *unleashv1.ReleaseChannel) *unleashv1.ReleaseChannelActiveBatch {
@@ -1601,7 +1658,8 @@ func (r *ReleaseChannelReconciler) deployToInstances(ctx context.Context, releas
 		if fresh.Status.LastTargetImages == nil {
 			fresh.Status.LastTargetImages = make(map[string]string)
 		}
-		if fresh.Status.Phase == unleashv1.ReleaseChannelPhaseRolling && fresh.Status.ActiveBatch == nil {
+		if fresh.Status.Phase == unleashv1.ReleaseChannelPhaseRolling &&
+			(fresh.Status.ActiveBatch == nil || breakGlassEnabled(fresh)) {
 			instanceNames := make([]string, 0, len(instances))
 			for _, instance := range instances {
 				instanceNames = append(instanceNames, instance.Name)
@@ -1714,6 +1772,10 @@ func (r *ReleaseChannelReconciler) getExpectedImageForInstance(ctx context.Conte
 	if releaseChannel.Status.Phase == unleashv1.ReleaseChannelPhaseRollingBack &&
 		releaseChannel.Spec.Rollback.PreviousImage != "" {
 		return releaseChannel.Spec.Rollback.PreviousImage
+	}
+
+	if breakGlassEnabled(releaseChannel) {
+		return targetImage
 	}
 
 	previousImage := string(releaseChannel.Status.PreviousImage)
@@ -2059,7 +2121,12 @@ func upgradeTimeBudget(releaseChannel *unleashv1.ReleaseChannel) (time.Duration,
 	batches := (instances + maxParallel - 1) / maxParallel
 
 	allowance := batchAllowance(releaseChannel)
-	budget := time.Duration(batches) * allowance
+	// Every batch needs at least one controller wake-up after its nominal
+	// allowance, and the rollout needs one final wake-up to observe completion.
+	// Without this control-plane margin a healthy rollout can exceed an exact
+	// N*allowance boundary by a second and fail before completion is recorded.
+	reconciliationAllowance := time.Duration(batches+1) * releaseChannelReconciliationAllowance
+	budget := time.Duration(batches)*allowance + reconciliationAllowance
 
 	if budget < releaseChannelDefaultMaxUpgradeTime {
 		budget = releaseChannelDefaultMaxUpgradeTime
@@ -2068,8 +2135,8 @@ func upgradeTimeBudget(releaseChannel *unleashv1.ReleaseChannel) (time.Duration,
 		budget = releaseChannelMaxDerivedUpgradeTime
 	}
 
-	derivation := fmt.Sprintf("derived from %d batch(es) of %s for %d instance(s) at maxParallel %d, capped at %s",
-		batches, allowance, instances, maxParallel, releaseChannelMaxDerivedUpgradeTime)
+	derivation := fmt.Sprintf("derived from %d batch(es) of %s plus %s reconciliation allowance for %d instance(s) at maxParallel %d, capped at %s",
+		batches, allowance, reconciliationAllowance, instances, maxParallel, releaseChannelMaxDerivedUpgradeTime)
 	if legacyDefault {
 		derivation += fmt.Sprintf("; the stored %s came from a removed CRD default and was treated as unset", releaseChannelLegacyDefaultMaxUpgradeTime)
 	}

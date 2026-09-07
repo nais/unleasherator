@@ -156,6 +156,70 @@ spec:
 
 The manual override takes precedence, but the ReleaseChannel connection is preserved for when you remove the override.
 
+### Break-glass roll-forward
+
+Use `spec.breakGlassImage` only when waiting for canaries, batches, or health
+gates causes more harm than deploying a known-good image immediately. The
+controller assigns the image to every remaining instance in the first assignment
+reconciliation. It continues to report readiness and health after assignment,
+but it does not wait for one batch before assigning the next. Break glass also
+ignores `maxUpgradeTime` while assignments are being made; it does not disable
+readiness or configured health checks after assignment.
+
+`breakGlassImage` must exactly match `spec.image`. This binds the override to one
+image and prevents it from applying to a later release. Downgrade protection
+remains active; add `allowDowngrade: true` only when the emergency target is
+older than the image most instances run.
+
+Before using break glass:
+
+1. Confirm the target image exists and is signed.
+2. Confirm required environment variables, secrets, service accounts, and
+   network policies are present on every target instance.
+3. Record the current image and `status.previousImage`.
+4. Have another maintainer approve the command and monitor the rollout.
+
+Assign a new image to the whole channel immediately:
+
+```bash
+namespace=bifrost-unleash
+channel=stable-v7
+image=europe-north1-docker.pkg.dev/nais-io/nais/images/nais-unleash:v7-7.5.1-example
+
+kubectl patch releasechannel "$channel" -n "$namespace" --type=merge \
+  -p "{\"spec\":{\"image\":\"$image\",\"breakGlassImage\":\"$image\"}}"
+```
+
+For an intentional downgrade, include the separate downgrade acknowledgement:
+
+```bash
+kubectl patch releasechannel "$channel" -n "$namespace" --type=merge \
+  -p "{\"spec\":{\"image\":\"$image\",\"breakGlassImage\":\"$image\",\"allowDowngrade\":true}}"
+```
+
+Monitor assignments and availability until all instances report the target:
+
+```bash
+kubectl get releasechannel "$channel" -n "$namespace" -w
+kubectl get unleash -n "$namespace" \
+  -o custom-columns=NAME:.metadata.name,IMAGE:.status.resolvedReleaseChannelImage,READY:.status.reconciled,CONNECTED:.status.connected
+```
+
+Clear the override as soon as the fleet has recovered. Also restore
+`allowDowngrade` if it was enabled:
+
+```bash
+kubectl patch releasechannel "$channel" -n "$namespace" --type=json \
+  -p='[
+    {"op":"remove","path":"/spec/breakGlassImage"},
+    {"op":"replace","path":"/spec/allowDowngrade","value":false}
+  ]'
+```
+
+If `allowDowngrade` was absent before the incident, omit the second operation.
+Do not edit `status.instanceImages` directly. The controller owns that map and
+will overwrite manual status changes.
+
 ## kubectl Apply Safety
 
 One of the key benefits of ReleaseChannels is protection against accidental configuration loss during `kubectl apply` operations.
@@ -329,6 +393,18 @@ kubectl get unleash -l releaseChannel=beta
 kubectl patch releasechannel stable --type='merge' -p='{\"spec\":{\"image\":\"quay.io/unleash/unleash-server:6.4.0\"}}'
 ```
 
+For changes that introduce a required dependency or credential, deploy
+compatibility in separate releases:
+
+1. Provision the new environment variables, secrets, and network policies while
+   the old application still ignores them.
+2. Verify those resources across the full fleet.
+3. Roll out an application version that can use the new dependency.
+4. Remove the old path only after every instance is healthy on the new version.
+
+Never merge the provisioning and mandatory-consumer changes into a rollout that
+can reach production in either order.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -424,8 +500,10 @@ limit nobody configured.
 When `spec.strategy.maxUpgradeTime` is unset the budget is derived from the work
 the rollout actually has to do: `ceil(instances / maxParallel)` batches, each
 allowed `healthChecks.initialDelay + healthChecks.timeout + strategy.batchInterval`
-(6 minutes on the defaults). A flat wall clock is generous for three instances and
-impossible for sixty-five, which is why it scales.
+(6 minutes on the defaults). The controller adds 30 seconds per batch and one
+final 30-second allowance for reconciliation and completion observation. A
+three-instance rollout with `maxParallel: 1` therefore gets 20 minutes rather
+than failing at the exact 18-minute batch boundary.
 
 The derivation is floored at 10 minutes so small fleets never get less budget than
 before, and capped at 2 hours so a wedged rollout is still caught rather than
@@ -447,6 +525,10 @@ that advances no instance at all stops. Channels with `spec.rollback.enabled` an
 a known baseline roll back on a timeout instead, which is what that setting asks
 for.
 
+Increasing `spec.strategy.maxUpgradeTime` beyond the elapsed rollout time also
+restarts a channel that already stopped in `Failed`. This makes the override
+named in the failure message an effective recovery action.
+
 **Solutions:**
 
 1. See what the rollout was given and why:
@@ -455,7 +537,7 @@ for.
    kubectl get releasechannel stable -o jsonpath='{.status.failureReason}'
    ```
 
-2. Raise `maxParallel` — fewer batches means a larger budget and a faster rollout:
+2. Raise `maxParallel` to reduce the number of batches and rollout duration:
 
    ```bash
    kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxParallel":5}}}'
@@ -466,6 +548,11 @@ for.
    ```bash
    kubectl patch releasechannel stable --type='merge' -p='{"spec":{"strategy":{"maxUpgradeTime":"3h"}}}'
    ```
+
+For managed tenants, set the matching per-version `maxUpgradeTime` Fasit value
+instead of patching the resource directly. Fasit preserves the override across
+chart reconciliations and provides the audit trail. Clear the value after the
+rollout completes to return to the derived default.
 
 #### Rollout Cannot Be Rolled Back
 
