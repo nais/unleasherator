@@ -57,7 +57,7 @@
         "description": "",
         "id": 2,
         "links": [],
-        "title": "Census age",
+        "title": "Census age (${tenant})",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -160,7 +160,7 @@
         "description": "",
         "id": 3,
         "links": [],
-        "title": "Managed and unmanaged instances",
+        "title": "Instances mngmt (${tenant})",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -276,7 +276,7 @@
         "description": "",
         "id": 4,
         "links": [],
-        "title": "Adoption halted",
+        "title": "Adoption (${tenant})",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -370,7 +370,7 @@
         "description": "",
         "id": 5,
         "links": [],
-        "title": "Reconciler actions by reason",
+        "title": "Reconciler (${tenant})",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -486,7 +486,7 @@
         "description": "",
         "id": 7,
         "links": [],
-        "title": "ReleaseChannel health",
+        "title": "ReleaseChannel (${tenant})",
         "vizConfig": {
           "group": "stat",
           "kind": "VizConfig",
@@ -603,7 +603,7 @@
         "description": "",
         "id": 8,
         "links": [],
-        "title": "ReleaseChannel progress",
+        "title": "ReleaseChannel (${tenant})",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -720,7 +720,7 @@
         "description": "",
         "id": 9,
         "links": [],
-        "title": "Controller workqueue depth",
+        "title": "Workqueue depth (${tenant})",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -811,6 +811,7 @@
         {
           "kind": "RowsLayoutRow",
           "spec": {
+            "title": "Bifrost reconciliation",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -819,126 +820,84 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 24,
+                      "height": 4,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-2"
                       },
-                      "height": 5,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
-                  }
-                ]
-              }
-            },
-            "title": "Bifrost census age by tenant"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
+                  },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 4,
+                      "width": 24,
+                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-3"
                       },
-                      "height": 7,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
-                  }
-                ]
-              }
-            },
-            "title": "Bifrost managed instances by tenant"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
+                  },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 9,
+                      "width": 24,
+                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-4"
                       },
-                      "height": 5,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
-                  }
-                ]
-              }
-            },
-            "title": "Bifrost adoption state by tenant"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
+                  },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 14,
+                      "width": 24,
+                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-5"
                       },
-                      "height": 7,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
                   }
                 ]
               }
-            },
-            "title": "Bifrost reconciler actions by tenant"
+            }
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
+            "title": "Unleasherator rollout health",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -947,89 +906,60 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 24,
+                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-7"
                       },
-                      "height": 5,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
-                  }
-                ]
-              }
-            },
-            "title": "ReleaseChannel health by tenant"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
+                  },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 5,
+                      "width": 24,
+                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-8"
                       },
-                      "height": 7,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
-                  }
-                ]
-              }
-            },
-            "title": "ReleaseChannel progress by tenant"
-          }
-        },
-        {
-          "kind": "RowsLayoutRow",
-          "spec": {
-            "collapse": false,
-            "layout": {
-              "kind": "GridLayout",
-              "spec": {
-                "items": [
+                  },
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
+                      "x": 0,
+                      "y": 12,
+                      "width": 24,
+                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-9"
                       },
-                      "height": 7,
                       "repeat": {
                         "mode": "variable",
                         "value": "tenant",
                         "maxPerRow": 4
-                      },
-                      "width": 6,
-                      "x": 0,
-                      "y": 0
+                      }
                     }
                   }
                 ]
               }
-            },
-            "title": "Unleasherator workqueue depth by tenant"
+            }
           }
         }
       ]
@@ -1052,7 +982,7 @@
       "1d"
     ],
     "fiscalYearStartMonth": 0,
-    "from": "now-6h",
+    "from": "now-24h",
     "hideTimepicker": false,
     "timezone": "browser",
     "to": "now"
