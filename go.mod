@@ -3,7 +3,7 @@ module github.com/nais/unleasherator
 go 1.26.5
 
 require (
-	cloud.google.com/go/pubsub v1.51.0
+	cloud.google.com/go/pubsub v1.51.1
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/go-logr/logr v1.4.4
 	github.com/golangci/golangci-lint v1.64.8
