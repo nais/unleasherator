@@ -847,6 +847,56 @@
                         "element": { "kind": "ElementReference", "name": "panel-2" },
                         "repeat": { "mode": "variable", "value": "tenant" }
                       }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "Bifrost adoption state by tenant",
+                        "collapse": false,
+                        "layout": { "kind": "GridLayout", "spec": { "items": [
+                          { "kind": "GridLayoutItem", "spec": { "x": 0, "y": 0, "width": 6, "height": 5, "element": { "kind": "ElementReference", "name": "panel-4" }, "repeat": { "mode": "variable", "value": "tenant" } } }
+                        ] } }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "Bifrost reconciler actions by tenant",
+                        "collapse": false,
+                        "layout": { "kind": "GridLayout", "spec": { "items": [
+                          { "kind": "GridLayoutItem", "spec": { "x": 0, "y": 0, "width": 6, "height": 7, "element": { "kind": "ElementReference", "name": "panel-5" }, "repeat": { "mode": "variable", "value": "tenant" } } }
+                        ] } }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "ReleaseChannel health by tenant",
+                        "collapse": false,
+                        "layout": { "kind": "GridLayout", "spec": { "items": [
+                          { "kind": "GridLayoutItem", "spec": { "x": 0, "y": 0, "width": 6, "height": 5, "element": { "kind": "ElementReference", "name": "panel-7" }, "repeat": { "mode": "variable", "value": "tenant" } } }
+                        ] } }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "ReleaseChannel progress by tenant",
+                        "collapse": false,
+                        "layout": { "kind": "GridLayout", "spec": { "items": [
+                          { "kind": "GridLayoutItem", "spec": { "x": 0, "y": 0, "width": 6, "height": 7, "element": { "kind": "ElementReference", "name": "panel-8" }, "repeat": { "mode": "variable", "value": "tenant" } } }
+                        ] } }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "Unleasherator workqueue depth by tenant",
+                        "collapse": false,
+                        "layout": { "kind": "GridLayout", "spec": { "items": [
+                          { "kind": "GridLayoutItem", "spec": { "x": 0, "y": 0, "width": 6, "height": 7, "element": { "kind": "ElementReference", "name": "panel-9" }, "repeat": { "mode": "variable", "value": "tenant" } } }
+                        ] } }
+                      }
                     }
                   ]
                 }
