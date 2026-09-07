@@ -72,6 +72,7 @@ func setDeploymentStatusAvailable(deployment *appsv1.Deployment) {
 		replicas = *deployment.Spec.Replicas
 	}
 	deployment.Status.ObservedGeneration = deployment.Generation
+	deployment.Status.Replicas = replicas
 	deployment.Status.UpdatedReplicas = replicas
 	deployment.Status.ReadyReplicas = replicas
 	deployment.Status.AvailableReplicas = replicas
@@ -333,8 +334,8 @@ var _ = Describe("Unleash Controller", func() {
 			serviceMonitor := &monitoringv1.ServiceMonitor{}
 			Expect(k8sClient.Get(ctx, createdUnleash.NamespacedName(), serviceMonitor)).Should(Succeed())
 
-			// Reconciled metric uses "unknown" version because stats is nil during reconcile status update
-			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, "unknown", "none")
+			// Reconciliation now completes after the connection check, so it carries the resolved version.
+			val, err := promGaugeVecVal(unleashStatus, createdUnleash.Name, unleashv1.UnleashStatusConditionTypeReconciled, UnleashVersion, "none")
 			Expect(err).To(BeNil())
 			Expect(val).To(Equal(float64(1)))
 
@@ -433,9 +434,10 @@ var _ = Describe("Unleash Controller", func() {
 
 			By("By checking that the pending assignment invalidates stale readiness")
 			Eventually(getUnleash, coordinationTimeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
-				Type:   unleashv1.UnleashStatusConditionTypeReconciled,
-				Status: metav1.ConditionUnknown,
-				Reason: "DeploymentProgressing",
+				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:  metav1.ConditionUnknown,
+				Reason:  "DeploymentProgressing",
+				Message: "Waiting for the current Deployment generation to become available",
 			}))
 			Expect(createdUnleash.Status.Connected).To(BeFalse())
 
@@ -456,7 +458,7 @@ var _ = Describe("Unleash Controller", func() {
 				if err := k8sClient.Get(ctx, unleash.NamespacedName(), createdUnleash); err != nil {
 					return ""
 				}
-				if !createdUnleash.Reconciled || !createdUnleash.Connected {
+				if !createdUnleash.Status.Reconciled || !createdUnleash.Status.Connected {
 					return ""
 				}
 				return createdUnleash.Status.ResolvedReleaseChannelImage
