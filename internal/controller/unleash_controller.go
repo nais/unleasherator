@@ -21,7 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,8 +53,8 @@ const (
 )
 
 var (
-	// Unleash controller timeouts - prefixed to avoid conflicts with other controllers
-	unleashDeploymentTimeout       = 5 * time.Minute
+	// Unleash controller timings - prefixed to avoid conflicts with other controllers
+	unleashDeploymentRequeueAfter  = 10 * time.Second
 	unleashControllerRequeueAfter  = 60 * time.Second // Poll ReleaseChannel status for image changes
 	unleashControllerRequeueJitter = 15 * time.Second // Jitter to spread reconciliations
 	unleashConnectionRetryDelay    = 5 * time.Second
@@ -334,16 +333,28 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	// Wait for Deployment rollout to finish before testing connection This is to
-	// avoid testing connection to the previous instance if the Deployment is not
-	// ready yet. Delay requeue to avoid tying up the reconciler since waiting is
-	// done in the same reconcile loop.
-	log.WithValues("timeout", unleashDeploymentTimeout).Info("Waiting for Deployment rollout to finish")
-	if err = r.waitForDeployment(ctx, unleashDeploymentTimeout, req.NamespacedName); err != nil {
-		if err := r.updateStatusReconcileFailed(ctx, unleash, err, fmt.Sprintf("Deployment rollout timed out after %s", unleashDeploymentTimeout)); err != nil {
-			return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
+	deployment := &appsv1.Deployment{}
+	if err := r.Client.Get(ctx, req.NamespacedName, deployment); err != nil {
+		if statusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to get Deployment status"); statusErr != nil {
+			return ctrl.Result{}, statusErr
 		}
-		return ctrl.Result{RequeueAfter: unleashDeploymentTimeout}, err
+		return ctrl.Result{}, err
+	}
+
+	if failureReason, failed := utils.DeploymentFailure(deployment); failed {
+		failure := fmt.Errorf("deployment reported failure: %s", failureReason)
+		if err := r.updateStatusDeploymentFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
+	}
+
+	if !utils.DeploymentIsReady(deployment) {
+		if err := r.updateStatusReconcileProgressing(ctx, unleash); err != nil {
+			return ctrl.Result{}, err
+		}
+		log.V(1).Info("Deployment rollout is still progressing")
+		return ctrl.Result{RequeueAfter: unleashDeploymentRequeueAfter}, nil
 	}
 
 	// Set the reconcile status of the Unleash instance to available
@@ -812,20 +823,15 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			"currentStatus", unleash.Status.ResolvedReleaseChannelImage,
 			"releaseChannel", unleash.Spec.ReleaseChannel.Name)
 
-		// Update our own status to track what we resolved (for monitoring/debugging)
+		// Publish a new desired assignment and invalidate prior readiness in the
+		// same status update. ReleaseChannel must never treat a ready old
+		// Deployment as proof that this newly assigned image is ready.
 		if unleash.Status.ResolvedReleaseChannelImage != resolvedImage ||
 			unleash.Spec.ReleaseChannel.Name != unleash.Status.ReleaseChannelName {
 			log.Info("Updating Unleash status with new resolved image",
 				"oldImage", unleash.Status.ResolvedReleaseChannelImage,
 				"newImage", resolvedImage)
-			unleash.Status.ResolvedReleaseChannelImage = resolvedImage
-			unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
-			if err := r.Status().Update(ctx, unleash); err != nil {
-				if apierrors.IsConflict(err) {
-					log.V(1).Info("Conflict updating Unleash status, will retry with backoff", "Name", unleash.Name)
-					// Retry with exponential backoff to avoid tight reconciliation loop
-					return ctrl.Result{RequeueAfter: time.Millisecond * 50}, nil
-				}
+			if err := r.markReleaseChannelAssignmentPending(ctx, unleash, resolvedImage); err != nil {
 				log.Error(err, "Failed to update Unleash status")
 				return ctrl.Result{}, err
 			}
@@ -865,7 +871,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: unleashDeploymentRequeueAfter}, nil
 	} else if getErr != nil {
 		log.Error(getErr, "Failed to get Deployment")
 		return ctrl.Result{}, getErr
@@ -880,7 +886,7 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{RequeueAfter: unleashDeploymentRequeueAfter}, nil
 	} else {
 		log.Info("Skip reconcile: Deployment already up to date", "Deployment.Namespace", found.Namespace, "Deployment.Name", found.Name)
 		return ctrl.Result{}, nil
@@ -923,23 +929,6 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 	return ctrl.Result{}, nil
-}
-
-// waitForDeployment will wait for the deployment to be available
-func (r *UnleashReconciler) waitForDeployment(ctx context.Context, timeout time.Duration, key types.NamespacedName) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	err := wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
-		deployment := &appsv1.Deployment{}
-		if err := r.Client.Get(ctx, key, deployment); err != nil {
-			return false, err
-		}
-
-		return utils.DeploymentIsReady(deployment), nil
-	})
-
-	return err
 }
 
 // testConnection tests the connection to the Unleash instance with a single attempt.
@@ -987,6 +976,52 @@ func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, un
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
 		Message: "Reconciled successfully",
+	})
+}
+
+func (r *UnleashReconciler) updateStatusReconcileProgressing(ctx context.Context, unleash *unleashv1.Unleash) error {
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:  metav1.ConditionUnknown,
+		Reason:  "DeploymentProgressing",
+		Message: "Waiting for the current Deployment generation to become available",
+	})
+}
+
+func (r *UnleashReconciler) markReleaseChannelAssignmentPending(ctx context.Context, unleash *unleashv1.Unleash, image string) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := r.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
+			return err
+		}
+
+		unleash.Status.ResolvedReleaseChannelImage = image
+		unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
+		unleash.Status.Reconciled = false
+		unleash.Status.Connected = false
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "DeploymentProgressing",
+			Message: "Waiting for the current Deployment generation to become available",
+		})
+		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
+			Type:    unleashv1.UnleashStatusConditionTypeConnected,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "DeploymentProgressing",
+			Message: "Waiting for the current Deployment generation to become available",
+		})
+
+		return r.Status().Update(ctx, unleash)
+	})
+}
+
+func (r *UnleashReconciler) updateStatusDeploymentFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+	log.FromContext(ctx).WithName("unleash").Error(err, message)
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Failed",
+		Message: message,
 	})
 }
 
@@ -1089,14 +1124,20 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 // SetupWithManager sets up the controller with the Manager.
 func (r *UnleashReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&unleashv1.Unleash{}).
+		For(
+			&unleashv1.Unleash{},
+			builder.WithPredicates(predicate.Or(
+				predicate.GenerationChangedPredicate{},
+				predicate.LabelChangedPredicate{},
+			)),
+		).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 4, // Process multiple instances in parallel
 		}).
-		WithEventFilter(predicate.Or(
-			predicate.GenerationChangedPredicate{}, // Spec changes (user updates)
-			predicate.LabelChangedPredicate{},      // Label changes (might affect ReleaseChannel matching)
-		)).
+		// Deployment status changes are the primary signal that an assigned
+		// image is ready. Owning the Deployment avoids blocking a worker while
+		// polling it for up to five minutes.
+		Owns(&appsv1.Deployment{}).
 		// Watch ReleaseChannel changes to trigger Unleash reconciliation when InstanceImages changes
 		Watches(
 			&unleashv1.ReleaseChannel{},

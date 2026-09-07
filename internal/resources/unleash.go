@@ -598,13 +598,11 @@ func ResolveReleaseChannelImage(ctx context.Context, k8sClient client.Client, un
 			return unleash.Status.ResolvedReleaseChannelImage, false, nil
 		}
 
-		// An instance that has never resolved an image has nothing to hold and no
-		// running workload to protect, so the target is safe for it.
-		if releaseChannel.Spec.Image != "" {
-			return string(releaseChannel.Spec.Image), false, nil
-		}
-
-		return "", false, fmt.Errorf("ReleaseChannel %s has no image specified", unleash.Spec.ReleaseChannel.Name)
+		// InstanceImages is the authority for a first assignment. Returning
+		// spec.image here would let instances that reconcile before their
+		// ReleaseChannel batch bypass maxParallel and its safety checks.
+		return "", false, fmt.Errorf("ReleaseChannel %s has not assigned an image to %s during %s",
+			releaseChannel.Name, unleash.Name, releaseChannel.Status.Phase)
 	}
 
 	// Priority 3: Use environment variable or default

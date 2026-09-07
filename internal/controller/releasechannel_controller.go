@@ -1005,6 +1005,14 @@ func (r *ReleaseChannelReconciler) executeCanaryPhase(ctx context.Context, relea
 	r.recordMetrics(releaseChannel, labels)
 
 	// Check if canary deployment is complete
+	if err := r.terminalInstanceFailure(ctx, canaryInstances); err != nil {
+		newPhase := releasePhaseOnFailure(releaseChannel)
+		r.recordPhaseTransition(releaseChannel, newPhase)
+		releaseChannel.Status.Phase = newPhase
+		releaseChannel.Status.FailureReason = fmt.Sprintf("Canary deployment failed: %v", err)
+		r.recordMetrics(releaseChannel, labels)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
 	canaryComplete := r.areInstancesReady(ctx, canaryInstances, string(releaseChannel.Spec.Image), true, log)
 	if !canaryComplete {
 		log.Info("Canary instances not ready yet")
@@ -1134,6 +1142,15 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 		if targetImage == "" {
 			targetImage = string(releaseChannel.Spec.Image)
 		}
+		if err := r.terminalInstanceFailure(ctx, batch); err != nil {
+			newPhase := releasePhaseOnFailure(releaseChannel)
+			r.recordPhaseTransition(releaseChannel, newPhase)
+			releaseChannel.Status.Phase = newPhase
+			releaseChannel.Status.ActiveBatch = nil
+			releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
+			r.recordMetrics(releaseChannel, labels)
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
 		if !r.areInstancesReady(ctx, batch, targetImage, true, log) {
 			log.Info("Active batch instances are not ready yet", "batchSize", len(batch))
 			return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
@@ -1180,6 +1197,14 @@ func (r *ReleaseChannelReconciler) executeRollingPhase(ctx context.Context, rele
 	// Get instances that need updates (excluding already updated canary instances)
 	instancesToUpdate := r.getInstancesToUpdate(targetInstances, releaseChannel)
 	if len(instancesToUpdate) == 0 {
+		if err := r.terminalInstanceFailure(ctx, targetInstances); err != nil {
+			newPhase := releasePhaseOnFailure(releaseChannel)
+			r.recordPhaseTransition(releaseChannel, newPhase)
+			releaseChannel.Status.Phase = newPhase
+			releaseChannel.Status.FailureReason = fmt.Sprintf("Rolling deployment failed: %v", err)
+			r.recordMetrics(releaseChannel, labels)
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
 		if !r.areInstancesReady(ctx, targetInstances, string(releaseChannel.Spec.Image), true, log) {
 			log.Info("Instances have the target image but are not ready yet")
 			return ctrl.Result{RequeueAfter: r.getBackoffDuration(releaseChannel)}, nil
@@ -1312,6 +1337,12 @@ func (r *ReleaseChannelReconciler) executeRollingBackPhase(ctx context.Context, 
 	log.Info("Updated InstanceImages map with rollback image", "rollbackImage", rollbackImage)
 
 	// Check if rollback is complete by verifying instances are using the rollback image
+	if err := r.terminalInstanceFailure(ctx, targetInstances); err != nil {
+		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseFailed
+		releaseChannel.Status.FailureReason = fmt.Sprintf("Rollback failed: %v", err)
+		r.recordMetrics(releaseChannel, labels)
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
 	rollbackComplete := r.areInstancesReady(ctx, targetInstances, rollbackImage, false, log)
 
 	if !rollbackComplete {
@@ -1744,6 +1775,25 @@ func (r *ReleaseChannelReconciler) areInstancesReady(ctx context.Context, instan
 	}
 
 	return true
+}
+
+func (r *ReleaseChannelReconciler) terminalInstanceFailure(ctx context.Context, instances []unleashv1.Unleash) error {
+	for _, instance := range instances {
+		currentInstance := &unleashv1.Unleash{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(&instance), currentInstance); err != nil {
+			return nil
+		}
+
+		for _, condition := range currentInstance.Status.Conditions {
+			if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled &&
+				condition.Status == metav1.ConditionFalse &&
+				condition.Reason == "Failed" {
+				return fmt.Errorf("instance %s failed: %s", currentInstance.Name, condition.Message)
+			}
+		}
+	}
+
+	return nil
 }
 
 // getExpectedImageForInstance determines correct image based on rollout phase.

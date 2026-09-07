@@ -36,12 +36,51 @@ func SecretEnvVar(name, secretName, secretKey string) corev1.EnvVar {
 
 // DeploymentIsReady returns true if the rollout of the given deployment has completed successfully.
 func DeploymentIsReady(deployment *appsv1.Deployment) bool {
+	if deployment.Status.ObservedGeneration < deployment.Generation {
+		return false
+	}
+
+	replicas := int32(1)
+	if deployment.Spec.Replicas != nil {
+		replicas = *deployment.Spec.Replicas
+	}
+
+	return deployment.Status.UpdatedReplicas == replicas &&
+		deployment.Status.Replicas == replicas &&
+		deployment.Status.ReadyReplicas == replicas &&
+		deployment.Status.AvailableReplicas == replicas &&
+		deployment.Status.UnavailableReplicas == 0
+}
+
+// DeploymentFailure returns terminal failure reported for the current deployment generation.
+func DeploymentFailure(deployment *appsv1.Deployment) (string, bool) {
+	if deployment.Status.ObservedGeneration < deployment.Generation {
+		return "", false
+	}
+
 	for _, condition := range deployment.Status.Conditions {
-		if condition.Type == appsv1.DeploymentProgressing && condition.Status == corev1.ConditionTrue && condition.Reason == "NewReplicaSetAvailable" {
-			return true
+		if condition.Type == appsv1.DeploymentProgressing &&
+			condition.Status == corev1.ConditionFalse &&
+			condition.Reason == "ProgressDeadlineExceeded" {
+			return deploymentFailureMessage(condition), true
+		}
+		if condition.Type == appsv1.DeploymentReplicaFailure && condition.Status == corev1.ConditionTrue {
+			return deploymentFailureMessage(condition), true
 		}
 	}
-	return false
+
+	return "", false
+}
+
+func deploymentFailureMessage(condition appsv1.DeploymentCondition) string {
+	if condition.Message != "" {
+		return condition.Message
+	}
+	if condition.Reason != "" {
+		return condition.Reason
+	}
+
+	return "Deployment reported a terminal failure"
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.

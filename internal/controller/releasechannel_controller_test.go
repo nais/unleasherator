@@ -127,26 +127,14 @@ var _ = Describe("ReleaseChannel Controller", func() {
 							continue
 						}
 
-						isReady := false
-						for _, condition := range deployment.Status.Conditions {
-							if condition.Type == appsv1.DeploymentProgressing &&
-								condition.Status == corev1.ConditionTrue &&
-								condition.Reason == "NewReplicaSetAvailable" {
-								isReady = true
-								break
-							}
-						}
+						deploymentCopy := deployment.DeepCopy()
+						setDeploymentStatusAvailable(deploymentCopy)
 
-						if !isReady {
-							deploymentCopy := deployment.DeepCopy()
-							setDeploymentStatusAvailable(deploymentCopy)
-
-							if err := k8sClient.Status().Update(simCtx, deploymentCopy); err == nil {
-								processedGenerations[deploymentKey] = deployment.Generation
-								GinkgoWriter.Printf("[DEPLOYMENT-SIM] Made deployment %s ready (gen %d)\n", deploymentKey, deployment.Generation)
-							}
-						} else {
+						if err := k8sClient.Status().Update(simCtx, deploymentCopy); err == nil {
 							processedGenerations[deploymentKey] = deployment.Generation
+							GinkgoWriter.Printf("[DEPLOYMENT-SIM] Made deployment %s ready (gen %d)\n", deploymentKey, deployment.Generation)
+						} else {
+							continue
 						}
 					}
 				}
@@ -512,64 +500,6 @@ var _ = Describe("ReleaseChannel Controller", func() {
 			By("Step 4b: Setting up HTTP mocks for instance health checks")
 			registerHTTPMocksForInstance(canaryUnleash)
 			registerHTTPMocksForInstance(prodUnleash)
-
-			// Setup intelligent deployment readiness simulation using fast polling for phase changes
-			testCtx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			canaryKey := canaryUnleash.NamespacedName()
-			prodKey := prodUnleash.NamespacedName()
-			rcKey := releaseChannel.NamespacedName()
-
-			go func() {
-				var lastPhase unleashv1.ReleaseChannelPhase
-				var lastGeneration int64
-
-				// Use very fast polling to catch phase transitions immediately
-				ticker := time.NewTicker(10 * time.Millisecond)
-				defer ticker.Stop()
-
-				for {
-					select {
-					case <-testCtx.Done():
-						return
-					case <-ticker.C:
-						var currentRC unleashv1.ReleaseChannel
-						if err := k8sClient.Get(testCtx, rcKey, &currentRC); err != nil {
-							continue
-						}
-
-						currentPhase := currentRC.Status.Phase
-						currentGeneration := currentRC.ObjectMeta.Generation
-
-						// React to phase transitions or generation changes (indicating spec updates)
-						if currentPhase != lastPhase || currentGeneration != lastGeneration {
-							GinkgoWriter.Printf("State change: phase %s -> %s, generation %d -> %d\n",
-								lastPhase, currentPhase, lastGeneration, currentGeneration)
-
-							switch currentPhase {
-							case unleashv1.ReleaseChannelPhaseIdle:
-								if lastPhase != "" {
-									GinkgoWriter.Printf("Returned to Idle - ensuring both deployments ready\n")
-									simulateDeploymentReady(canaryKey)
-									simulateDeploymentReady(prodKey)
-								}
-
-							case unleashv1.ReleaseChannelPhaseCanary:
-								GinkgoWriter.Printf("Simulating canary deployment readiness\n")
-								simulateDeploymentReady(canaryKey)
-
-							case unleashv1.ReleaseChannelPhaseRolling:
-								GinkgoWriter.Printf("Simulating production deployment readiness\n")
-								simulateDeploymentReady(prodKey)
-							}
-
-							lastPhase = currentPhase
-							lastGeneration = currentGeneration
-						}
-					}
-				}
-			}()
 
 			By("Step 5: Waiting for both Unleash instances to become ready")
 			// This ensures both instances exist and their controllers have processed them
