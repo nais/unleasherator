@@ -16,9 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// newBudgetChannel pins every input to batchAllowance so the expected budget does
-// not depend on package-level timing vars, which the envtest suite rewrites.
-// settle 1m + verify 4m + interval 1m gives a 6m allowance per batch.
+// newBudgetChannel pins every configurable input to batchAllowance so the
+// expected budget does not depend on package-level timing vars, which the
+// envtest suite rewrites. Settle 1m + verify 4m + interval 1m gives a 6m
+// allowance per batch before the fixed reconciliation allowance is added.
 func newBudgetChannel(instances, maxParallel int, maxUpgradeTime *metav1.Duration) *unleashv1.ReleaseChannel {
 	return &unleashv1.ReleaseChannel{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
@@ -62,7 +63,14 @@ func TestUpgradeTimeBudget(t *testing.T) {
 			name:          "scales with the number of batches",
 			instances:     5,
 			maxParallel:   1,
-			expected:      30 * time.Minute,
+			expected:      33 * time.Minute,
+			expectDerived: true,
+		},
+		{
+			name:          "includes reconciliation margin for three serial batches",
+			instances:     3,
+			maxParallel:   1,
+			expected:      20 * time.Minute,
 			expectDerived: true,
 		},
 		{
@@ -70,7 +78,7 @@ func TestUpgradeTimeBudget(t *testing.T) {
 			name:          "maxParallel divides the work",
 			instances:     65,
 			maxParallel:   10,
-			expected:      42 * time.Minute,
+			expected:      46 * time.Minute,
 			expectDerived: true,
 		},
 		{
@@ -116,7 +124,8 @@ func TestUpgradeTimeBudget(t *testing.T) {
 func TestCheckMaxUpgradeTimeExceededReportsDerivation(t *testing.T) {
 	r := &ReleaseChannelReconciler{}
 
-	// 5 batches of 6m is a 30m budget, so a rollout 20 minutes in is still fine
+	// 5 batches of 6m plus reconciliation allowance is a 33m budget, so a
+	// rollout 20 minutes in is still fine
 	// where the old flat 10m default would already have failed it.
 	releaseChannel := newBudgetChannel(5, 1, nil)
 	releaseChannel.Status.StartTime = &metav1.Time{Time: time.Now().Add(-20 * time.Minute)}
@@ -125,7 +134,7 @@ func TestCheckMaxUpgradeTimeExceededReportsDerivation(t *testing.T) {
 	assert.False(t, exceeded, "a five batch rollout must get more than the flat default")
 	assert.Empty(t, reason)
 
-	releaseChannel.Status.StartTime = &metav1.Time{Time: time.Now().Add(-31 * time.Minute)}
+	releaseChannel.Status.StartTime = &metav1.Time{Time: time.Now().Add(-34 * time.Minute)}
 	exceeded, reason = r.checkMaxUpgradeTimeExceeded(releaseChannel)
 	require.True(t, exceeded)
 	// An operator seeing a limit they never set needs the arithmetic and the
@@ -352,7 +361,10 @@ func timedOutChannel(t *testing.T, instancesUpToDate, resumeProgress int) (*Rele
 	releaseChannel := &unleashv1.ReleaseChannel{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
 		Spec: unleashv1.ReleaseChannelSpec{
-			Image:    unleashv1.UnleashImage(newerImage),
+			Image: unleashv1.UnleashImage(newerImage),
+			Strategy: unleashv1.ReleaseChannelStrategy{
+				MaxUpgradeTime: &metav1.Duration{Duration: 9 * time.Minute},
+			},
 			Rollback: unleashv1.RollbackConfig{Enabled: false},
 		},
 		Status: unleashv1.ReleaseChannelStatus{
@@ -408,6 +420,20 @@ func TestExecuteFailedPhaseStopsARolloutThatIsNotProgressing(t *testing.T) {
 
 	assert.Equal(t, unleashv1.ReleaseChannelPhaseFailed, reload().Status.Phase,
 		"a rollout that advanced nothing must stop rather than resume forever")
+}
+
+func TestExecuteFailedPhaseResumesAfterBudgetIncrease(t *testing.T) {
+	reconciler, releaseChannel, reload := timedOutChannel(t, 7, 7)
+	releaseChannel.Spec.Strategy.MaxUpgradeTime = &metav1.Duration{Duration: 2 * time.Hour}
+
+	_, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := reload()
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"increasing maxUpgradeTime beyond elapsed time must apply the remedy named in the failure message")
+	assert.Empty(t, updated.Status.FailureReason)
+	assert.Nil(t, updated.Status.StartTime)
 }
 
 func TestTimeoutRollsBackOnSpecOnlyRollbackImage(t *testing.T) {
