@@ -37,6 +37,9 @@ updates:
           - "github.com/onsi/gomega"
           - "github.com/stretchr/testify"
     ignore:
+      # v0.4.19 changes ServiceAccount naming in generated charts
+      - dependency-name: "github.com/arttor/helmify"
+        versions: ["0.4.19"]
       # These packages are dependent on the Kubernetes version we are targeting
       - dependency-name: "k8s.io/api"
         update-types: ["version-update:semver-minor"]
