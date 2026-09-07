@@ -3,20 +3,20 @@
     {
       "kind": "AnnotationQuery",
       "spec": {
-        "query": {
-          "kind": "DataQuery",
-          "group": "grafana",
-          "version": "v0",
-          "datasource": {
-            "name": "-- Grafana --"
-          },
-          "spec": {}
-        },
+        "builtIn": true,
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
-        "builtIn": true
+        "query": {
+          "datasource": {
+            "name": "-- Grafana --"
+          },
+          "group": "grafana",
+          "kind": "DataQuery",
+          "spec": {},
+          "version": "v0"
+        }
       }
     }
   ],
@@ -26,10 +26,6 @@
     "panel-2": {
       "kind": "Panel",
       "spec": {
-        "id": 2,
-        "title": "Census age",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -37,32 +33,58 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "time() - max(bifrost_reconciler_instances_updated_timestamp_seconds{k8s_cluster_name=~\"$cluster\"})",
                       "legendFormat": "{{__field.name}}"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 2,
+        "links": [],
+        "title": "Census age",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "stat",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 900
+                    },
+                    {
+                      "color": "red",
+                      "value": 1800
+                    }
+                  ]
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
             "options": {
               "colorMode": "background",
               "graphMode": "none",
@@ -79,41 +101,15 @@
               "showPercentChange": false,
               "textMode": "auto",
               "wideLayout": true
-            },
-            "fieldConfig": {
-              "defaults": {
-                "unit": "s",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 900,
-                      "color": "yellow"
-                    },
-                    {
-                      "value": 1800,
-                      "color": "red"
-                    }
-                  ]
-                }
-              },
-              "overrides": []
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-3": {
       "kind": "Panel",
       "spec": {
-        "id": 3,
-        "title": "Managed and unmanaged instances",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -121,84 +117,56 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "bifrost_reconciler_managed_instances{k8s_cluster_name=~\"$cluster\"}",
                       "legendFormat": "managed"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               },
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "bifrost_reconciler_unmanaged_instances{k8s_cluster_name=~\"$cluster\"}",
                       "legendFormat": "unmanaged"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "B",
-                  "hidden": false
+                  "refId": "B"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 3,
+        "links": [],
+        "title": "Managed and unmanaged instances",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "timeseries",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
-            "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
-              },
-              "legend": {
-                "calcs": [],
-                "displayMode": "table",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "none"
-              }
-            },
             "fieldConfig": {
               "defaults": {
-                "unit": "short",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                },
                 "color": {
                   "mode": "palette-classic"
                 },
@@ -235,21 +203,49 @@
                   "thresholdsStyle": {
                     "mode": "off"
                   }
-                }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "short"
               },
               "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "table",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-4": {
       "kind": "Panel",
       "spec": {
-        "id": 4,
-        "title": "Adoption halted",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -257,31 +253,67 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "max(bifrost_reconciler_adoption_halted{k8s_cluster_name=~\"$cluster\"})"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 4,
+        "links": [],
+        "title": "Adoption halted",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "stat",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "green",
+                        "text": "Running"
+                      },
+                      "1": {
+                        "color": "red",
+                        "text": "Halted"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ],
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                }
+              },
+              "overrides": []
+            },
             "options": {
               "colorMode": "background",
               "graphMode": "none",
@@ -298,51 +330,15 @@
               "showPercentChange": false,
               "textMode": "auto",
               "wideLayout": true
-            },
-            "fieldConfig": {
-              "defaults": {
-                "mappings": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "Running",
-                        "color": "green"
-                      },
-                      "1": {
-                        "text": "Halted",
-                        "color": "red"
-                      }
-                    }
-                  }
-                ],
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                }
-              },
-              "overrides": []
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-5": {
       "kind": "Panel",
       "spec": {
-        "id": 5,
-        "title": "Reconciler actions by reason",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -350,65 +346,37 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "sum by (action, reason) (rate(bifrost_reconciler_actions_total{k8s_cluster_name=~\"$cluster\"}[5m]))",
                       "legendFormat": "{{action}} / {{reason}}"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 5,
+        "links": [],
+        "title": "Reconciler actions by reason",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "timeseries",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
-            "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
-              },
-              "legend": {
-                "calcs": [],
-                "displayMode": "table",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "none"
-              }
-            },
             "fieldConfig": {
               "defaults": {
-                "unit": "ops",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                },
                 "color": {
                   "mode": "palette-classic"
                 },
@@ -445,21 +413,49 @@
                   "thresholdsStyle": {
                     "mode": "off"
                   }
-                }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "ops"
               },
               "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "table",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-7": {
       "kind": "Panel",
       "spec": {
-        "id": 7,
-        "title": "ReleaseChannel health",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -467,31 +463,71 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "min(unleasherator_releasechannel_status{k8s_cluster_name=~\"$cluster\"})"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 7,
+        "links": [],
+        "title": "ReleaseChannel health",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "stat",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "red",
+                        "text": "Failed"
+                      },
+                      "1": {
+                        "color": "green",
+                        "text": "Healthy"
+                      },
+                      "0.5": {
+                        "color": "yellow",
+                        "text": "Rolling"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ],
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                }
+              },
+              "overrides": []
+            },
             "options": {
               "colorMode": "background",
               "graphMode": "none",
@@ -508,55 +544,15 @@
               "showPercentChange": false,
               "textMode": "auto",
               "wideLayout": true
-            },
-            "fieldConfig": {
-              "defaults": {
-                "mappings": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "Failed",
-                        "color": "red"
-                      },
-                      "1": {
-                        "text": "Healthy",
-                        "color": "green"
-                      },
-                      "0.5": {
-                        "text": "Rolling",
-                        "color": "yellow"
-                      }
-                    }
-                  }
-                ],
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                }
-              },
-              "overrides": []
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-8": {
       "kind": "Panel",
       "spec": {
-        "id": 8,
-        "title": "ReleaseChannel progress",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -564,84 +560,56 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "sum(unleasherator_releasechannel_instances_up_to_date{k8s_cluster_name=~\"$cluster\"})",
                       "legendFormat": "up to date"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               },
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "sum(unleasherator_releasechannel_instances_total{k8s_cluster_name=~\"$cluster\"})",
                       "legendFormat": "total"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "B",
-                  "hidden": false
+                  "refId": "B"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 8,
+        "links": [],
+        "title": "ReleaseChannel progress",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "timeseries",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
-            "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
-              },
-              "legend": {
-                "calcs": [],
-                "displayMode": "table",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "none"
-              }
-            },
             "fieldConfig": {
               "defaults": {
-                "unit": "short",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                },
                 "color": {
                   "mode": "palette-classic"
                 },
@@ -678,21 +646,49 @@
                   "thresholdsStyle": {
                     "mode": "off"
                   }
-                }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "short"
               },
               "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "table",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     },
     "panel-9": {
       "kind": "Panel",
       "spec": {
-        "id": 9,
-        "title": "Controller workqueue depth",
-        "description": "",
-        "links": [],
         "data": {
           "kind": "QueryGroup",
           "spec": {
@@ -700,65 +696,37 @@
               {
                 "kind": "PanelQuery",
                 "spec": {
+                  "hidden": false,
                   "query": {
-                    "kind": "DataQuery",
-                    "group": "prometheus",
-                    "version": "v0",
                     "datasource": {
                       "name": "${tenant}"
                     },
+                    "group": "prometheus",
+                    "kind": "DataQuery",
                     "spec": {
                       "expr": "max by (name) (workqueue_depth{name=~\".*unleash.*|.*releasechannel.*\", k8s_cluster_name=~\"$cluster\"})",
                       "legendFormat": "{{name}}"
-                    }
+                    },
+                    "version": "v0"
                   },
-                  "refId": "A",
-                  "hidden": false
+                  "refId": "A"
                 }
               }
             ],
-            "transformations": [],
-            "queryOptions": {}
+            "queryOptions": {},
+            "transformations": []
           }
         },
+        "description": "",
+        "id": 9,
+        "links": [],
+        "title": "Controller workqueue depth",
         "vizConfig": {
-          "kind": "VizConfig",
           "group": "timeseries",
-          "version": "13.0.1+security-01",
+          "kind": "VizConfig",
           "spec": {
-            "options": {
-              "annotations": {
-                "clustering": -1,
-                "multiLane": false
-              },
-              "legend": {
-                "calcs": [],
-                "displayMode": "table",
-                "placement": "bottom",
-                "showLegend": true
-              },
-              "tooltip": {
-                "hideZeros": false,
-                "mode": "multi",
-                "sort": "none"
-              }
-            },
             "fieldConfig": {
               "defaults": {
-                "unit": "short",
-                "thresholds": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "value": 0,
-                      "color": "green"
-                    },
-                    {
-                      "value": 80,
-                      "color": "red"
-                    }
-                  ]
-                },
                 "color": {
                   "mode": "palette-classic"
                 },
@@ -795,11 +763,43 @@
                   "thresholdsStyle": {
                     "mode": "off"
                   }
-                }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "short"
               },
               "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "table",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
-          }
+          },
+          "version": "13.0.1+security-01"
         }
       }
     }
@@ -811,7 +811,6 @@
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Bifrost census age by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -820,29 +819,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-2"
                       },
+                      "height": 5,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Bifrost census age by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Bifrost managed instances by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -851,29 +851,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-3"
                       },
+                      "height": 7,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Bifrost managed instances by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Bifrost adoption state by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -882,29 +883,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-4"
                       },
+                      "height": 5,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Bifrost adoption state by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Bifrost reconciler actions by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -913,29 +915,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-5"
                       },
+                      "height": 7,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Bifrost reconciler actions by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "ReleaseChannel health by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -944,29 +947,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 5,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-7"
                       },
+                      "height": 5,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "ReleaseChannel health by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "ReleaseChannel progress by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -975,29 +979,30 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-8"
                       },
+                      "height": 7,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "ReleaseChannel progress by tenant"
           }
         },
         {
           "kind": "RowsLayoutRow",
           "spec": {
-            "title": "Unleasherator workqueue depth by tenant",
             "collapse": false,
             "layout": {
               "kind": "GridLayout",
@@ -1006,23 +1011,25 @@
                   {
                     "kind": "GridLayoutItem",
                     "spec": {
-                      "x": 0,
-                      "y": 0,
-                      "width": 6,
-                      "height": 7,
                       "element": {
                         "kind": "ElementReference",
                         "name": "panel-9"
                       },
+                      "height": 7,
                       "repeat": {
                         "mode": "variable",
-                        "value": "tenant"
-                      }
+                        "value": "tenant",
+                        "maxPerRow": 4
+                      },
+                      "width": 6,
+                      "x": 0,
+                      "y": 0
                     }
                   }
                 ]
               }
-            }
+            },
+            "title": "Unleasherator workqueue depth by tenant"
           }
         }
       ]
@@ -1033,9 +1040,6 @@
   "preload": false,
   "tags": [],
   "timeSettings": {
-    "timezone": "browser",
-    "from": "now-6h",
-    "to": "now",
     "autoRefresh": "",
     "autoRefreshIntervals": [
       "30s",
@@ -1047,18 +1051,18 @@
       "2h",
       "1d"
     ],
+    "fiscalYearStartMonth": 0,
+    "from": "now-6h",
     "hideTimepicker": false,
-    "fiscalYearStartMonth": 0
+    "timezone": "browser",
+    "to": "now"
   },
   "title": "Unleash Tenant Overview",
   "variables": [
     {
       "kind": "DatasourceVariable",
       "spec": {
-        "name": "tenant",
-        "pluginId": "prometheus",
-        "refresh": "onDashboardLoad",
-        "regex": "",
+        "allowCustomValue": true,
         "current": {
           "text": [
             "atil-metrics",
@@ -1073,20 +1077,24 @@
             "PE607B8DC11CE4E99"
           ]
         },
-        "options": [],
-        "multi": true,
+        "description": "Select tenants. Panels repeat once per selected Mimir datasource.",
+        "hide": "dontHide",
         "includeAll": true,
         "label": "Tenant",
-        "hide": "dontHide",
-        "skipUrlSync": false,
-        "description": "Select tenants. Panels repeat once per selected Mimir datasource.",
-        "allowCustomValue": true
+        "multi": true,
+        "name": "tenant",
+        "options": [],
+        "pluginId": "prometheus",
+        "refresh": "onDashboardLoad",
+        "regex": "",
+        "skipUrlSync": false
       }
     },
     {
       "kind": "QueryVariable",
       "spec": {
-        "name": "cluster",
+        "allValue": ".*",
+        "allowCustomValue": true,
         "current": {
           "text": [
             "management"
@@ -1095,30 +1103,29 @@
             "management"
           ]
         },
-        "label": "Cluster",
-        "hide": "dontHide",
-        "refresh": "never",
-        "skipUrlSync": false,
         "description": "Filter by Kubernetes cluster.",
+        "hide": "dontHide",
+        "includeAll": true,
+        "label": "Cluster",
+        "multi": true,
+        "name": "cluster",
+        "options": [],
         "query": {
-          "kind": "DataQuery",
-          "group": "prometheus",
-          "version": "v0",
           "datasource": {
             "name": "${tenant}"
           },
+          "group": "prometheus",
+          "kind": "DataQuery",
           "spec": {
             "__legacyStringValue": "label_values(up, k8s_cluster_name)"
-          }
+          },
+          "version": "v0"
         },
+        "refresh": "never",
         "regex": "",
         "regexApplyTo": "value",
-        "sort": "disabled",
-        "options": [],
-        "multi": true,
-        "includeAll": true,
-        "allValue": ".*",
-        "allowCustomValue": true
+        "skipUrlSync": false,
+        "sort": "disabled"
       }
     }
   ]
