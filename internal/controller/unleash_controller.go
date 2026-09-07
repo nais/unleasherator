@@ -343,7 +343,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if failureReason, failed := utils.DeploymentFailure(deployment); failed {
 		failure := fmt.Errorf("deployment reported failure: %s", failureReason)
-		if err := r.updateStatusReconcileFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
+		if err := r.updateStatusDeploymentFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
@@ -1012,6 +1012,16 @@ func (r *UnleashReconciler) markReleaseChannelAssignmentPending(ctx context.Cont
 		})
 
 		return r.Status().Update(ctx, unleash)
+	})
+}
+
+func (r *UnleashReconciler) updateStatusDeploymentFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+	log.FromContext(ctx).WithName("unleash").Error(err, message)
+	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Failed",
+		Message: message,
 	})
 }
 

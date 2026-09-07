@@ -76,8 +76,11 @@ func deploymentFailureMessage(condition appsv1.DeploymentCondition) string {
 	if condition.Message != "" {
 		return condition.Message
 	}
+	if condition.Reason != "" {
+		return condition.Reason
+	}
 
-	return condition.Reason
+	return "Deployment reported a terminal failure"
 }
 
 // UpsertObject upserts the given object in Kubernetes. If the object already exists, it is updated.

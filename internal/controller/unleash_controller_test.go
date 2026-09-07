@@ -263,7 +263,7 @@ var _ = Describe("Unleash Controller", func() {
 			Eventually(getUnleash, timeout, interval).WithArguments(k8sClient, ctx, createdUnleash).Should(ContainElement(metav1.Condition{
 				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 				Status:  metav1.ConditionFalse,
-				Reason:  "Reconciling",
+				Reason:  "Failed",
 				Message: "Deployment rollout failed: Progress deadline exceeded.",
 			}))
 			Expect(createdUnleash.IsReady()).To(BeFalse())
