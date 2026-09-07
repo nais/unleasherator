@@ -203,9 +203,10 @@ func TestDeploymentIsReady(t *testing.T) {
 
 func TestDeploymentFailure(t *testing.T) {
 	tests := []struct {
-		name       string
-		deployment *appsv1.Deployment
-		expected   bool
+		name           string
+		deployment     *appsv1.Deployment
+		expectedReason string
+		expected       bool
 	}{
 		{
 			name: "progress deadline for current generation",
@@ -221,7 +222,24 @@ func TestDeploymentFailure(t *testing.T) {
 					}},
 				},
 			},
-			expected: true,
+			expectedReason: "progress deadline exceeded",
+			expected:       true,
+		},
+		{
+			name: "empty failure message falls back to reason",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status: appsv1.DeploymentStatus{
+					ObservedGeneration: 2,
+					Conditions: []appsv1.DeploymentCondition{{
+						Type:   appsv1.DeploymentProgressing,
+						Status: corev1.ConditionFalse,
+						Reason: "ProgressDeadlineExceeded",
+					}},
+				},
+			},
+			expectedReason: "ProgressDeadlineExceeded",
+			expected:       true,
 		},
 		{
 			name: "failure from stale generation",
@@ -242,9 +260,12 @@ func TestDeploymentFailure(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got := DeploymentFailure(tt.deployment)
+			reason, got := DeploymentFailure(tt.deployment)
 			if got != tt.expected {
 				t.Errorf("DeploymentFailure() = %v, want %v", got, tt.expected)
+			}
+			if reason != tt.expectedReason {
+				t.Errorf("DeploymentFailure() reason = %q, want %q", reason, tt.expectedReason)
 			}
 		})
 	}

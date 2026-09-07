@@ -333,21 +333,23 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	ready, err := r.deploymentIsReady(ctx, req.NamespacedName)
-	if err != nil {
+	deployment := &appsv1.Deployment{}
+	if err := r.Client.Get(ctx, req.NamespacedName, deployment); err != nil {
 		if statusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to get Deployment status"); statusErr != nil {
 			return ctrl.Result{}, statusErr
 		}
 		return ctrl.Result{}, err
 	}
-	if failureReason, failed := r.deploymentFailure(ctx, req.NamespacedName); failed {
+
+	if failureReason, failed := utils.DeploymentFailure(deployment); failed {
 		failure := fmt.Errorf("deployment reported failure: %s", failureReason)
 		if err := r.updateStatusReconcileFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
 	}
-	if !ready {
+
+	if !utils.DeploymentIsReady(deployment) {
 		if err := r.updateStatusReconcileProgressing(ctx, unleash); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -927,24 +929,6 @@ func (r *UnleashReconciler) reconcileService(ctx context.Context, unleash *unlea
 
 	log.Info("Skip reconcile: Service up to date", "Service.Namespace", existingSvc.Namespace, "Service.Name", existingSvc.Name)
 	return ctrl.Result{}, nil
-}
-
-func (r *UnleashReconciler) deploymentIsReady(ctx context.Context, key types.NamespacedName) (bool, error) {
-	deployment := &appsv1.Deployment{}
-	if err := r.Client.Get(ctx, key, deployment); err != nil {
-		return false, err
-	}
-
-	return utils.DeploymentIsReady(deployment), nil
-}
-
-func (r *UnleashReconciler) deploymentFailure(ctx context.Context, key types.NamespacedName) (string, bool) {
-	deployment := &appsv1.Deployment{}
-	if err := r.Client.Get(ctx, key, deployment); err != nil {
-		return "", false
-	}
-
-	return utils.DeploymentFailure(deployment)
 }
 
 // testConnection tests the connection to the Unleash instance with a single attempt.
