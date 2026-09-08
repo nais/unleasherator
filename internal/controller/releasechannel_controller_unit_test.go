@@ -315,7 +315,7 @@ func TestGetExpectedImageForInstance(t *testing.T) {
 				Spec: unleashv1.ReleaseChannelSpec{
 					Image:           "test:v2",
 					BreakGlassImage: "test:v2",
-					Rollback:       unleashv1.RollbackConfig{PreviousImage: "test:v1.5"},
+					Rollback:        unleashv1.RollbackConfig{PreviousImage: "test:v1.5"},
 				},
 				Status: unleashv1.ReleaseChannelStatus{Phase: unleashv1.ReleaseChannelPhaseRollingBack},
 			},
@@ -1002,16 +1002,34 @@ func TestIsInstanceReady(t *testing.T) {
 		{
 			name: "ready instance",
 			instance: &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
 				Status: unleashv1.UnleashStatus{
 					Conditions: []metav1.Condition{
 						{
-							Type:   unleashv1.UnleashStatusConditionTypeReconciled,
-							Status: metav1.ConditionTrue,
+							Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 2,
 						},
 					},
 				},
 			},
 			expected: true,
+		},
+		{
+			name: "stale ready condition",
+			instance: &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{Generation: 2},
+				Status: unleashv1.UnleashStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: 1,
+						},
+					},
+				},
+			},
+			expected: false,
 		},
 		{
 			name: "not ready instance",
@@ -1070,6 +1088,57 @@ func TestIsInstanceReady(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := reconciler.isInstanceReady(tt.instance)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestInstanceConnected(t *testing.T) {
+	tests := []struct {
+		name               string
+		generation         int64
+		observedGeneration int64
+		status             metav1.ConditionStatus
+		expected           bool
+	}{
+		{
+			name:               "connected for current generation",
+			generation:         2,
+			observedGeneration: 2,
+			status:             metav1.ConditionTrue,
+			expected:           true,
+		},
+		{
+			name:               "stale connected condition",
+			generation:         2,
+			observedGeneration: 1,
+			status:             metav1.ConditionTrue,
+			expected:           false,
+		},
+		{
+			name:               "current generation not connected",
+			generation:         2,
+			observedGeneration: 2,
+			status:             metav1.ConditionFalse,
+			expected:           false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := &unleashv1.Unleash{
+				ObjectMeta: metav1.ObjectMeta{Generation: tt.generation},
+				Status: unleashv1.UnleashStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:               unleashv1.UnleashStatusConditionTypeConnected,
+							Status:             tt.status,
+							ObservedGeneration: tt.observedGeneration,
+						},
+					},
+				},
+			}
+
+			assert.Equal(t, tt.expected, instanceConnected(instance))
 		})
 	}
 }
