@@ -10,11 +10,15 @@ import (
 
 func TestUnleashIsReady(t *testing.T) {
 	unleash := Unleash{
+		ObjectMeta: metav1.ObjectMeta{
+			Generation: 2,
+		},
 		Status: UnleashStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   UnleashStatusConditionTypeReconciled,
-					Status: metav1.ConditionFalse,
+					Type:               UnleashStatusConditionTypeReconciled,
+					Status:             metav1.ConditionFalse,
+					ObservedGeneration: 2,
 				},
 			},
 		},
@@ -26,13 +30,17 @@ func TestUnleashIsReady(t *testing.T) {
 	assert.Equal(t, unleash.IsReady(), false, "Unleash should not be ready when connection condition is missing")
 
 	unleash.Status.Conditions = append(unleash.Status.Conditions, metav1.Condition{
-		Type:   UnleashStatusConditionTypeConnected,
-		Status: metav1.ConditionFalse,
+		Type:               UnleashStatusConditionTypeConnected,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: 2,
 	})
 	assert.Equal(t, unleash.IsReady(), false, "Unleash should not be ready when connection condition is false")
 
 	unleash.Status.Conditions[1].Status = metav1.ConditionTrue
 	assert.Equal(t, unleash.IsReady(), true, "Unleash should be ready when available and connection conditions are true")
+
+	unleash.Generation++
+	assert.False(t, unleash.IsReady(), "Unleash should not be ready when true conditions belong to the previous generation")
 }
 
 func TestUnleashNamespacedName(t *testing.T) {

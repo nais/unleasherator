@@ -1787,6 +1787,7 @@ func (r *ReleaseChannelReconciler) terminalInstanceFailure(ctx context.Context, 
 		for _, condition := range currentInstance.Status.Conditions {
 			if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled &&
 				condition.Status == metav1.ConditionFalse &&
+				condition.ObservedGeneration == currentInstance.Generation &&
 				condition.Reason == "Failed" {
 				return fmt.Errorf("instance %s failed: %s", currentInstance.Name, condition.Message)
 			}
@@ -1861,13 +1862,7 @@ func (r *ReleaseChannelReconciler) isInstanceReady(instance *unleashv1.Unleash) 
 }
 
 func instanceReady(instance *unleashv1.Unleash) bool {
-	// Check for Ready condition
-	for _, condition := range instance.Status.Conditions {
-		if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled {
-			return condition.Status == metav1.ConditionTrue
-		}
-	}
-	return false
+	return instanceConditionIsTrueForCurrentGeneration(instance, unleashv1.UnleashStatusConditionTypeReconciled)
 }
 
 func (r *ReleaseChannelReconciler) isInstanceConnected(instance *unleashv1.Unleash) bool {
@@ -1875,9 +1870,14 @@ func (r *ReleaseChannelReconciler) isInstanceConnected(instance *unleashv1.Unlea
 }
 
 func instanceConnected(instance *unleashv1.Unleash) bool {
+	return instanceConditionIsTrueForCurrentGeneration(instance, unleashv1.UnleashStatusConditionTypeConnected)
+}
+
+func instanceConditionIsTrueForCurrentGeneration(instance *unleashv1.Unleash, conditionType string) bool {
 	for _, condition := range instance.Status.Conditions {
-		if condition.Type == unleashv1.UnleashStatusConditionTypeConnected {
-			return condition.Status == metav1.ConditionTrue
+		if condition.Type == conditionType {
+			return condition.Status == metav1.ConditionTrue &&
+				condition.ObservedGeneration == instance.Generation
 		}
 	}
 	return false
@@ -1921,6 +1921,7 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 		for _, condition := range currentInstance.Status.Conditions {
 			if condition.Type == unleashv1.UnleashStatusConditionTypeReconciled &&
 				condition.Status == metav1.ConditionFalse &&
+				condition.ObservedGeneration == currentInstance.Generation &&
 				condition.Reason == "Failed" {
 				// Record failed health check
 				releaseChannelHealthChecks.WithLabelValues(releaseChannel.ObjectMeta.Namespace, releaseChannel.ObjectMeta.Name, "failed").Inc()
@@ -1929,15 +1930,7 @@ func (r *ReleaseChannelReconciler) performHealthChecks(ctx context.Context, inst
 		}
 
 		// Check if instance is connected (healthy) via Kubernetes conditions
-		connected := false
-		for _, condition := range currentInstance.Status.Conditions {
-			if condition.Type == unleashv1.UnleashStatusConditionTypeConnected {
-				connected = condition.Status == metav1.ConditionTrue
-				break
-			}
-		}
-
-		if !connected {
+		if !instanceConnected(currentInstance) {
 			log.V(1).Info("Instance not connected/healthy yet", "name", instance.ObjectMeta.Name)
 			return false, nil
 		}

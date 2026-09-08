@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -51,6 +52,8 @@ const (
 	unleashPublishMetricStatusFailed  = "failed"
 	unleashPublishMetricStatusSkipped = "skipped"
 )
+
+var errUnleashGenerationChanged = errors.New("unleash generation changed during reconciliation")
 
 var (
 	// Unleash controller timings - prefixed to avoid conflicts with other controllers
@@ -131,6 +134,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.Error(err, "Failed to get Unleash")
 		return ctrl.Result{}, err
 	}
+	reconciledGeneration := unleash.Generation
 
 	// Check if marked for deletion
 	if unleash.GetDeletionTimestamp() != nil {
@@ -213,10 +217,11 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return nil // Already has conditions
 			}
 			meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
-				Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-				Status:  metav1.ConditionUnknown,
-				Reason:  "Reconciling",
-				Message: "Starting reconciliation",
+				Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+				Status:             metav1.ConditionUnknown,
+				ObservedGeneration: reconciledGeneration,
+				Reason:             "Reconciling",
+				Message:            "Starting reconciliation",
 			})
 			return r.Status().Update(ctx, unleash)
 		})
@@ -265,7 +270,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Secrets")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Secrets")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile Secrets")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -276,18 +281,22 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile NetworkPolicy")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile NetworkPolicy")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile NetworkPolicy")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
 	}
 
 	span.AddEvent("Reconciling Deployment")
-	res, err = r.reconcileDeployment(ctx, unleash)
+	res, err = r.reconcileDeployment(ctx, unleash, reconciledGeneration)
 	if err != nil {
+		if errors.Is(err, errUnleashGenerationChanged) {
+			log.Info("Unleash generation changed while reconciling Deployment; requeuing")
+			return ctrl.Result{Requeue: true}, nil
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Deployment")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Deployment")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile Deployment")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -298,7 +307,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Service")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Service")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile Service")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -309,7 +318,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile Ingresses")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile Ingresses")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile Ingresses")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -320,7 +329,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "Failed to reconcile ServiceMonitor")
-		_ = r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to reconcile ServiceMonitor")
+		_ = r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to reconcile ServiceMonitor")
 		return ctrl.Result{}, err
 	} else if res.RequeueAfter > 0 {
 		return res, nil
@@ -335,7 +344,7 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	deployment := &appsv1.Deployment{}
 	if err := r.Client.Get(ctx, req.NamespacedName, deployment); err != nil {
-		if statusErr := r.updateStatusReconcileFailed(ctx, unleash, err, "Failed to get Deployment status"); statusErr != nil {
+		if statusErr := r.updateStatusReconcileFailed(ctx, unleash, reconciledGeneration, err, "Failed to get Deployment status"); statusErr != nil {
 			return ctrl.Result{}, statusErr
 		}
 		return ctrl.Result{}, err
@@ -343,14 +352,14 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if failureReason, failed := utils.DeploymentFailure(deployment); failed {
 		failure := fmt.Errorf("deployment reported failure: %s", failureReason)
-		if err := r.updateStatusDeploymentFailed(ctx, unleash, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
+		if err := r.updateStatusDeploymentFailed(ctx, unleash, reconciledGeneration, failure, fmt.Sprintf("Deployment rollout failed: %s", failureReason)); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: unleashControllerRequeueAfter}, nil
 	}
 
 	if !utils.DeploymentIsReady(deployment) {
-		if err := r.updateStatusReconcileProgressing(ctx, unleash); err != nil {
+		if err := r.updateStatusReconcileProgressing(ctx, unleash, reconciledGeneration); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.V(1).Info("Deployment rollout is still progressing")
@@ -359,14 +368,18 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Set the reconcile status of the Unleash instance to available
 	log.Info("Successfully reconciled Unleash resources")
-	if err = r.updateStatusReconcileSuccess(ctx, unleash); err != nil {
+	if err = r.updateStatusReconcileSuccess(ctx, unleash, reconciledGeneration); err != nil {
+		if errors.Is(err, errUnleashGenerationChanged) {
+			log.Info("Unleash generation changed before reconcile status update; requeuing")
+			return ctrl.Result{Requeue: true}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
 	span.AddEvent("Testing connection to Unleash instance")
 	stats, err := r.testConnection(unleash, ctx, log)
 	if err != nil {
-		if err := r.updateStatusConnectionFailed(ctx, unleash, err, "Failed to connect to Unleash instance"); err != nil {
+		if err := r.updateStatusConnectionFailed(ctx, unleash, reconciledGeneration, err, "Failed to connect to Unleash instance"); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -376,7 +389,11 @@ func (r *UnleashReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	span.SetAttributes(attribute.String("unleash.version", stats.VersionOSS))
 
 	// Set the connection status of the Unleash instance to available
-	if err = r.updateStatusConnectionSuccess(ctx, unleash, stats); err != nil {
+	if err = r.updateStatusConnectionSuccess(ctx, unleash, reconciledGeneration, stats); err != nil {
+		if errors.Is(err, errUnleashGenerationChanged) {
+			log.Info("Unleash generation changed before connection status update; requeuing")
+			return ctrl.Result{Requeue: true}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -778,7 +795,7 @@ func (r *UnleashReconciler) reconcileSecrets(ctx context.Context, unleash *unlea
 }
 
 // reconcileDeployment will ensure that the required deployment is created
-func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash) (ctrl.Result, error) {
+func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64) (ctrl.Result, error) {
 	log := log.FromContext(ctx).WithName("unleash")
 
 	found := &appsv1.Deployment{}
@@ -831,7 +848,10 @@ func (r *UnleashReconciler) reconcileDeployment(ctx context.Context, unleash *un
 			log.Info("Updating Unleash status with new resolved image",
 				"oldImage", unleash.Status.ResolvedReleaseChannelImage,
 				"newImage", resolvedImage)
-			if err := r.markReleaseChannelAssignmentPending(ctx, unleash, resolvedImage); err != nil {
+			if err := r.markReleaseChannelAssignmentPending(ctx, unleash, reconciledGeneration, resolvedImage); err != nil {
+				if errors.Is(err, errUnleashGenerationChanged) {
+					return ctrl.Result{}, err
+				}
 				log.Error(err, "Failed to update Unleash status")
 				return ctrl.Result{}, err
 			}
@@ -970,8 +990,8 @@ func (r *UnleashReconciler) getDefaultImage() string {
 	return image
 }
 
-func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash) error {
-	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64) error {
+	return r.updateStatus(ctx, unleash, reconciledGeneration, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
@@ -979,8 +999,8 @@ func (r *UnleashReconciler) updateStatusReconcileSuccess(ctx context.Context, un
 	})
 }
 
-func (r *UnleashReconciler) updateStatusReconcileProgressing(ctx context.Context, unleash *unleashv1.Unleash) error {
-	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+func (r *UnleashReconciler) updateStatusReconcileProgressing(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64) error {
+	return r.updateStatus(ctx, unleash, reconciledGeneration, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionUnknown,
 		Reason:  "DeploymentProgressing",
@@ -988,36 +1008,46 @@ func (r *UnleashReconciler) updateStatusReconcileProgressing(ctx context.Context
 	})
 }
 
-func (r *UnleashReconciler) markReleaseChannelAssignmentPending(ctx context.Context, unleash *unleashv1.Unleash, image string) error {
+func (r *UnleashReconciler) markReleaseChannelAssignmentPending(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, image string) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := r.Get(ctx, unleash.NamespacedName(), unleash); err != nil {
+		fresh := &unleashv1.Unleash{}
+		if err := r.Get(ctx, unleash.NamespacedName(), fresh); err != nil {
 			return err
 		}
+		if fresh.Generation != reconciledGeneration {
+			return fmt.Errorf("%w: reconciled generation %d, current generation %d", errUnleashGenerationChanged, reconciledGeneration, fresh.Generation)
+		}
 
-		unleash.Status.ResolvedReleaseChannelImage = image
-		unleash.Status.ReleaseChannelName = unleash.Spec.ReleaseChannel.Name
-		unleash.Status.Reconciled = false
-		unleash.Status.Connected = false
-		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
-			Type:    unleashv1.UnleashStatusConditionTypeReconciled,
-			Status:  metav1.ConditionUnknown,
-			Reason:  "DeploymentProgressing",
-			Message: "Waiting for the current Deployment generation to become available",
+		fresh.Status.ResolvedReleaseChannelImage = image
+		fresh.Status.ReleaseChannelName = fresh.Spec.ReleaseChannel.Name
+		fresh.Status.Reconciled = false
+		fresh.Status.Connected = false
+		meta.SetStatusCondition(&fresh.Status.Conditions, metav1.Condition{
+			Type:               unleashv1.UnleashStatusConditionTypeReconciled,
+			Status:             metav1.ConditionUnknown,
+			ObservedGeneration: reconciledGeneration,
+			Reason:             "DeploymentProgressing",
+			Message:            "Waiting for the current Deployment generation to become available",
 		})
-		meta.SetStatusCondition(&unleash.Status.Conditions, metav1.Condition{
-			Type:    unleashv1.UnleashStatusConditionTypeConnected,
-			Status:  metav1.ConditionUnknown,
-			Reason:  "DeploymentProgressing",
-			Message: "Waiting for the current Deployment generation to become available",
+		meta.SetStatusCondition(&fresh.Status.Conditions, metav1.Condition{
+			Type:               unleashv1.UnleashStatusConditionTypeConnected,
+			Status:             metav1.ConditionUnknown,
+			ObservedGeneration: reconciledGeneration,
+			Reason:             "DeploymentProgressing",
+			Message:            "Waiting for the current Deployment generation to become available",
 		})
 
-		return r.Status().Update(ctx, unleash)
+		if err := r.Status().Update(ctx, fresh); err != nil {
+			return err
+		}
+		*unleash = *fresh
+		return nil
 	})
 }
 
-func (r *UnleashReconciler) updateStatusDeploymentFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+func (r *UnleashReconciler) updateStatusDeploymentFailed(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, err error, message string) error {
 	log.FromContext(ctx).WithName("unleash").Error(err, message)
-	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+	return r.updateStatus(ctx, unleash, reconciledGeneration, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Failed",
@@ -1025,7 +1055,7 @@ func (r *UnleashReconciler) updateStatusDeploymentFailed(ctx context.Context, un
 	})
 }
 
-func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, err error, message string) error {
 	log := log.FromContext(ctx).WithName("unleash")
 
 	if verr, ok := err.(*resources.ValidationError); ok {
@@ -1033,7 +1063,7 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 	}
 
 	log.Error(err, message)
-	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+	return r.updateStatus(ctx, unleash, reconciledGeneration, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeReconciled,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
@@ -1041,8 +1071,8 @@ func (r *UnleashReconciler) updateStatusReconcileFailed(ctx context.Context, unl
 	})
 }
 
-func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult) error {
-	return r.updateStatus(ctx, unleash, stats, metav1.Condition{
+func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, stats *unleashclient.InstanceAdminStatsResult) error {
+	return r.updateStatus(ctx, unleash, reconciledGeneration, stats, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciling",
@@ -1050,11 +1080,11 @@ func (r *UnleashReconciler) updateStatusConnectionSuccess(ctx context.Context, u
 	})
 }
 
-func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, unleash *unleashv1.Unleash, err error, message string) error {
+func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, err error, message string) error {
 	log := log.FromContext(ctx).WithName("unleash")
 
 	log.Error(err, fmt.Sprintf("%s for Unleash", message))
-	return r.updateStatus(ctx, unleash, nil, metav1.Condition{
+	return r.updateStatus(ctx, unleash, reconciledGeneration, nil, metav1.Condition{
 		Type:    unleashv1.UnleashStatusConditionTypeConnected,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
@@ -1062,19 +1092,51 @@ func (r *UnleashReconciler) updateStatusConnectionFailed(ctx context.Context, un
 	})
 }
 
-func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
+func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1.Unleash, reconciledGeneration int64, stats *unleashclient.InstanceAdminStatsResult, status metav1.Condition) error {
 	log := log.FromContext(ctx).WithName("unleash")
+	status.ObservedGeneration = reconciledGeneration
 
-	// Derive version from stats if available (same logic as status update below)
-	// to ensure metric label matches what we're about to write to status
-	version := unleash.Status.Version
-	if stats != nil {
-		if stats.VersionEnterprise != "" {
-			version = stats.VersionEnterprise
-		} else if stats.VersionOSS != "" {
-			version = stats.VersionOSS
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		fresh := &unleashv1.Unleash{}
+		if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, fresh); err != nil {
+			return err
 		}
+		if status.Status == metav1.ConditionTrue && fresh.Generation != reconciledGeneration {
+			return fmt.Errorf("%w: reconciled generation %d, current generation %d", errUnleashGenerationChanged, reconciledGeneration, fresh.Generation)
+		}
+
+		switch status.Type {
+		case unleashv1.UnleashStatusConditionTypeReconciled:
+			fresh.Status.Reconciled = status.Status == metav1.ConditionTrue
+		case unleashv1.UnleashStatusConditionTypeConnected:
+			fresh.Status.Connected = status.Status == metav1.ConditionTrue
+		}
+
+		if stats != nil {
+			if stats.VersionEnterprise != "" {
+				fresh.Status.Version = stats.VersionEnterprise
+			} else if stats.VersionOSS != "" {
+				fresh.Status.Version = stats.VersionOSS
+			}
+		}
+
+		meta.SetStatusCondition(&fresh.Status.Conditions, status)
+		if err := r.Status().Update(ctx, fresh); err != nil {
+			return err
+		}
+		*unleash = *fresh
+		return nil
+	})
+
+	if err != nil {
+		if errors.Is(err, errUnleashGenerationChanged) {
+			return err
+		}
+		log.Error(err, "Failed to update status for Unleash")
+		return err
 	}
+
+	version := unleash.Status.Version
 	if version == "" {
 		version = "unknown"
 	}
@@ -1084,39 +1146,10 @@ func (r *UnleashReconciler) updateStatus(ctx context.Context, unleash *unleashv1
 	}
 
 	// Delete stale metrics with old label values (version/release_channel can change)
-	// before setting new ones to prevent alerts from matching outdated time series
+	// before setting new ones to prevent alerts from matching outdated time series.
 	val := promGaugeValueForStatus(status.Status)
 	unleashStatus.DeletePartialMatch(prometheus.Labels{"name": unleash.Name, "status": status.Type})
 	unleashStatus.WithLabelValues(unleash.Name, status.Type, version, releaseChannel).Set(val)
-
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := r.Get(ctx, types.NamespacedName{Name: unleash.Name, Namespace: unleash.Namespace}, unleash); err != nil {
-			return err
-		}
-
-		switch status.Type {
-		case unleashv1.UnleashStatusConditionTypeReconciled:
-			unleash.Status.Reconciled = status.Status == metav1.ConditionTrue
-		case unleashv1.UnleashStatusConditionTypeConnected:
-			unleash.Status.Connected = status.Status == metav1.ConditionTrue
-		}
-
-		if stats != nil {
-			if stats.VersionEnterprise != "" {
-				unleash.Status.Version = stats.VersionEnterprise
-			} else if stats.VersionOSS != "" {
-				unleash.Status.Version = stats.VersionOSS
-			}
-		}
-
-		meta.SetStatusCondition(&unleash.Status.Conditions, status)
-		return r.Status().Update(ctx, unleash)
-	})
-
-	if err != nil {
-		log.Error(err, "Failed to update status for Unleash")
-		return err
-	}
 
 	return nil
 }
