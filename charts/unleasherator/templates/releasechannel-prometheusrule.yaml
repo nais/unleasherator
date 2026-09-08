@@ -6,14 +6,17 @@
   "annotations" dict
   "alerts" (dict
     "failed" (dict "enabled" true "for" "5m" "severity" "critical")
-    "stuckInProgress" (dict "enabled" true "for" "1h" "severity" "warning")
-    "instancesOutOfSync" (dict "enabled" true "for" "30m" "severity" "warning")
+    "stuckInProgress" (dict "enabled" true "for" "2h" "severity" "warning")
+    "instancesOutOfSync" (dict "enabled" false "for" "30m" "severity" "warning")
     "noInstances" (dict "enabled" false "for" "30m" "severity" "info")
     "highFailureRate" (dict "enabled" true "for" "15m" "severity" "critical" "threshold" 0.1)
     "healthChecksFailing" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.01)
-    "slowRollout" (dict "enabled" true "for" "15m" "severity" "warning" "thresholdSeconds" 300)
+    "slowRollout" (dict "enabled" false "for" "15m" "severity" "warning" "thresholdSeconds" 300)
     "highConflictRate" (dict "enabled" true "for" "15m" "severity" "warning" "threshold" 0.05)
-    "metricsAbsent" (dict "enabled" false "for" "30m" "severity" "info")
+    "metricsAbsent" (dict "enabled" true "for" "10m" "severity" "critical")
+    "reconcileErrors" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 0.1)
+    "workqueueBacklog" (dict "enabled" true "for" "10m" "severity" "warning" "threshold" 10)
+    "controllerInactive" (dict "enabled" true "for" "5m" "severity" "critical")
   )
 }}
 {{- $rc := mustMergeOverwrite $defaults (.Values.prometheusRules.releaseChannel | default dict) }}
@@ -35,6 +38,23 @@ spec:
   groups:
     - name: unleasherator.releasechannel
       rules:
+        {{- if $alerts.controllerInactive.enabled }}
+        - alert: ReleaseChannelControllerInactive
+          expr: |
+            (unleasherator_releasechannel_status == 0.5)
+            and on()
+            (sum(increase(controller_runtime_reconcile_total{controller="releasechannel"}[10m])) == 0)
+          for: {{ $alerts.controllerInactive.for }}
+          labels:
+            severity: {{ $alerts.controllerInactive.severity }}
+            namespace: {{ .Release.Namespace }}
+          annotations:
+            summary: "ReleaseChannel controller is inactive during a rollout"
+            consequence: "An active rollout cannot progress or surface a terminal deployment failure."
+            action: "Check the Unleasherator controller manager, leader election, and controller logs."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
+
         {{- if $alerts.failed.enabled }}
         # Status-based alerts
         - alert: ReleaseChannelFailed
@@ -174,6 +194,37 @@ spec:
             summary: "ReleaseChannel {{ "{{" }} $labels.exported_namespace {{ "}}" }}/{{ "{{" }} $labels.name {{ "}}" }} experiencing {{ "{{" }} $value | humanize {{ "}}" }} conflicts/sec"
             consequence: "Resource conflicts are occurring during rollouts. This may slow down rollouts or cause inconsistent state."
             action: "Check for multiple controllers managing the same resources, or manual modifications to Unleash resources during rollouts."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.reconcileErrors.enabled }}
+        - alert: ReleaseChannelReconcileErrors
+          expr: |
+            (
+              sum(rate(controller_runtime_reconcile_total{controller="releasechannel",result="error"}[15m]))
+              /
+              (sum(rate(controller_runtime_reconcile_total{controller="releasechannel"}[15m])) > 0)
+            ) > {{ $alerts.reconcileErrors.threshold }}
+          for: {{ $alerts.reconcileErrors.for }}
+          labels:
+            severity: {{ $alerts.reconcileErrors.severity }}
+          annotations:
+            summary: "ReleaseChannel controller has a high reconciliation error rate"
+            consequence: "Rollouts may not be assigned, progressed, or failed promptly."
+            action: "Inspect Unleasherator controller logs and ReleaseChannel events."
+            runbook_url: {{ $rc.runbookUrl | quote }}
+        {{- end }}
+
+        {{- if $alerts.workqueueBacklog.enabled }}
+        - alert: ReleaseChannelWorkqueueBacklog
+          expr: workqueue_depth{name="releasechannel"} > {{ $alerts.workqueueBacklog.threshold }}
+          for: {{ $alerts.workqueueBacklog.for }}
+          labels:
+            severity: {{ $alerts.workqueueBacklog.severity }}
+          annotations:
+            summary: "ReleaseChannel controller workqueue is backing up"
+            consequence: "Rollout state changes are delayed."
+            action: "Check controller logs, workqueue retries, and Kubernetes API or Deployment health."
             runbook_url: {{ $rc.runbookUrl | quote }}
         {{- end }}
 
