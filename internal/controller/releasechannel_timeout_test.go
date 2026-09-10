@@ -312,6 +312,48 @@ func TestExecuteFailedPhaseRetriesOnCorrectedImage(t *testing.T) {
 	assert.Empty(t, updated.Status.FailedImage)
 }
 
+func TestExecuteFailedPhaseRetriesWithBreakGlassAssignments(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, unleashv1.AddToScheme(scheme))
+
+	releaseChannel := &unleashv1.ReleaseChannel{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-rc", Namespace: "default"},
+		Spec: unleashv1.ReleaseChannelSpec{
+			Image:           unleashv1.UnleashImage(newerImage),
+			BreakGlassImage: unleashv1.UnleashImage(newerImage),
+		},
+		Status: unleashv1.ReleaseChannelStatus{
+			Phase:          unleashv1.ReleaseChannelPhaseFailed,
+			FailureReason:  "Rollout exceeded maxUpgradeTime",
+			InstanceImages: map[string]string{"instance-0": olderImage},
+		},
+	}
+	instance := &unleashv1.Unleash{
+		ObjectMeta: metav1.ObjectMeta{Name: "instance-0", Namespace: "default"},
+		Spec: unleashv1.UnleashSpec{
+			ReleaseChannel: unleashv1.UnleashReleaseChannelConfig{Name: "test-rc"},
+		},
+	}
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(releaseChannel, instance).
+		WithStatusSubresource(releaseChannel).
+		Build()
+	reconciler := &ReleaseChannelReconciler{
+		Client:   fakeClient,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(20),
+	}
+
+	_, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := &unleashv1.ReleaseChannel{}
+	require.NoError(t, fakeClient.Get(context.Background(), releaseChannel.NamespacedName(), updated))
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase)
+	assert.Empty(t, updated.Status.FailureReason)
+}
+
 func TestExecuteFailedPhaseStaysPutWhenNothingChanged(t *testing.T) {
 	reconciler, releaseChannel, reload := failedChannelFixture(t)
 	current := settleIntoTerminalFailure(t, reconciler, releaseChannel, reload)

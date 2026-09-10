@@ -626,6 +626,26 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 		return r.updateReleaseChannelStatus(ctx, releaseChannel)
 	}
 
+	targetInstances, err := r.getTargetInstances(ctx, releaseChannel)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting target instances for failed rollout: %w", err)
+	}
+	if breakGlassAssignmentsNeeded(targetInstances, releaseChannel) {
+		log.Info("Break-glass retry requested for failed rollout",
+			"targetImage", releaseChannel.Spec.Image,
+			"instances", len(targetInstances))
+		r.Recorder.Event(releaseChannel, "Warning", "BreakGlassRetry",
+			fmt.Sprintf("Retrying failed rollout with break-glass image %s", releaseChannel.Spec.Image))
+		r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseIdle)
+		releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+		releaseChannel.Status.FailureReason = ""
+		releaseChannel.Status.FailedImage = ""
+		releaseChannel.Status.RetryCount = 0
+		releaseChannel.Status.LastFailureTime = nil
+		releaseChannel.Status.StartTime = nil
+		return r.updateReleaseChannelStatus(ctx, releaseChannel)
+	}
+
 	// Pointing spec.image somewhere else is an operator saying "not that one,
 	// try this instead". It is the only way out of a failure that has nothing to
 	// roll back to, so it has to be checked before the branches that give up.
