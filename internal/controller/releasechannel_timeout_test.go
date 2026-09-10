@@ -422,6 +422,21 @@ func TestExecuteFailedPhaseStopsARolloutThatIsNotProgressing(t *testing.T) {
 		"a rollout that advanced nothing must stop rather than resume forever")
 }
 
+func TestExecuteFailedPhaseResetsAnInvalidProgressBaseline(t *testing.T) {
+	reconciler, releaseChannel, reload := timedOutChannel(t, 1, 4)
+
+	_, err := reconciler.executeFailedPhase(context.Background(), releaseChannel, ctrl.Log.WithName("test"))
+	require.NoError(t, err)
+
+	updated := reload()
+	assert.Equal(t, unleashv1.ReleaseChannelPhaseIdle, updated.Status.Phase,
+		"a regressed progress count must get one fresh, bounded rollout attempt")
+	assert.Equal(t, 0, updated.Status.ResumeProgress)
+	assert.Empty(t, updated.Status.FailureReason)
+	assert.Empty(t, updated.Status.FailedImage)
+	assert.Nil(t, updated.Status.StartTime)
+}
+
 func TestExecuteFailedPhaseResumesAfterBudgetIncrease(t *testing.T) {
 	reconciler, releaseChannel, reload := timedOutChannel(t, 7, 7)
 	releaseChannel.Spec.Strategy.MaxUpgradeTime = &metav1.Duration{Duration: 2 * time.Hour}

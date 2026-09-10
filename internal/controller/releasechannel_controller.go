@@ -683,6 +683,24 @@ func (r *ReleaseChannelReconciler) executeFailedPhase(ctx context.Context, relea
 			}
 		}
 
+		if releaseChannel.Status.ResumeProgress > releaseChannel.Status.InstancesUpToDate {
+			log.Info("Resetting invalid rollout progress baseline",
+				"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
+				"progressAtLastResume", releaseChannel.Status.ResumeProgress)
+			r.Recorder.Event(releaseChannel, "Warning", "RolloutProgressReset",
+				fmt.Sprintf("Resetting invalid rollout progress baseline (%d > %d) before retrying",
+					releaseChannel.Status.ResumeProgress, releaseChannel.Status.InstancesUpToDate))
+			releaseChannel.Status.ResumeProgress = 0
+			r.recordPhaseTransition(releaseChannel, unleashv1.ReleaseChannelPhaseIdle)
+			releaseChannel.Status.Phase = unleashv1.ReleaseChannelPhaseIdle
+			releaseChannel.Status.FailureReason = ""
+			releaseChannel.Status.FailedImage = ""
+			releaseChannel.Status.RetryCount = 0
+			releaseChannel.Status.LastFailureTime = nil
+			releaseChannel.Status.StartTime = nil
+			return r.updateReleaseChannelStatus(ctx, releaseChannel)
+		}
+
 		if releaseChannel.Status.InstancesUpToDate > releaseChannel.Status.ResumeProgress {
 			log.Info("Resuming rollout that ran out of budget but is still progressing",
 				"instancesUpToDate", releaseChannel.Status.InstancesUpToDate,
