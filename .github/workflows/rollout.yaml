@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: version
-        run: echo "version=$(date +'%Y%m%d')-$(git rev-parse --short HEAD)" >> ${GITHUB_OUTPUT}
+        run: echo "version=$(date +'%Y%m%d')-g$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
       - id: name
 
         run: echo "name=${{ github.event.repository.name }}" >> ${GITHUB_OUTPUT}
@@ -90,5 +90,3 @@ jobs:
         run: |-
           git tag ${{ needs.meta.outputs.version }}
           git push origin ${{ needs.meta.outputs.version }}
-
-
