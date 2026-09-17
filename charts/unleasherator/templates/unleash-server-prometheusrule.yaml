@@ -48,6 +48,7 @@ spec:
           for: {{ $alerts.dbPoolExhaustion.for }}
           labels:
             severity: {{ $alerts.dbPoolExhaustion.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash database pool near exhaustion for {{ "{{" }} $labels.service {{ "}}" }}"
             consequence: "Database connections are running low. New requests may fail or queue up waiting for available connections."
@@ -63,6 +64,7 @@ spec:
           for: {{ $alerts.dbPoolPendingAcquires.for }}
           labels:
             severity: {{ $alerts.dbPoolPendingAcquires.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash database pool has pending connection requests for {{ "{{" }} $labels.service {{ "}}" }}"
             consequence: "Requests are waiting for database connections, causing increased latency."
@@ -82,6 +84,7 @@ spec:
           for: {{ $alerts.dbQuerySlow.for }}
           labels:
             severity: {{ $alerts.dbQuerySlow.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash database queries are slow for {{ "{{" }} $labels.service {{ "}}" }}"
             consequence: "High database latency affecting API response times and user experience."
@@ -103,6 +106,7 @@ spec:
           for: {{ $alerts.httpRequestSlow.for }}
           labels:
             severity: {{ $alerts.httpRequestSlow.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash HTTP requests are slow for {{ "{{" }} $labels.service {{ "}}" }}"
             consequence: "API and UI response times are degraded, affecting user experience and SDK polling."
@@ -122,6 +126,7 @@ spec:
           for: {{ $alerts.httpErrorRate.for }}
           labels:
             severity: {{ $alerts.httpErrorRate.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash HTTP error rate elevated for {{ "{{" }} $labels.service {{ "}}" }}"
             consequence: "Applications may have problems fetching feature toggles or managing flags in the UI."
@@ -139,6 +144,7 @@ spec:
           for: {{ $alerts.podRestarts.for }}
           labels:
             severity: {{ $alerts.podRestarts.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash pod {{ "{{" }} $labels.pod {{ "}}" }} is restarting frequently"
             consequence: "Service instability and potential data loss during restarts."
@@ -154,6 +160,7 @@ spec:
           for: {{ $alerts.oomEvents.for }}
           labels:
             severity: {{ $alerts.oomEvents.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash container {{ "{{" }} $labels.container {{ "}}" }} experienced OOM kill"
             consequence: "Container was killed due to memory exhaustion, causing service disruption."
@@ -173,6 +180,7 @@ spec:
           for: {{ $alerts.memoryPressure.for }}
           labels:
             severity: {{ $alerts.memoryPressure.severity }}
+            namespace: {{ .Release.Namespace }}
           annotations:
             summary: "Unleash container {{ "{{" }} $labels.container {{ "}}" }} memory usage high"
             consequence: "Container is approaching memory limits and may be OOM killed soon."
